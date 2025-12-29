@@ -76,7 +76,7 @@ export default function Mahsulotlar() {
 
     async function handleSubmit(e) {
         e.preventDefault()
-        if (!form.name || !form.price) {
+        if (!form.name || !form.sale_price) {
             alert('Nom va Narx majburiy!')
             return
         }
@@ -106,7 +106,7 @@ export default function Mahsulotlar() {
                 if (error) throw error
             }
 
-            setForm({ name: '', stock: '', price: '', category: '', image_url: '', description: '', is_active: true })
+            setForm({ name: '', stock: '', sale_price: '', category: '', image_url: '', description: '', is_active: true })
             setIsAdding(false)
             loadProducts()
         } catch (error) {
@@ -147,7 +147,7 @@ export default function Mahsulotlar() {
     }
 
     function handleCancel() {
-        setForm({ name: '', stock: '', price: '', category: '', image_url: '', description: '', is_active: true })
+        setForm({ name: '', stock: '', sale_price: '', category: '', image_url: '', description: '', is_active: true })
         setEditId(null)
         setIsAdding(false)
     }

@@ -373,7 +373,7 @@ export default function Buyurtmalar() {
                                 >
                                     <option value="">Tanlang...</option>
                                     {products.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name} ({p.price?.toLocaleString()})</option>
+                                        <option key={p.id} value={p.id}>{p.name} ({p.sale_price?.toLocaleString()})</option>
                                     ))}
                                 </select>
                             </div>

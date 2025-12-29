@@ -44,7 +44,7 @@ export default function Xodimlar() {
 
     async function handleSubmit(e) {
         e.preventDefault()
-        if (!form.name || !form.position || !form.salary) {
+        if (!form.name || !form.position || !form.monthly_salary) {
             alert('Ism, lavozim va maosh majburiy!')
             return
         }
@@ -75,7 +75,7 @@ export default function Xodimlar() {
                 if (error) throw error
             }
 
-            setForm({ name: '', position: '', salary: '', bonus: '0', worked_days: '0', rest_days: '0' })
+            setForm({ name: '', position: '', monthly_salary: '', bonus_percent: '0', worked_days: '0', rest_days: '0' })
             setIsAdding(false)
             loadEmployees()
         } catch (error) {
