@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Filter, AlertTriangle, TrendingUp, Package } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Filter, AlertTriangle, TrendingUp, Package, RefreshCcw, Minus } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 
 export default function Ombor() {
