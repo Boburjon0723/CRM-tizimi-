@@ -22,8 +22,10 @@ import {
     PieChart, Pie, Cell,
     Legend
 } from 'recharts'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function StatistikaPage({ toggleSidebar }) {
+export default function StatistikaPage() {
+    const { toggleSidebar } = useLayout()
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState({
         orders: [],

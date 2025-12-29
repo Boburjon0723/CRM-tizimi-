@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload, Loader2 } from 'lucide-react'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function Mahsulotlar({ toggleSidebar }) {
+export default function Mahsulotlar() {
+    const { toggleSidebar } = useLayout()
     const [mahsulotlar, setMahsulotlar] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)

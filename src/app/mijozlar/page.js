@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Search, User, MessageCircle, TrendingUp, BarChart3, Users, Phone, Package, Send, X } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Phone, MapPin, UserPlus } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function Mijozlar({ toggleSidebar }) {
+export default function Mijozlar() {
+    const { toggleSidebar } = useLayout()
     const [customers, setCustomers] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')

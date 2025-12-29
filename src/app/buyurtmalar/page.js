@@ -5,8 +5,10 @@ import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification, formatOrderNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
 import { Plus, Edit, Trash2, Save, X, Search, Filter } from 'lucide-react'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function Buyurtmalar({ toggleSidebar }) {
+export default function Buyurtmalar() {
+    const { toggleSidebar } = useLayout()
     const [buyurtmalar, setBuyurtmalar] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)

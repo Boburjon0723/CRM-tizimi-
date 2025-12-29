@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
-import { Globe, Settings, Image, FileText, Eye, EyeOff, Save, Plus, X, Edit, Trash2, AlertCircle } from 'lucide-react'
+import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type } from 'lucide-react'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function VebSayt({ toggleSidebar }) {
+export default function Vebsayt() {
+  const { toggleSidebar } = useLayout()
   const [settings, setSettings] = useState({
     sayt_nomi: 'Mening Sexim',
     sayt_logo: '',

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import { UserPlus, Edit, Trash2, Save, X, Search, Calendar } from 'lucide-react'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function Xodimlar({ toggleSidebar }) {
+export default function Xodimlar() {
+    const { toggleSidebar } = useLayout()
     const [xodimlar, setXodimlar] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)

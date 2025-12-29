@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import StatCard from '@/components/StatCard'
-import { Package, Users, ShoppingCart, DollarSign, TrendingUp, TrendingDown } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
+import { Package, Users, ShoppingCart, DollarSign, TrendingUp, TrendingDown } from 'lucide-react'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function Dashboard({ toggleSidebar }) {
+export default function Dashboard() {
+  const { toggleSidebar } = useLayout()
   const [stats, setStats] = useState({
     mahsulotlar: 0,
     xodimlar: 0,

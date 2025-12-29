@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, TrendingUp, TrendingDown, Calendar } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Filter, ArrowUpCircle, ArrowDownCircle, Wallet, Calendar } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function Moliya({ toggleSidebar }) {
+export default function Moliya() {
+    const { toggleSidebar } = useLayout()
     const [moliya, setMoliya] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)

@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Search, Package, AlertTriangle, ArrowUpRight, ArrowDownRight, RefreshCcw, Filter, Plus, Minus } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Filter, AlertTriangle, TrendingUp, Package } from 'lucide-react'
+import { useLayout } from '@/context/LayoutContext'
 
-export default function Ombor({ toggleSidebar }) {
+export default function Ombor() {
+    const { toggleSidebar } = useLayout()
     const [mahsulotlar, setMahsulotlar] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
