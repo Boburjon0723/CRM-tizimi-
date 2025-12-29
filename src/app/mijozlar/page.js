@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Phone, MapPin, UserPlus } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Phone, MapPin, UserPlus, Users, TrendingUp, Package, BarChart3, MessageCircle, Send } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 

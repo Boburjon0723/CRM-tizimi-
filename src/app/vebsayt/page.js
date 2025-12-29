@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
-import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type } from 'lucide-react'
+import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type, Settings, FileText, AlertCircle, Plus, X, Trash2, Eye, EyeOff } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 
 export default function Vebsayt() {
