@@ -17,7 +17,7 @@ export default function Mahsulotlar() {
     const [form, setForm] = useState({
         name: '',
         stock: '', // miqdor
-        price: '', // narx
+        sale_price: '', // narx
         category: '',
         image_url: '',
         description: '', // tavsif
@@ -85,7 +85,7 @@ export default function Mahsulotlar() {
             const productData = {
                 name: form.name,
                 stock: parseInt(form.stock) || 0,
-                price: parseInt(form.price) || 0,
+                sale_price: parseInt(form.sale_price) || 0,
                 category: form.category,
                 image_url: form.image_url,
                 description: form.description,
@@ -136,7 +136,7 @@ export default function Mahsulotlar() {
         setForm({
             name: item.name,
             stock: item.stock,
-            price: item.price,
+            sale_price: item.sale_price,
             category: item.category || '',
             image_url: item.image_url || '',
             description: item.description || '',
@@ -207,7 +207,7 @@ export default function Mahsulotlar() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                             <input className="border p-3 rounded-lg" placeholder="Nomi *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
                             <input type="number" className="border p-3 rounded-lg" placeholder="Soni (Stock)" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
-                            <input type="number" className="border p-3 rounded-lg" placeholder="Narxi *" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required />
+                            <input type="number" className="border p-3 rounded-lg" placeholder="Narxi *" value={form.sale_price} onChange={e => setForm({ ...form, sale_price: e.target.value })} required />
                             <input className="border p-3 rounded-lg" placeholder="Kategoriya" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
 
                             {/* Image Upload */}
@@ -269,7 +269,7 @@ export default function Mahsulotlar() {
                                         <div className="text-xs text-gray-500">{item.category}</div>
                                     </div>
                                 </td>
-                                <td className="px-6 py-4">{item.price?.toLocaleString()}</td>
+                                <td className="px-6 py-4">{item.sale_price?.toLocaleString()}</td>
                                 <td className="px-6 py-4">
                                     <span className={`px-2 py-1 rounded text-xs ${item.stock < 10 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{item.stock}</span>
                                 </td>

@@ -16,8 +16,8 @@ export default function Xodimlar() {
     const [form, setForm] = useState({
         name: '',
         position: '',
-        salary: '',
-        bonus: '0',
+        monthly_salary: '',
+        bonus_percent: '0',
         worked_days: '0',
         rest_days: '0'
     })
@@ -53,8 +53,8 @@ export default function Xodimlar() {
             const employeeData = {
                 name: form.name,
                 position: form.position,
-                salary: parseFloat(form.salary),
-                bonus: parseFloat(form.bonus) || 0,
+                monthly_salary: parseFloat(form.monthly_salary),
+                bonus_percent: parseFloat(form.bonus_percent) || 0,
                 worked_days: parseInt(form.worked_days) || 0,
                 rest_days: parseInt(form.rest_days) || 0
             }
@@ -105,8 +105,8 @@ export default function Xodimlar() {
         setForm({
             name: item.name,
             position: item.position,
-            salary: item.salary.toString(),
-            bonus: item.bonus?.toString() || '0',
+            monthly_salary: item.monthly_salary.toString(),
+            bonus_percent: item.bonus_percent?.toString() || '0',
             worked_days: item.worked_days?.toString() || '0',
             rest_days: item.rest_days?.toString() || '0'
         })
@@ -115,7 +115,7 @@ export default function Xodimlar() {
     }
 
     function handleCancel() {
-        setForm({ name: '', position: '', salary: '', bonus: '0', worked_days: '0', rest_days: '0' })
+        setForm({ name: '', position: '', monthly_salary: '', bonus_percent: '0', worked_days: '0', rest_days: '0' })
         setEditId(null)
         setIsAdding(false)
     }
@@ -125,8 +125,8 @@ export default function Xodimlar() {
         x.position?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
-    const totalSalary = employees.reduce((sum, x) => sum + (x.salary || 0), 0)
-    const totalBonus = employees.reduce((sum, x) => sum + (x.bonus || 0), 0)
+    const totalSalary = employees.reduce((sum, x) => sum + (x.monthly_salary || 0), 0)
+    const totalBonus = employees.reduce((sum, x) => sum + (x.bonus_percent || 0), 0)
     const totalPayout = totalSalary + totalBonus
 
     if (loading) {
@@ -205,8 +205,8 @@ export default function Xodimlar() {
                             <input
                                 type="number"
                                 placeholder="Maosh (so'm) *"
-                                value={form.salary}
-                                onChange={(e) => setForm({ ...form, salary: e.target.value })}
+                                value={form.monthly_salary}
+                                onChange={(e) => setForm({ ...form, monthly_salary: e.target.value })}
                                 className="border border-gray-300 p-3 rounded-lg"
                                 required
                                 min="0"
@@ -214,8 +214,8 @@ export default function Xodimlar() {
                             <input
                                 type="number"
                                 placeholder="Bonus (so'm)"
-                                value={form.bonus}
-                                onChange={(e) => setForm({ ...form, bonus: e.target.value })}
+                                value={form.bonus_percent}
+                                onChange={(e) => setForm({ ...form, bonus_percent: e.target.value })}
                                 className="border border-gray-300 p-3 rounded-lg"
                                 min="0"
                             />
@@ -279,7 +279,7 @@ export default function Xodimlar() {
                         </thead>
                         <tbody>
                             {filteredEmployees.map((xodim) => {
-                                const totalPayment = (xodim.salary || 0) + (xodim.bonus || 0)
+                                const totalPayment = (xodim.monthly_salary || 0) + (xodim.bonus_percent || 0)
                                 return (
                                     <tr key={xodim.id} className="border-t hover:bg-gray-50 transition">
                                         <td className="px-6 py-4 font-medium">{xodim.name}</td>
@@ -288,8 +288,8 @@ export default function Xodimlar() {
                                                 {xodim.position}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4">{xodim.salary?.toLocaleString()} so'm</td>
-                                        <td className="px-6 py-4">{xodim.bonus?.toLocaleString()} so'm</td>
+                                        <td className="px-6 py-4">{xodim.monthly_salary?.toLocaleString()} so'm</td>
+                                        <td className="px-6 py-4">{xodim.bonus_percent?.toLocaleString()} so'm</td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-2">
                                                 <Calendar size={16} className="text-gray-400" />

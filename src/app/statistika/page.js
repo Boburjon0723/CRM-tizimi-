@@ -85,7 +85,7 @@ export default function StatistikaPage() {
     const salesTrend = {}
     filteredOrders.forEach(o => {
         const day = new Date(o.created_at).toLocaleDateString('en-CA') // YYYY-MM-DD
-        salesTrend[day] = (salesTrend[day] || 0) + (o.total_amount || 0)
+        salesTrend[day] = (salesTrend[day] || 0) + (o.total || 0)
     })
     const salesChartData = Object.entries(salesTrend)
         .map(([date, amount]) => ({ date, amount }))
@@ -117,7 +117,7 @@ export default function StatistikaPage() {
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
+    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.total || 0), 0)
     const totalIncome = filteredFinance.filter(f => f.type === 'income').reduce((sum, f) => sum + (f.amount || 0), 0)
     const totalExpense = filteredFinance.filter(f => f.type === 'expense').reduce((sum, f) => sum + (f.amount || 0), 0)
 

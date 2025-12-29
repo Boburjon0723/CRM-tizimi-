@@ -36,7 +36,7 @@ export default function Mijozlar() {
             // Fetch orders for stats (using new 'orders' table)
             const { data: ordersData, error: ordError } = await supabase
                 .from('orders')
-                .select('customer_id, total_amount, created_at')
+                .select('customer_id, total, created_at')
 
             if (ordError) {
                 console.error("Error loading orders for stats:", ordError)
@@ -46,7 +46,7 @@ export default function Mijozlar() {
             // Map stats to customers
             const enrichedCustomers = (customersData || []).map(cust => {
                 const custOrders = (ordersData || []).filter(o => o.customer_id === cust.id)
-                const totalSpend = custOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
+                const totalSpend = custOrders.reduce((sum, o) => sum + (o.total || 0), 0)
                 const lastOrder = custOrders.length > 0
                     ? custOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0].created_at
                     : null

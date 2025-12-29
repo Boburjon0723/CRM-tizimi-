@@ -21,7 +21,7 @@ export default function Buyurtmalar() {
         customer_id: '',
         product_id: '',
         quantity: '1',
-        total_amount: '',
+        total: '',
         status: 'Yangi',
         source: 'admin'
     })
@@ -62,7 +62,6 @@ export default function Buyurtmalar() {
             setLoading(true)
 
             // Load Orders with Customer and Items
-            // Note: Join syntax depends on foreign keys being detected by PostgREST
             const { data: ordersData, error: ordersError } = await supabase
                 .from('orders')
                 .select(`
@@ -81,7 +80,7 @@ export default function Buyurtmalar() {
             const { data: customersData } = await supabase.from('customers').select('id, name').order('name')
 
             // Load Products for dropdown
-            const { data: productsData } = await supabase.from('products').select('id, name, price').eq('is_active', true).order('name')
+            const { data: productsData } = await supabase.from('products').select('id, name, sale_price').eq('is_active', true).order('name')
 
             setOrders(ordersData || [])
             setCustomers(customersData || [])
@@ -95,18 +94,15 @@ export default function Buyurtmalar() {
 
     async function handleSubmit(e) {
         e.preventDefault()
-        if (!form.customer_id || !form.product_id || !form.total_amount) {
+        if (!form.customer_id || !form.product_id || !form.total) {
             alert('Mijoz, mahsulot va summa majburiy!')
             return
         }
 
         try {
-            // For now, simpler implementation: One item per order creation from UI
-            // Ideally we'd have a dynamic list of items in the form
-
             const orderPayload = {
                 customer_id: form.customer_id,
-                total_amount: parseFloat(form.total_amount),
+                total: parseFloat(form.total),
                 status: form.status,
                 source: form.source
             }
@@ -138,7 +134,7 @@ export default function Buyurtmalar() {
                     order_id: orderId,
                     product_id: form.product_id,
                     quantity: parseInt(form.quantity),
-                    price: product ? product.price : 0 // Snapshot price
+                    price: product ? product.sale_price : 0 // Snapshot price
                 }
 
                 const { error: itemError } = await supabase
@@ -148,11 +144,11 @@ export default function Buyurtmalar() {
                 if (itemError) throw itemError
 
                 // Notification
-                const message = `🛍 Yangi Buyurtma!\n\n👤 Mijoz: ${customers.find(c => c.id === form.customer_id)?.name}\n💰 Summa: ${form.total_amount}`
+                const message = `🛍 Yangi Buyurtma!\n\n👤 Mijoz: ${customers.find(c => c.id === form.customer_id)?.name}\n💰 Summa: ${form.total}`
                 await sendTelegramNotification(message)
             }
 
-            setForm({ customer_id: '', product_id: '', quantity: '1', total_amount: '', status: 'Yangi', source: 'admin' })
+            setForm({ customer_id: '', product_id: '', quantity: '1', total: '', status: 'Yangi', source: 'admin' })
             setIsAdding(false)
             setEditId(null)
             loadData()
@@ -203,7 +199,7 @@ export default function Buyurtmalar() {
             customer_id: item.customer_id,
             product_id: item.order_items?.[0]?.product_id || '',
             quantity: item.order_items?.[0]?.quantity || '1',
-            total_amount: item.total_amount,
+            total: item.total,
             status: item.status,
             source: item.source
         })
@@ -212,7 +208,7 @@ export default function Buyurtmalar() {
     }
 
     function handleCancel() {
-        setForm({ customer_id: '', product_id: '', quantity: '1', total_amount: '', status: 'Yangi', source: 'admin' })
+        setForm({ customer_id: '', product_id: '', quantity: '1', total: '', status: 'Yangi', source: 'admin' })
         setEditId(null)
         setIsAdding(false)
     }
@@ -222,24 +218,22 @@ export default function Buyurtmalar() {
         const pId = e.target.value
         const qty = parseInt(form.quantity) || 1
         const product = products.find(p => p.id === parseInt(pId) || p.id === pId)
-        // ID types (int vs string) can range based on DB, strictly handling both if generic
 
         setForm(prev => ({
             ...prev,
             product_id: pId,
-            total_amount: product ? product.price * qty : ''
+            total: product ? product.sale_price * qty : ''
         }))
     }
 
     function handleQuantityChange(e) {
         const qty = parseInt(e.target.value) || 1
-        const product = products.find(p => p.id === form.product_id) // string/int match check
-        // Assuming IDs are uuid (string) or int.
+        const product = products.find(p => p.id === form.product_id)
 
         setForm(prev => ({
             ...prev,
             quantity: qty,
-            total_amount: product ? product.price * qty : prev.total_amount
+            total: product ? product.sale_price * qty : prev.total
         }))
     }
 
@@ -250,7 +244,7 @@ export default function Buyurtmalar() {
         return matchesSearch && matchesStatus
     })
 
-    const totalSumma = filteredOrders.reduce((sum, b) => sum + (b.total_amount || 0), 0)
+    const totalSumma = filteredOrders.reduce((sum, b) => sum + (b.total || 0), 0)
     const statusCounts = {
         Yangi: orders.filter(b => b.status === 'Yangi').length,
         Jarayonda: orders.filter(b => b.status === 'Jarayonda').length,
@@ -400,8 +394,8 @@ export default function Buyurtmalar() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Jami Summa</label>
                                 <input
                                     type="number"
-                                    value={form.total_amount}
-                                    onChange={e => setForm({ ...form, total_amount: e.target.value })}
+                                    value={form.total}
+                                    onChange={e => setForm({ ...form, total: e.target.value })}
                                     className="w-full border p-2 rounded-lg"
                                     required
                                 />
@@ -498,16 +492,16 @@ export default function Buyurtmalar() {
                                             )}
                                         </td>
                                         <td className="px-6 py-4 font-semibold text-green-600">
-                                            {item.total_amount?.toLocaleString()} so'm
+                                            {item.total?.toLocaleString()} so'm
                                         </td>
                                         <td className="px-6 py-4">
                                             <select
                                                 value={item.status}
                                                 onChange={(e) => handleStatusChange(item.id, e.target.value)}
                                                 className={`px-3 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${item.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
-                                                        item.status === 'Jarayonda' ? 'bg-yellow-100 text-yellow-800' :
-                                                            item.status === 'Tugallandi' ? 'bg-green-100 text-green-800' :
-                                                                'bg-gray-100 text-gray-800'
+                                                    item.status === 'Jarayonda' ? 'bg-yellow-100 text-yellow-800' :
+                                                        item.status === 'Tugallandi' ? 'bg-green-100 text-green-800' :
+                                                            'bg-gray-100 text-gray-800'
                                                     }`}
                                             >
                                                 <option>Yangi</option>

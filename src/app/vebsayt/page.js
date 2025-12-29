@@ -11,14 +11,14 @@ export default function Vebsayt() {
   const { toggleSidebar } = useLayout()
   const [settings, setSettings] = useState({
     site_name: 'Mening Sexim',
-    site_logo: '',
+    logo_url: '',
     banner_text: 'Sifatli mahsulotlar eng arzon narxlarda!',
     phone: '+998901234567',
     address: 'Toshkent, Chilonzor tumani',
-    working_hours: 'Dushanba-Shanba: 9:00-20:00',
-    telegram: '@mysayt',
-    instagram: '@mysayt',
-    facebook: 'mysayt'
+    work_hours: 'Dushanba-Shanba: 9:00-20:00',
+    telegram_url: '@mysayt',
+    instagram_url: '@mysayt',
+    facebook_url: 'mysayt'
   })
 
   const [banners, setBanners] = useState([])
@@ -289,8 +289,8 @@ export default function Vebsayt() {
             <input
               type="text"
               placeholder="Logo URL"
-              value={settings.site_logo || ''}
-              onChange={(e) => setSettings({ ...settings, site_logo: e.target.value })}
+              value={settings.logo_url || ''}
+              onChange={(e) => setSettings({ ...settings, logo_url: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
@@ -317,29 +317,29 @@ export default function Vebsayt() {
             <input
               type="text"
               placeholder="Ish vaqti"
-              value={settings.working_hours || ''}
-              onChange={(e) => setSettings({ ...settings, working_hours: e.target.value })}
+              value={settings.work_hours || ''}
+              onChange={(e) => setSettings({ ...settings, work_hours: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Telegram"
-              value={settings.telegram || ''}
-              onChange={(e) => setSettings({ ...settings, telegram: e.target.value })}
+              value={settings.telegram_url || ''}
+              onChange={(e) => setSettings({ ...settings, telegram_url: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Instagram"
-              value={settings.instagram || ''}
-              onChange={(e) => setSettings({ ...settings, instagram: e.target.value })}
+              value={settings.instagram_url || ''}
+              onChange={(e) => setSettings({ ...settings, instagram_url: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Facebook"
-              value={settings.facebook || ''}
-              onChange={(e) => setSettings({ ...settings, facebook: e.target.value })}
+              value={settings.facebook_url || ''}
+              onChange={(e) => setSettings({ ...settings, facebook_url: e.target.value })}
               className="border p-3 rounded-lg"
             />
           </div>
@@ -453,7 +453,7 @@ export default function Vebsayt() {
               {products.map(product => (
                 <tr key={product.id} className="border-t">
                   <td className="px-6 py-4 font-medium">{product.name}</td>
-                  <td className="px-6 py-4">{product.price?.toLocaleString()} so'm</td>
+                  <td className="px-6 py-4">{product.sale_price?.toLocaleString()} so'm</td>
                   <td className="px-6 py-4">{product.stock}</td>
                   <td className="px-6 py-4">
                     <button
@@ -498,7 +498,7 @@ export default function Vebsayt() {
                     <td className="px-6 py-4">{firstItem.products?.name || 'Mavjud emas'}</td>
                     <td className="px-6 py-4">{firstItem.quantity || order.quantity || 1}</td>
                     <td className="px-6 py-4 font-semibold text-green-600">
-                      {order.total_amount?.toLocaleString()} so'm
+                      {order.total?.toLocaleString()} so'm
                     </td>
                     <td className="px-6 py-4">
                       <select
