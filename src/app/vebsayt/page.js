@@ -10,12 +10,12 @@ import { useLayout } from '@/context/LayoutContext'
 export default function Vebsayt() {
   const { toggleSidebar } = useLayout()
   const [settings, setSettings] = useState({
-    sayt_nomi: 'Mening Sexim',
-    sayt_logo: '',
+    site_name: 'Mening Sexim',
+    site_logo: '',
     banner_text: 'Sifatli mahsulotlar eng arzon narxlarda!',
-    telefon: '+998901234567',
-    manzil: 'Toshkent, Chilonzor tumani',
-    ish_vaqti: 'Dushanba-Shanba: 9:00-20:00',
+    phone: '+998901234567',
+    address: 'Toshkent, Chilonzor tumani',
+    working_hours: 'Dushanba-Shanba: 9:00-20:00',
     telegram: '@mysayt',
     instagram: '@mysayt',
     facebook: 'mysayt'
@@ -44,15 +44,16 @@ export default function Vebsayt() {
     try {
       // Load website settings
       const { data: settingsData } = await supabase
-        .from('vebsayt_sozlamalar')
+        .from('settings')
         .select('*')
+        .limit(1)
         .single()
 
       if (settingsData) setSettings(settingsData)
 
       // Load banners
       const { data: bannersData } = await supabase
-        .from('vebsayt_banners')
+        .from('banners')
         .select('*')
         .order('created_at', { ascending: false })
 
@@ -60,7 +61,7 @@ export default function Vebsayt() {
 
       // Load products for web display
       const { data: productsData } = await supabase
-        .from('mahsulotlar')
+        .from('products')
         .select('*')
         .order('created_at', { ascending: false })
 
@@ -68,8 +69,9 @@ export default function Vebsayt() {
 
       // Load web orders
       const { data: ordersData } = await supabase
-        .from('vebsayt_buyurtmalar')
-        .select('*')
+        .from('orders')
+        .select('*, customers(name, phone), order_items(products(name), quantity)')
+        .eq('source', 'website')
         .order('created_at', { ascending: false })
 
       setWebOrders(ordersData || [])
@@ -83,32 +85,12 @@ export default function Vebsayt() {
 
   function subscribeToOrders() {
     const channel = supabase
-      .channel('web_orders')
+      .channel('web_orders_sub')
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'vebsayt_buyurtmalar' },
+        { event: 'INSERT', schema: 'public', table: 'orders', filter: "source=eq.website" },
         async (payload) => {
-          // Play sound
           playNotificationSound()
-
-          // Show notification
-          showNotification(payload.new)
-
-          // Send to Telegram
-          const message = `
-🌐 <b>WEB SAYTDAN YANGI BUYURTMA!</b>
-
-👤 Mijoz: ${payload.new.mijoz_ismi}
-📞 Telefon: ${payload.new.telefon}
-📦 Mahsulot: ${payload.new.mahsulot}
-🔢 Miqdor: ${payload.new.miqdor}
-💰 Summa: ${payload.new.summa.toLocaleString()} so'm
-📝 Izoh: ${payload.new.izoh || '-'}
-          `.trim()
-
-          await sendTelegramNotification(message)
-
-          // Reload orders
-          loadData()
+          loadData() // Reload to get joins
         }
       )
       .subscribe()
@@ -123,22 +105,23 @@ export default function Vebsayt() {
     audio.play().catch(e => console.log('Audio failed:', e))
   }
 
-  function showNotification(order) {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Yangi Buyurtma!', {
-        body: `${order.mijoz_ismi} - ${order.mahsulot}`,
-        icon: '/logo.png'
-      })
-    }
-  }
-
   async function handleSaveSettings() {
     try {
-      const { data, error } = await supabase
-        .from('vebsayt_sozlamalar')
-        .upsert(settings)
+      // Upsert works best if we have an ID, but for settings table checking if it exists is safer if rows > 1 aren't allowed.
+      // Assuming 'settings' table has 1 row or ID logic. 
+      // If we used the script, 'settings' table creation didn't enforce single row but code logic implies.
+      // We will try insert first row or update.
 
-      if (error) throw error
+      const { data: existing } = await supabase.from('settings').select('id').single()
+
+      let query = supabase.from('settings')
+
+      if (existing) {
+        await query.update(settings).eq('id', existing.id)
+      } else {
+        await query.insert(settings)
+      }
+
       alert('Sozlamalar saqlandi!')
     } catch (error) {
       console.error('Error saving settings:', error)
@@ -154,7 +137,7 @@ export default function Vebsayt() {
 
     try {
       const { error } = await supabase
-        .from('vebsayt_banners')
+        .from('banners')
         .insert([bannerForm])
 
       if (error) throw error
@@ -173,7 +156,7 @@ export default function Vebsayt() {
 
     try {
       const { error } = await supabase
-        .from('vebsayt_banners')
+        .from('banners')
         .delete()
         .eq('id', id)
 
@@ -187,7 +170,7 @@ export default function Vebsayt() {
   async function handleToggleBanner(id, currentStatus) {
     try {
       const { error } = await supabase
-        .from('vebsayt_banners')
+        .from('banners')
         .update({ active: !currentStatus })
         .eq('id', id)
 
@@ -201,8 +184,8 @@ export default function Vebsayt() {
   async function handleToggleProduct(id, currentStatus) {
     try {
       const { error } = await supabase
-        .from('mahsulotlar')
-        .update({ web_active: !currentStatus })
+        .from('products')
+        .update({ is_active: !currentStatus })
         .eq('id', id)
 
       if (error) throw error
@@ -215,7 +198,7 @@ export default function Vebsayt() {
   async function handleOrderStatusChange(id, newStatus) {
     try {
       const { error } = await supabase
-        .from('vebsayt_buyurtmalar')
+        .from('orders')
         .update({ status: newStatus })
         .eq('id', id)
 
@@ -249,26 +232,6 @@ export default function Vebsayt() {
     <div>
       <Header title="Web Sayt Boshqaruvi" toggleSidebar={toggleSidebar} />
 
-      {/* Notification Permission */}
-      {'Notification' in window && Notification.permission === 'default' && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="text-yellow-600" size={24} />
-              <p className="text-yellow-800">
-                Bildirishnomalarni yoqing - yangi buyurtmalar haqida darhol xabardor bo'ling!
-              </p>
-            </div>
-            <button
-              onClick={() => Notification.requestPermission()}
-              className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700"
-            >
-              Yoqish
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-xl shadow-lg">
@@ -277,7 +240,7 @@ export default function Vebsayt() {
         </div>
         <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-xl shadow-lg">
           <p className="text-sm opacity-80">Web'da Ko'rinayotgan</p>
-          <p className="text-3xl font-bold mt-2">{products.filter(p => p.web_active).length}</p>
+          <p className="text-3xl font-bold mt-2">{products.filter(p => p.is_active).length}</p>
         </div>
         <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-xl shadow-lg">
           <p className="text-sm opacity-80">Web Buyurtmalar</p>
@@ -319,63 +282,63 @@ export default function Vebsayt() {
             <input
               type="text"
               placeholder="Sayt nomi"
-              value={settings.sayt_nomi}
-              onChange={(e) => setSettings({ ...settings, sayt_nomi: e.target.value })}
+              value={settings.site_name || ''}
+              onChange={(e) => setSettings({ ...settings, site_name: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Logo URL"
-              value={settings.sayt_logo}
-              onChange={(e) => setSettings({ ...settings, sayt_logo: e.target.value })}
+              value={settings.site_logo || ''}
+              onChange={(e) => setSettings({ ...settings, site_logo: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Banner matn"
-              value={settings.banner_text}
+              value={settings.banner_text || ''}
               onChange={(e) => setSettings({ ...settings, banner_text: e.target.value })}
               className="border p-3 rounded-lg col-span-2"
             />
             <input
               type="tel"
               placeholder="Telefon"
-              value={settings.telefon}
-              onChange={(e) => setSettings({ ...settings, telefon: e.target.value })}
+              value={settings.phone || ''}
+              onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Manzil"
-              value={settings.manzil}
-              onChange={(e) => setSettings({ ...settings, manzil: e.target.value })}
+              value={settings.address || ''}
+              onChange={(e) => setSettings({ ...settings, address: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Ish vaqti"
-              value={settings.ish_vaqti}
-              onChange={(e) => setSettings({ ...settings, ish_vaqti: e.target.value })}
+              value={settings.working_hours || ''}
+              onChange={(e) => setSettings({ ...settings, working_hours: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Telegram"
-              value={settings.telegram}
+              value={settings.telegram || ''}
               onChange={(e) => setSettings({ ...settings, telegram: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Instagram"
-              value={settings.instagram}
+              value={settings.instagram || ''}
               onChange={(e) => setSettings({ ...settings, instagram: e.target.value })}
               className="border p-3 rounded-lg"
             />
             <input
               type="text"
               placeholder="Facebook"
-              value={settings.facebook}
+              value={settings.facebook || ''}
               onChange={(e) => setSettings({ ...settings, facebook: e.target.value })}
               className="border p-3 rounded-lg"
             />
@@ -489,19 +452,19 @@ export default function Vebsayt() {
             <tbody>
               {products.map(product => (
                 <tr key={product.id} className="border-t">
-                  <td className="px-6 py-4 font-medium">{product.nomi}</td>
-                  <td className="px-6 py-4">{product.narx?.toLocaleString()} so'm</td>
-                  <td className="px-6 py-4">{product.miqdor}</td>
+                  <td className="px-6 py-4 font-medium">{product.name}</td>
+                  <td className="px-6 py-4">{product.price?.toLocaleString()} so'm</td>
+                  <td className="px-6 py-4">{product.stock}</td>
                   <td className="px-6 py-4">
                     <button
-                      onClick={() => handleToggleProduct(product.id, product.web_active)}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-lg ${product.web_active
+                      onClick={() => handleToggleProduct(product.id, product.is_active)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg ${product.is_active
                         ? 'bg-green-100 text-green-800'
                         : 'bg-gray-100 text-gray-800'
                         }`}
                     >
-                      {product.web_active ? <Eye size={16} /> : <EyeOff size={16} />}
-                      {product.web_active ? 'Ko\'rsatilmoqda' : 'Yashirilgan'}
+                      {product.is_active ? <Eye size={16} /> : <EyeOff size={16} />}
+                      {product.is_active ? 'Ko\'rsatilmoqda' : 'Yashirilgan'}
                     </button>
                   </td>
                 </tr>
@@ -526,36 +489,39 @@ export default function Vebsayt() {
               </tr>
             </thead>
             <tbody>
-              {webOrders.map(order => (
-                <tr key={order.id} className="border-t hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium">{order.mijoz_ismi}</td>
-                  <td className="px-6 py-4">{order.telefon}</td>
-                  <td className="px-6 py-4">{order.mahsulot}</td>
-                  <td className="px-6 py-4">{order.miqdor}</td>
-                  <td className="px-6 py-4 font-semibold text-green-600">
-                    {order.summa?.toLocaleString()} so'm
-                  </td>
-                  <td className="px-6 py-4">
-                    <select
-                      value={order.status}
-                      onChange={(e) => handleOrderStatusChange(order.id, e.target.value)}
-                      className={`px-3 py-1 rounded-full text-sm ${order.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
-                        order.status === 'Qabul qilindi' ? 'bg-yellow-100 text-yellow-800' :
-                          order.status === 'Yetkazilmoqda' ? 'bg-purple-100 text-purple-800' :
-                            'bg-green-100 text-green-800'
-                        }`}
-                    >
-                      <option>Yangi</option>
-                      <option>Qabul qilindi</option>
-                      <option>Yetkazilmoqda</option>
-                      <option>Tugallandi</option>
-                    </select>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {new Date(order.created_at).toLocaleDateString('uz-UZ')}
-                  </td>
-                </tr>
-              ))}
+              {webOrders.map(order => {
+                const firstItem = order.order_items?.[0] || {};
+                return (
+                  <tr key={order.id} className="border-t hover:bg-gray-50">
+                    <td className="px-6 py-4 font-medium">{order.customers?.name || 'Foydalanuvchi'}</td>
+                    <td className="px-6 py-4">{order.customers?.phone || '-'}</td>
+                    <td className="px-6 py-4">{firstItem.products?.name || 'Mavjud emas'}</td>
+                    <td className="px-6 py-4">{firstItem.quantity || order.quantity || 1}</td>
+                    <td className="px-6 py-4 font-semibold text-green-600">
+                      {order.total_amount?.toLocaleString()} so'm
+                    </td>
+                    <td className="px-6 py-4">
+                      <select
+                        value={order.status}
+                        onChange={(e) => handleOrderStatusChange(order.id, e.target.value)}
+                        className={`px-3 py-1 rounded-full text-sm ${order.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
+                          order.status === 'Qabul qilindi' ? 'bg-yellow-100 text-yellow-800' :
+                            order.status === 'Yetkazilmoqda' ? 'bg-purple-100 text-purple-800' :
+                              'bg-green-100 text-green-800'
+                          }`}
+                      >
+                        <option>Yangi</option>
+                        <option>Qabul qilindi</option>
+                        <option>Yetkazilmoqda</option>
+                        <option>Tugallandi</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {new Date(order.created_at).toLocaleDateString('uz-UZ')}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

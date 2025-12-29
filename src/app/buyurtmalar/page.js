@@ -4,37 +4,39 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification, formatOrderNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Filter } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Filter, ShoppingCart, Clock, CheckCircle } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 
 export default function Buyurtmalar() {
     const { toggleSidebar } = useLayout()
-    const [buyurtmalar, setBuyurtmalar] = useState([])
+    const [orders, setOrders] = useState([])
+    const [customers, setCustomers] = useState([])
+    const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
     const [editId, setEditId] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterStatus, setFilterStatus] = useState('Hammasi')
     const [form, setForm] = useState({
-        mijoz: '',
-        mahsulot: '',
-        miqdor: '',
-        summa: '',
-        sana: new Date().toISOString().split('T')[0],
-        status: 'Yangi'
+        customer_id: '',
+        product_id: '',
+        quantity: '1',
+        total_amount: '',
+        status: 'Yangi',
+        source: 'admin'
     })
 
     useEffect(() => {
-        loadBuyurtmalar()
+        loadData()
 
-        // Real-time subscription
+        // Subscribe to changes
         const channel = supabase
-            .channel('buyurtmalar_changes')
+            .channel('orders_changes')
             .on('postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'buyurtmalar' },
+                { event: 'INSERT', schema: 'public', table: 'orders' },
                 (payload) => {
                     playNotificationSound()
-                    setBuyurtmalar(prev => [payload.new, ...prev])
+                    loadData() // Reload to get joins
                 }
             )
             .subscribe()
@@ -55,17 +57,37 @@ export default function Buyurtmalar() {
         }
     }
 
-    async function loadBuyurtmalar() {
+    async function loadData() {
         try {
-            const { data, error } = await supabase
-                .from('buyurtmalar')
-                .select('*')
+            setLoading(true)
+
+            // Load Orders with Customer and Items
+            // Note: Join syntax depends on foreign keys being detected by PostgREST
+            const { data: ordersData, error: ordersError } = await supabase
+                .from('orders')
+                .select(`
+                    *,
+                    customers (id, name, phone),
+                    order_items (
+                        id, quantity, price,
+                        products (id, name)
+                    )
+                `)
                 .order('created_at', { ascending: false })
 
-            if (error) throw error
-            setBuyurtmalar(data || [])
+            if (ordersError) throw ordersError
+
+            // Load Customers for dropdown
+            const { data: customersData } = await supabase.from('customers').select('id, name').order('name')
+
+            // Load Products for dropdown
+            const { data: productsData } = await supabase.from('products').select('id, name, price').eq('is_active', true).order('name')
+
+            setOrders(ordersData || [])
+            setCustomers(customersData || [])
+            setProducts(productsData || [])
         } catch (error) {
-            console.error('Error loading orders:', error)
+            console.error('Error loading data:', error)
         } finally {
             setLoading(false)
         }
@@ -73,54 +95,67 @@ export default function Buyurtmalar() {
 
     async function handleSubmit(e) {
         e.preventDefault()
-        if (!form.mijoz || !form.mahsulot || !form.summa) {
+        if (!form.customer_id || !form.product_id || !form.total_amount) {
             alert('Mijoz, mahsulot va summa majburiy!')
             return
         }
 
         try {
-            const orderData = {
-                mijoz: form.mijoz,
-                mahsulot: form.mahsulot,
-                miqdor: parseInt(form.miqdor) || 1,
-                summa: parseInt(form.summa),
-                sana: form.sana,
-                status: form.status
+            // For now, simpler implementation: One item per order creation from UI
+            // Ideally we'd have a dynamic list of items in the form
+
+            const orderPayload = {
+                customer_id: form.customer_id,
+                total_amount: parseFloat(form.total_amount),
+                status: form.status,
+                source: form.source
             }
 
+            let orderId = editId
+
             if (editId) {
+                // Update Order
                 const { error } = await supabase
-                    .from('buyurtmalar')
-                    .update(orderData)
+                    .from('orders')
+                    .update(orderPayload)
                     .eq('id', editId)
 
                 if (error) throw error
-                setEditId(null)
             } else {
-                const { data, error } = await supabase
-                    .from('buyurtmalar')
-                    .insert([orderData])
+                // Insert Order
+                const { data: newOrder, error } = await supabase
+                    .from('orders')
+                    .insert([orderPayload])
                     .select()
+                    .single()
 
                 if (error) throw error
+                orderId = newOrder.id
 
-                // Send Telegram notification for new orders
-                if (data && data[0]) {
-                    const message = formatOrderNotification(data[0])
-                    await sendTelegramNotification(message)
+                // Add Order Item
+                const product = products.find(p => p.id === form.product_id)
+                const itemPayload = {
+                    order_id: orderId,
+                    product_id: form.product_id,
+                    quantity: parseInt(form.quantity),
+                    price: product ? product.price : 0 // Snapshot price
                 }
+
+                const { error: itemError } = await supabase
+                    .from('order_items')
+                    .insert([itemPayload])
+
+                if (itemError) throw itemError
+
+                // Notification
+                const message = `🛍 Yangi Buyurtma!\n\n👤 Mijoz: ${customers.find(c => c.id === form.customer_id)?.name}\n💰 Summa: ${form.total_amount}`
+                await sendTelegramNotification(message)
             }
 
-            setForm({
-                mijoz: '',
-                mahsulot: '',
-                miqdor: '',
-                summa: '',
-                sana: new Date().toISOString().split('T')[0],
-                status: 'Yangi'
-            })
+            setForm({ customer_id: '', product_id: '', quantity: '1', total_amount: '', status: 'Yangi', source: 'admin' })
             setIsAdding(false)
-            loadBuyurtmalar()
+            setEditId(null)
+            loadData()
         } catch (error) {
             console.error('Error saving order:', error)
             alert('Xatolik yuz berdi!')
@@ -132,12 +167,12 @@ export default function Buyurtmalar() {
 
         try {
             const { error } = await supabase
-                .from('buyurtmalar')
+                .from('orders')
                 .delete()
                 .eq('id', id)
 
             if (error) throw error
-            loadBuyurtmalar()
+            loadData()
         } catch (error) {
             console.error('Error deleting order:', error)
             alert('O\'chirishda xatolik!')
@@ -147,55 +182,79 @@ export default function Buyurtmalar() {
     async function handleStatusChange(id, newStatus) {
         try {
             const { error } = await supabase
-                .from('buyurtmalar')
+                .from('orders')
                 .update({ status: newStatus })
                 .eq('id', id)
 
             if (error) throw error
-            loadBuyurtmalar()
+            // Optimistic update
+            setOrders(orders.map(o => o.id === id ? { ...o, status: newStatus } : o))
         } catch (error) {
             console.error('Error updating status:', error)
         }
     }
 
     function handleEdit(item) {
+        // Simplified edit: load main details. 
+        // Complex because one order might have multiple items, but we simplified UI to 1 item creation.
+        // For now just edit status/customer/amount. Product editing is tricky without full complexity.
+
         setForm({
-            mijoz: item.mijoz,
-            mahsulot: item.mahsulot,
-            miqdor: item.miqdor.toString(),
-            summa: item.summa.toString(),
-            sana: item.sana,
-            status: item.status
+            customer_id: item.customer_id,
+            product_id: item.order_items?.[0]?.product_id || '',
+            quantity: item.order_items?.[0]?.quantity || '1',
+            total_amount: item.total_amount,
+            status: item.status,
+            source: item.source
         })
         setEditId(item.id)
         setIsAdding(true)
     }
 
     function handleCancel() {
-        setForm({
-            mijoz: '',
-            mahsulot: '',
-            miqdor: '',
-            summa: '',
-            sana: new Date().toISOString().split('T')[0],
-            status: 'Yangi'
-        })
+        setForm({ customer_id: '', product_id: '', quantity: '1', total_amount: '', status: 'Yangi', source: 'admin' })
         setEditId(null)
         setIsAdding(false)
     }
 
-    const filteredBuyurtmalar = buyurtmalar.filter(b => {
-        const matchesSearch = b.mijoz?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            b.mahsulot?.toLowerCase().includes(searchTerm.toLowerCase())
+    // Product selection handler to auto-calculate price
+    function handleProductSelect(e) {
+        const pId = e.target.value
+        const qty = parseInt(form.quantity) || 1
+        const product = products.find(p => p.id === parseInt(pId) || p.id === pId)
+        // ID types (int vs string) can range based on DB, strictly handling both if generic
+
+        setForm(prev => ({
+            ...prev,
+            product_id: pId,
+            total_amount: product ? product.price * qty : ''
+        }))
+    }
+
+    function handleQuantityChange(e) {
+        const qty = parseInt(e.target.value) || 1
+        const product = products.find(p => p.id === form.product_id) // string/int match check
+        // Assuming IDs are uuid (string) or int.
+
+        setForm(prev => ({
+            ...prev,
+            quantity: qty,
+            total_amount: product ? product.price * qty : prev.total_amount
+        }))
+    }
+
+    const filteredOrders = orders.filter(b => {
+        const customerName = b.customers?.name || 'Noma\'lum'
+        const matchesSearch = customerName.toLowerCase().includes(searchTerm.toLowerCase())
         const matchesStatus = filterStatus === 'Hammasi' || b.status === filterStatus
         return matchesSearch && matchesStatus
     })
 
-    const totalSumma = filteredBuyurtmalar.reduce((sum, b) => sum + (b.summa || 0), 0)
+    const totalSumma = filteredOrders.reduce((sum, b) => sum + (b.total_amount || 0), 0)
     const statusCounts = {
-        Yangi: buyurtmalar.filter(b => b.status === 'Yangi').length,
-        Jarayonda: buyurtmalar.filter(b => b.status === 'Jarayonda').length,
-        Tugallandi: buyurtmalar.filter(b => b.status === 'Tugallandi').length
+        Yangi: orders.filter(b => b.status === 'Yangi').length,
+        Jarayonda: orders.filter(b => b.status === 'Jarayonda').length,
+        Tugallandi: orders.filter(b => b.status === 'Tugallandi').length
     }
 
     if (loading) {
@@ -210,24 +269,44 @@ export default function Buyurtmalar() {
 
     return (
         <div>
-            <Header title="Buyurtmalar" toggleSidebar={toggleSidebar} />
+            <Header title="Buyurtmalar (Orders)" toggleSidebar={toggleSidebar} />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-xl shadow-lg">
-                    <p className="text-sm opacity-80">Jami Buyurtmalar</p>
-                    <p className="text-3xl font-bold mt-2">{buyurtmalar.length}</p>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm opacity-80">Jami Buyurtmalar</p>
+                            <p className="text-3xl font-bold mt-2">{orders.length}</p>
+                        </div>
+                        <ShoppingCart className="opacity-50" size={32} />
+                    </div>
                 </div>
                 <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white p-6 rounded-xl shadow-lg">
-                    <p className="text-sm opacity-80">Yangi</p>
-                    <p className="text-3xl font-bold mt-2">{statusCounts.Yangi}</p>
-                </div>
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-xl shadow-lg">
-                    <p className="text-sm opacity-80">Jarayonda</p>
-                    <p className="text-3xl font-bold mt-2">{statusCounts.Jarayonda}</p>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm opacity-80">Yangi</p>
+                            <p className="text-3xl font-bold mt-2">{statusCounts.Yangi}</p>
+                        </div>
+                        <Clock className="opacity-50" size={32} />
+                    </div>
                 </div>
                 <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-xl shadow-lg">
-                    <p className="text-sm opacity-80">Jami Summa</p>
-                    <p className="text-3xl font-bold mt-2">{(totalSumma / 1000000).toFixed(1)}M</p>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm opacity-80">Tugallandi</p>
+                            <p className="text-3xl font-bold mt-2">{statusCounts.Tugallandi}</p>
+                        </div>
+                        <CheckCircle className="opacity-50" size={32} />
+                    </div>
+                </div>
+                <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-xl shadow-lg">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm opacity-80">Jami Summa</p>
+                            <p className="text-2xl font-bold mt-2">{(totalSumma / 1000000).toFixed(1)}M</p>
+                        </div>
+                        <div className="text-sm opacity-50 font-mono">UZS</div>
+                    </div>
                 </div>
             </div>
 
@@ -236,7 +315,7 @@ export default function Buyurtmalar() {
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Buyurtma qidirish..."
+                        placeholder="Mijoz bo'yicha qidirish..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -254,6 +333,7 @@ export default function Buyurtmalar() {
                         <option>Yangi</option>
                         <option>Jarayonda</option>
                         <option>Tugallandi</option>
+                        <option>Bekor qilindi</option>
                     </select>
                 </div>
 
@@ -272,55 +352,86 @@ export default function Buyurtmalar() {
                         {editId ? 'Buyurtmani tahrirlash' : 'Yangi buyurtma qo\'shish'}
                     </h3>
                     <form onSubmit={handleSubmit}>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                            <input
-                                type="text"
-                                placeholder="Mijoz nomi *"
-                                value={form.mijoz}
-                                onChange={(e) => setForm({ ...form, mijoz: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                                required
-                            />
-                            <input
-                                type="text"
-                                placeholder="Mahsulot *"
-                                value={form.mahsulot}
-                                onChange={(e) => setForm({ ...form, mahsulot: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                                required
-                            />
-                            <input
-                                type="number"
-                                placeholder="Miqdor"
-                                value={form.miqdor}
-                                onChange={(e) => setForm({ ...form, miqdor: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                                min="1"
-                            />
-                            <input
-                                type="number"
-                                placeholder="Summa (so'm) *"
-                                value={form.summa}
-                                onChange={(e) => setForm({ ...form, summa: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                                required
-                                min="0"
-                            />
-                            <input
-                                type="date"
-                                value={form.sana}
-                                onChange={(e) => setForm({ ...form, sana: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                            />
-                            <select
-                                value={form.status}
-                                onChange={(e) => setForm({ ...form, status: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                            >
-                                <option>Yangi</option>
-                                <option>Jarayonda</option>
-                                <option>Tugallandi</option>
-                            </select>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Mijoz</label>
+                                <select
+                                    className="w-full border p-2 rounded-lg"
+                                    value={form.customer_id}
+                                    onChange={e => setForm({ ...form, customer_id: e.target.value })}
+                                    required
+                                >
+                                    <option value="">Tanlang...</option>
+                                    {customers.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Mahsulot</label>
+                                <select
+                                    className="w-full border p-2 rounded-lg"
+                                    value={form.product_id}
+                                    onChange={handleProductSelect}
+                                    required={!editId} // Only required for new orders for now
+                                    disabled={!!editId} // Disable product edit for simplicity in this version
+                                >
+                                    <option value="">Tanlang...</option>
+                                    {products.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name} ({p.price?.toLocaleString()})</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Miqdor</label>
+                                <input
+                                    type="number"
+                                    value={form.quantity}
+                                    onChange={handleQuantityChange}
+                                    className="w-full border p-2 rounded-lg"
+                                    min="1"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Jami Summa</label>
+                                <input
+                                    type="number"
+                                    value={form.total_amount}
+                                    onChange={e => setForm({ ...form, total_amount: e.target.value })}
+                                    className="w-full border p-2 rounded-lg"
+                                    required
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                <select
+                                    value={form.status}
+                                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                                    className="w-full border p-2 rounded-lg"
+                                >
+                                    <option>Yangi</option>
+                                    <option>Jarayonda</option>
+                                    <option>Tugallandi</option>
+                                    <option>Bekor qilindi</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Manba</label>
+                                <select
+                                    value={form.source}
+                                    onChange={(e) => setForm({ ...form, source: e.target.value })}
+                                    className="w-full border p-2 rounded-lg"
+                                >
+                                    <option value="admin">Admin Panel</option>
+                                    <option value="website">Websayt</option>
+                                </select>
+                            </div>
                         </div>
                         <div className="flex gap-3">
                             <button
@@ -343,68 +454,96 @@ export default function Buyurtmalar() {
                 </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-                {filteredBuyurtmalar.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                {filteredOrders.length === 0 ? (
                     <div className="text-center py-12">
                         <p className="text-gray-500">Buyurtmalar topilmadi</p>
                     </div>
                 ) : (
-                    <table className="w-full">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-4 text-left">Mijoz</th>
-                                <th className="px-6 py-4 text-left">Mahsulot</th>
-                                <th className="px-6 py-4 text-left">Miqdor</th>
-                                <th className="px-6 py-4 text-left">Summa</th>
-                                <th className="px-6 py-4 text-left">Sana</th>
-                                <th className="px-6 py-4 text-left">Status</th>
-                                <th className="px-6 py-4 text-left">Amallar</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredBuyurtmalar.map((item) => (
-                                <tr key={item.id} className="border-t hover:bg-gray-50 transition">
-                                    <td className="px-6 py-4 font-medium">{item.mijoz}</td>
-                                    <td className="px-6 py-4">{item.mahsulot}</td>
-                                    <td className="px-6 py-4">{item.miqdor}</td>
-                                    <td className="px-6 py-4 font-semibold text-green-600">
-                                        {item.summa?.toLocaleString()} so'm
-                                    </td>
-                                    <td className="px-6 py-4">{item.sana}</td>
-                                    <td className="px-6 py-4">
-                                        <select
-                                            value={item.status}
-                                            onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                                            className={`px-3 py-1 rounded-full text-sm font-medium border-0 cursor-pointer ${item.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
-                                                item.status === 'Jarayonda' ? 'bg-yellow-100 text-yellow-800' :
-                                                    'bg-green-100 text-green-800'
-                                                }`}
-                                        >
-                                            <option>Yangi</option>
-                                            <option>Jarayonda</option>
-                                            <option>Tugallandi</option>
-                                        </select>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleEdit(item)}
-                                                className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded transition"
-                                            >
-                                                <Edit size={18} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(item.id)}
-                                                className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded transition"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
-                                    </td>
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-4 text-left">ID & Sana</th>
+                                    <th className="px-6 py-4 text-left">Mijoz</th>
+                                    <th className="px-6 py-4 text-left">Mahsulotlar</th>
+                                    <th className="px-6 py-4 text-left">Summa</th>
+                                    <th className="px-6 py-4 text-left">Status</th>
+                                    <th className="px-6 py-4 text-left">Manba</th>
+                                    <th className="px-6 py-4 text-left">Amallar</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {filteredOrders.map((item) => (
+                                    <tr key={item.id} className="hover:bg-gray-50 transition">
+                                        <td className="px-6 py-4">
+                                            <div className="font-mono text-xs text-gray-500">#{item.id.slice(0, 8)}</div>
+                                            <div className="text-sm text-gray-900">{new Date(item.created_at).toLocaleDateString()}</div>
+                                        </td>
+                                        <td className="px-6 py-4 font-medium text-gray-900">
+                                            {item.customers?.name || 'Noma\'lum'}
+                                            <div className="text-xs text-gray-500">{item.customers?.phone}</div>
+                                        </td>
+                                        <td className="px-6 py-4 text-gray-600">
+                                            {item.order_items && item.order_items.length > 0 ? (
+                                                <div className="space-y-1">
+                                                    {item.order_items.map((oi, idx) => (
+                                                        <div key={oi.id || idx} className="text-sm">
+                                                            {oi.quantity}x {oi.products?.name}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400 italic">Bo'sh</span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 font-semibold text-green-600">
+                                            {item.total_amount?.toLocaleString()} so'm
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <select
+                                                value={item.status}
+                                                onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                                                className={`px-3 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${item.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
+                                                        item.status === 'Jarayonda' ? 'bg-yellow-100 text-yellow-800' :
+                                                            item.status === 'Tugallandi' ? 'bg-green-100 text-green-800' :
+                                                                'bg-gray-100 text-gray-800'
+                                                    }`}
+                                            >
+                                                <option>Yangi</option>
+                                                <option>Qabul qilindi</option>
+                                                <option>Jarayonda</option>
+                                                <option>Yetkazilmoqda</option>
+                                                <option>Tugallandi</option>
+                                                <option>Bekor qilindi</option>
+                                            </select>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={`text-xs px-2 py-1 rounded ${item.source === 'website' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                {item.source === 'website' ? 'Web' : 'Admin'}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleEdit(item)}
+                                                    className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded transition"
+                                                >
+                                                    <Edit size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(item.id)}
+                                                    className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded transition"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
             </div>
         </div>

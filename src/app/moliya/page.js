@@ -9,38 +9,32 @@ import { useLayout } from '@/context/LayoutContext'
 
 export default function Moliya() {
     const { toggleSidebar } = useLayout()
-    const [moliya, setMoliya] = useState([])
+    const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
-    const [editId, setEditId] = useState(null)
-    const [searchTerm, setSearchTerm] = useState('')
-    const [filterTur, setFilterTur] = useState('Hammasi')
-    const [dateRange, setDateRange] = useState({
-        start: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
-        end: new Date().toISOString().split('T')[0]
-    })
-    const [form, setForm] = useState({
-        tur: 'Kirim',
-        summa: '',
-        sana: new Date().toISOString().split('T')[0],
-        izoh: ''
-    })
+    const [amount, setAmount] = useState('')
+    const [type, setType] = useState('income') // income, expense
+    const [description, setDescription] = useState('')
+    const [category, setCategory] = useState('')
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+    const [filterType, setFilterType] = useState('all') // all, income, expense
 
     useEffect(() => {
-        loadMoliya()
+        loadTransactions()
     }, [])
 
-    async function loadMoliya() {
+    async function loadTransactions() {
         try {
             const { data, error } = await supabase
-                .from('moliya')
+                .from('transactions')
                 .select('*')
-                .order('sana', { ascending: false })
+                .order('date', { ascending: false })
+                .order('created_at', { ascending: false })
 
             if (error) throw error
-            setMoliya(data || [])
+            setTransactions(data || [])
         } catch (error) {
-            console.error('Error loading finance:', error)
+            console.error('Error loading transactions:', error)
         } finally {
             setLoading(false)
         }
@@ -48,360 +42,216 @@ export default function Moliya() {
 
     async function handleSubmit(e) {
         e.preventDefault()
-        if (!form.summa || !form.sana) {
-            alert('Summa va sana majburiy!')
-            return
-        }
+        if (!amount || !description) return
 
         try {
-            const financeData = {
-                tur: form.tur,
-                summa: parseInt(form.summa),
-                sana: form.sana,
-                izoh: form.izoh
+            const newTransaction = {
+                type,
+                amount: parseFloat(amount),
+                description,
+                category,
+                date
             }
 
-            if (editId) {
-                const { error } = await supabase
-                    .from('moliya')
-                    .update(financeData)
-                    .eq('id', editId)
+            const { error } = await supabase
+                .from('transactions')
+                .insert([newTransaction])
 
-                if (error) throw error
-                setEditId(null)
-            } else {
-                const { error } = await supabase
-                    .from('moliya')
-                    .insert([financeData])
+            if (error) throw error
 
-                if (error) throw error
-            }
-
-            setForm({ tur: 'Kirim', summa: '', sana: new Date().toISOString().split('T')[0], izoh: '' })
+            setAmount('')
+            setDescription('')
+            setCategory('')
             setIsAdding(false)
-            loadMoliya()
+            loadTransactions()
         } catch (error) {
-            console.error('Error saving finance:', error)
-            alert('Xatolik yuz berdi!')
+            console.error('Error adding transaction:', error)
+            alert('Xatolik!')
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return
-
+        if (!confirm('O\'chirishni tasdiqlaysizmi?')) return
         try {
-            const { error } = await supabase
-                .from('moliya')
-                .delete()
-                .eq('id', id)
-
+            const { error } = await supabase.from('transactions').delete().eq('id', id)
             if (error) throw error
-            loadMoliya()
+            loadTransactions()
         } catch (error) {
-            console.error('Error deleting finance:', error)
-            alert('O\'chirishda xatolik!')
+            console.error('Error deleting:', error)
         }
     }
 
-    function handleEdit(item) {
-        setForm({
-            tur: item.tur,
-            summa: item.summa.toString(),
-            sana: item.sana,
-            izoh: item.izoh || ''
-        })
-        setEditId(item.id)
-        setIsAdding(true)
-    }
+    const filteredTransactions = transactions.filter(t => filterType === 'all' || t.type === filterType)
 
-    function handleCancel() {
-        setForm({ tur: 'Kirim', summa: '', sana: new Date().toISOString().split('T')[0], izoh: '' })
-        setEditId(null)
-        setIsAdding(false)
-    }
+    const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0)
+    const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
+    const balance = totalIncome - totalExpense
 
-    const filteredMoliya = moliya.filter(m => {
-        const matchesSearch = m.izoh?.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesTur = filterTur === 'Hammasi' || m.tur === filterTur
-        const inDateRange = (!dateRange.start || m.sana >= dateRange.start) &&
-            (!dateRange.end || m.sana <= dateRange.end)
-        return matchesSearch && matchesTur && inDateRange
-    })
-
-    const totalKirim = filteredMoliya.filter(m => m.tur === 'Kirim').reduce((sum, m) => sum + (m.summa || 0), 0)
-    const totalChiqim = filteredMoliya.filter(m => m.tur === 'Chiqim').reduce((sum, m) => sum + (m.summa || 0), 0)
-    const foyda = totalKirim - totalChiqim
-
-    const pieData = [
-        { name: 'Kirim', value: totalKirim, color: '#10b981' },
-        { name: 'Chiqim', value: totalChiqim, color: '#ef4444' }
+    const chartData = [
+        { name: 'Kirim', value: totalIncome, color: '#10b981' },
+        { name: 'Chiqim', value: totalExpense, color: '#ef4444' }
     ]
 
-    // Monthly chart data
-    const monthlyData = {}
-    filteredMoliya.forEach(item => {
-        const month = item.sana.substring(0, 7) // YYYY-MM
-        if (!monthlyData[month]) {
-            monthlyData[month] = { month, kirim: 0, chiqim: 0 }
-        }
-        if (item.tur === 'Kirim') {
-            monthlyData[month].kirim += item.summa
-        } else {
-            monthlyData[month].chiqim += item.summa
-        }
-    })
-    const chartData = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month))
-
     if (loading) {
-        return (
-            <div className="p-8">
-                <div className="flex items-center justify-center h-screen">
-                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
-                </div>
-            </div>
-        )
+        return <div className="p-8 text-center">Yuklanmoqda...</div>
     }
 
     return (
         <div>
-            <Header title="Moliya" toggleSidebar={toggleSidebar} />
+            <Header title="Moliya (Finance)" toggleSidebar={toggleSidebar} />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-xl shadow-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                        <TrendingUp size={20} />
-                        <p className="text-sm opacity-80">Jami Kirim</p>
-                    </div>
-                    <p className="text-3xl font-bold">{(totalKirim / 1000000).toFixed(2)}M</p>
-                    <p className="text-sm opacity-80 mt-1">{totalKirim.toLocaleString()} so'm</p>
-                </div>
-
-                <div className="bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-xl shadow-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                        <TrendingDown size={20} />
-                        <p className="text-sm opacity-80">Jami Chiqim</p>
-                    </div>
-                    <p className="text-3xl font-bold">{(totalChiqim / 1000000).toFixed(2)}M</p>
-                    <p className="text-sm opacity-80 mt-1">{totalChiqim.toLocaleString()} so'm</p>
-                </div>
-
-                <div className={`${foyda >= 0 ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-orange-500 to-orange-600'} text-white p-6 rounded-xl shadow-lg`}>
-                    <div className="flex items-center gap-2 mb-2">
-                        {foyda >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-                        <p className="text-sm opacity-80">Foyda / Zarar</p>
-                    </div>
-                    <p className="text-3xl font-bold">{(foyda / 1000000).toFixed(2)}M</p>
-                    <p className="text-sm opacity-80 mt-1">{foyda.toLocaleString()} so'm</p>
-                </div>
-
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-xl shadow-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Calendar size={20} />
-                        <p className="text-sm opacity-80">Tranzaksiyalar</p>
-                    </div>
-                    <p className="text-3xl font-bold">{filteredMoliya.length}</p>
-                    <p className="text-sm opacity-80 mt-1">Tanlangan davr</p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 className="text-lg font-semibold mb-4">Kirim/Chiqim Nisbati</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie
-                                data={pieData}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={(entry) => `${entry.name}: ${(entry.value / 1000000).toFixed(1)}M`}
-                                outerRadius={100}
-                                fill="#8884d8"
-                                dataKey="value"
-                            >
-                                {pieData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                        </PieChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm">
-                    <h3 className="text-lg font-semibold mb-4">Oylik Statistika</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="month" />
-                            <YAxis />
-                            <Tooltip />
-                            <Legend />
-                            <Bar dataKey="kirim" fill="#10b981" name="Kirim" />
-                            <Bar dataKey="chiqim" fill="#ef4444" name="Chiqim" />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            <div className="mb-6 flex flex-col xl:flex-row gap-4 items-start xl:items-center">
-                <div className="relative w-full xl:max-w-md">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                    <input
-                        type="text"
-                        placeholder="Izoh bo'yicha qidirish..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-
-                <select
-                    value={filterTur}
-                    onChange={(e) => setFilterTur(e.target.value)}
-                    className="border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                    <option>Hammasi</option>
-                    <option>Kirim</option>
-                    <option>Chiqim</option>
-                </select>
-
-                <input
-                    type="date"
-                    value={dateRange.start}
-                    onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                    className="border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="text-gray-500">-</span>
-                <input
-                    type="date"
-                    value={dateRange.end}
-                    onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                    className="border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-
-                <button
-                    onClick={() => setIsAdding(!isAdding)}
-                    className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
-                >
-                    {isAdding ? <X size={20} /> : <Plus size={20} />}
-                    {isAdding ? 'Bekor qilish' : 'Yangi yozuv'}
-                </button>
-            </div>
-
-            {isAdding && (
-                <div className="bg-white p-6 rounded-xl shadow-sm mb-6 fade-in">
-                    <h3 className="text-lg font-semibold mb-4">
-                        {editId ? 'Yozuvni tahrirlash' : 'Yangi moliyaviy yozuv'}
-                    </h3>
-                    <form onSubmit={handleSubmit}>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <select
-                                value={form.tur}
-                                onChange={(e) => setForm({ ...form, tur: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                            >
-                                <option>Kirim</option>
-                                <option>Chiqim</option>
-                            </select>
-                            <input
-                                type="number"
-                                placeholder="Summa (so'm) *"
-                                value={form.summa}
-                                onChange={(e) => setForm({ ...form, summa: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                                required
-                                min="0"
-                            />
-                            <input
-                                type="date"
-                                value={form.sana}
-                                onChange={(e) => setForm({ ...form, sana: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                                required
-                            />
-                            <input
-                                type="text"
-                                placeholder="Izoh"
-                                value={form.izoh}
-                                onChange={(e) => setForm({ ...form, izoh: e.target.value })}
-                                className="border border-gray-300 p-3 rounded-lg"
-                            />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-500 text-sm font-medium">Joriy Balans</p>
+                            <h3 className="text-2xl font-bold mt-1 text-gray-800">{balance.toLocaleString()} so'm</h3>
                         </div>
-                        <div className="flex gap-3">
+                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                            <Wallet size={24} />
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-500 text-sm font-medium">Jami Kirim</p>
+                            <h3 className="text-2xl font-bold mt-1 text-green-600">+{totalIncome.toLocaleString()}</h3>
+                        </div>
+                        <div className="p-2 bg-green-50 text-green-600 rounded-lg">
+                            <ArrowUpCircle size={24} />
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-red-500">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-gray-500 text-sm font-medium">Jami Chiqim</p>
+                            <h3 className="text-2xl font-bold mt-1 text-red-600">-{totalExpense.toLocaleString()}</h3>
+                        </div>
+                        <div className="p-2 bg-red-50 text-red-600 rounded-lg">
+                            <ArrowDownCircle size={24} />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-semibold text-gray-800">So'nggi O'tkazmalar</h3>
+                        <div className="flex gap-2">
                             <button
-                                type="submit"
-                                className="flex items-center gap-2 bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition"
-                            >
-                                <Save size={20} />
-                                Saqlash
-                            </button>
+                                onClick={() => setFilterType('all')}
+                                className={`px-3 py-1 rounded-lg text-sm ${filterType === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600'}`}
+                            >Barchasi</button>
+                            <button
+                                onClick={() => setFilterType('income')}
+                                className={`px-3 py-1 rounded-lg text-sm ${filterType === 'income' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+                            >Kirim</button>
+                            <button
+                                onClick={() => setFilterType('expense')}
+                                className={`px-3 py-1 rounded-lg text-sm ${filterType === 'expense' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
+                            >Chiqim</button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                        {filteredTransactions.map(t => (
+                            <div key={t.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition">
+                                <div className="flex gap-4 items-center">
+                                    <div className={`p-2 rounded-full ${t.type === 'income' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                        {t.type === 'income' ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-800">{t.description}</p>
+                                        <div className="flex gap-2 text-xs text-gray-500">
+                                            <span>{new Date(t.date).toLocaleDateString()}</span>
+                                            {t.category && <span>• {t.category}</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className={`font-bold ${t.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                                        {t.type === 'income' ? '+' : '-'}{t.amount.toLocaleString()}
+                                    </p>
+                                    <button onClick={() => handleDelete(t.id)} className="text-xs text-gray-400 hover:text-red-500 mt-1">O'chirish</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-xl shadow-sm">
+                    <h3 className="font-semibold text-gray-800 mb-6">Yangi O'tkazma</h3>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-2 p-1 bg-gray-100 rounded-lg">
                             <button
                                 type="button"
-                                onClick={handleCancel}
-                                className="flex items-center gap-2 bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition"
-                            >
-                                <X size={20} />
-                                Bekor qilish
-                            </button>
+                                onClick={() => setType('income')}
+                                className={`py-2 rounded-md text-sm font-medium transition ${type === 'income' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}
+                            >Kirim</button>
+                            <button
+                                type="button"
+                                onClick={() => setType('expense')}
+                                className={`py-2 rounded-md text-sm font-medium transition ${type === 'expense' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500'}`}
+                            >Chiqim</button>
                         </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Summa</label>
+                            <input
+                                type="number"
+                                value={amount}
+                                onChange={e => setAmount(e.target.value)}
+                                className="w-full p-2 border rounded-lg"
+                                placeholder="0"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Sana</label>
+                            <input
+                                type="date"
+                                value={date}
+                                onChange={e => setDate(e.target.value)}
+                                className="w-full p-2 border rounded-lg"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Kategoriya</label>
+                            <input
+                                type="text"
+                                value={category}
+                                onChange={e => setCategory(e.target.value)}
+                                className="w-full p-2 border rounded-lg"
+                                placeholder="Masalan: Oylik, Savdo, Ijara"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Izoh</label>
+                            <textarea
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                className="w-full p-2 border rounded-lg"
+                                rows="3"
+                                placeholder="Batafsil ma'lumot..."
+                                required
+                            ></textarea>
+                        </div>
+
+                        <button
+                            type="submit"
+                            className={`w-full py-2 rounded-lg text-white font-medium transition ${type === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                        >
+                            Saqlash
+                        </button>
                     </form>
                 </div>
-            )}
-
-            <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-                {filteredMoliya.length === 0 ? (
-                    <div className="text-center py-12">
-                        <p className="text-gray-500">Moliyaviy yozuvlar topilmadi</p>
-                    </div>
-                ) : (
-                    <table className="w-full">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-4 text-left">Tur</th>
-                                <th className="px-6 py-4 text-left">Summa</th>
-                                <th className="px-6 py-4 text-left">Sana</th>
-                                <th className="px-6 py-4 text-left">Izoh</th>
-                                <th className="px-6 py-4 text-left">Amallar</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredMoliya.map((item) => (
-                                <tr key={item.id} className="border-t hover:bg-gray-50 transition">
-                                    <td className="px-6 py-4">
-                                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${item.tur === 'Kirim' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                            }`}>
-                                            {item.tur === 'Kirim' ? '↑' : '↓'} {item.tur}
-                                        </span>
-                                    </td>
-                                    <td className={`px-6 py-4 font-bold ${item.tur === 'Kirim' ? 'text-green-600' : 'text-red-600'
-                                        }`}>
-                                        {item.summa?.toLocaleString()} so'm
-                                    </td>
-                                    <td className="px-6 py-4">{item.sana}</td>
-                                    <td className="px-6 py-4 text-gray-600">{item.izoh || '-'}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => handleEdit(item)}
-                                                className="text-blue-600 hover:text-blue-800 p-2 hover:bg-blue-50 rounded transition"
-                                            >
-                                                <Edit size={18} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(item.id)}
-                                                className="text-red-600 hover:text-red-800 p-2 hover:bg-red-50 rounded transition"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
             </div>
         </div>
     )

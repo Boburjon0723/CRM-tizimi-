@@ -8,33 +8,33 @@ import { useLayout } from '@/context/LayoutContext'
 
 export default function Xodimlar() {
     const { toggleSidebar } = useLayout()
-    const [xodimlar, setXodimlar] = useState([])
+    const [employees, setEmployees] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
     const [editId, setEditId] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [form, setForm] = useState({
-        ism: '',
-        lavozim: '',
-        maosh: '',
+        name: '',
+        position: '',
+        salary: '',
         bonus: '0',
-        ishlagan: '0',
-        damolgan: '0'
+        worked_days: '0',
+        rest_days: '0'
     })
 
     useEffect(() => {
-        loadXodimlar()
+        loadEmployees()
     }, [])
 
-    async function loadXodimlar() {
+    async function loadEmployees() {
         try {
             const { data, error } = await supabase
-                .from('xodimlar')
+                .from('employees')
                 .select('*')
                 .order('created_at', { ascending: false })
 
             if (error) throw error
-            setXodimlar(data || [])
+            setEmployees(data || [])
         } catch (error) {
             console.error('Error loading employees:', error)
         } finally {
@@ -44,24 +44,24 @@ export default function Xodimlar() {
 
     async function handleSubmit(e) {
         e.preventDefault()
-        if (!form.ism || !form.lavozim || !form.maosh) {
+        if (!form.name || !form.position || !form.salary) {
             alert('Ism, lavozim va maosh majburiy!')
             return
         }
 
         try {
             const employeeData = {
-                ism: form.ism,
-                lavozim: form.lavozim,
-                maosh: parseInt(form.maosh),
-                bonus: parseInt(form.bonus) || 0,
-                ishlagan: parseInt(form.ishlagan) || 0,
-                damolgan: parseInt(form.damolgan) || 0
+                name: form.name,
+                position: form.position,
+                salary: parseFloat(form.salary),
+                bonus: parseFloat(form.bonus) || 0,
+                worked_days: parseInt(form.worked_days) || 0,
+                rest_days: parseInt(form.rest_days) || 0
             }
 
             if (editId) {
                 const { error } = await supabase
-                    .from('xodimlar')
+                    .from('employees')
                     .update(employeeData)
                     .eq('id', editId)
 
@@ -69,15 +69,15 @@ export default function Xodimlar() {
                 setEditId(null)
             } else {
                 const { error } = await supabase
-                    .from('xodimlar')
+                    .from('employees')
                     .insert([employeeData])
 
                 if (error) throw error
             }
 
-            setForm({ ism: '', lavozim: '', maosh: '', bonus: '0', ishlagan: '0', damolgan: '0' })
+            setForm({ name: '', position: '', salary: '', bonus: '0', worked_days: '0', rest_days: '0' })
             setIsAdding(false)
-            loadXodimlar()
+            loadEmployees()
         } catch (error) {
             console.error('Error saving employee:', error)
             alert('Xatolik yuz berdi!')
@@ -89,12 +89,12 @@ export default function Xodimlar() {
 
         try {
             const { error } = await supabase
-                .from('xodimlar')
+                .from('employees')
                 .delete()
                 .eq('id', id)
 
             if (error) throw error
-            loadXodimlar()
+            loadEmployees()
         } catch (error) {
             console.error('Error deleting employee:', error)
             alert('O\'chirishda xatolik!')
@@ -103,31 +103,31 @@ export default function Xodimlar() {
 
     function handleEdit(item) {
         setForm({
-            ism: item.ism,
-            lavozim: item.lavozim,
-            maosh: item.maosh.toString(),
-            bonus: item.bonus.toString(),
-            ishlagan: item.ishlagan.toString(),
-            damolgan: item.damolgan.toString()
+            name: item.name,
+            position: item.position,
+            salary: item.salary.toString(),
+            bonus: item.bonus?.toString() || '0',
+            worked_days: item.worked_days?.toString() || '0',
+            rest_days: item.rest_days?.toString() || '0'
         })
         setEditId(item.id)
         setIsAdding(true)
     }
 
     function handleCancel() {
-        setForm({ ism: '', lavozim: '', maosh: '', bonus: '0', ishlagan: '0', damolgan: '0' })
+        setForm({ name: '', position: '', salary: '', bonus: '0', worked_days: '0', rest_days: '0' })
         setEditId(null)
         setIsAdding(false)
     }
 
-    const filteredXodimlar = xodimlar.filter(x =>
-        x.ism?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        x.lavozim?.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredEmployees = employees.filter(x =>
+        x.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        x.position?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
-    const totalMaosh = xodimlar.reduce((sum, x) => sum + (x.maosh || 0), 0)
-    const totalBonus = xodimlar.reduce((sum, x) => sum + (x.bonus || 0), 0)
-    const totalPayout = totalMaosh + totalBonus
+    const totalSalary = employees.reduce((sum, x) => sum + (x.salary || 0), 0)
+    const totalBonus = employees.reduce((sum, x) => sum + (x.bonus || 0), 0)
+    const totalPayout = totalSalary + totalBonus
 
     if (loading) {
         return (
@@ -141,16 +141,16 @@ export default function Xodimlar() {
 
     return (
         <div>
-            <Header title="Xodimlar" toggleSidebar={toggleSidebar} />
+            <Header title="Xodimlar (Employees)" toggleSidebar={toggleSidebar} />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                 <div className="bg-blue-500 text-white p-6 rounded-xl shadow-lg">
                     <p className="text-sm opacity-80">Jami Xodimlar</p>
-                    <p className="text-3xl font-bold mt-2">{xodimlar.length}</p>
+                    <p className="text-3xl font-bold mt-2">{employees.length}</p>
                 </div>
                 <div className="bg-green-500 text-white p-6 rounded-xl shadow-lg">
                     <p className="text-sm opacity-80">Jami Maoshlar</p>
-                    <p className="text-3xl font-bold mt-2">{(totalMaosh / 1000000).toFixed(1)}M</p>
+                    <p className="text-3xl font-bold mt-2">{(totalSalary / 1000000).toFixed(1)}M</p>
                 </div>
                 <div className="bg-purple-500 text-white p-6 rounded-xl shadow-lg">
                     <p className="text-sm opacity-80">Jami To'lovlar</p>
@@ -189,24 +189,24 @@ export default function Xodimlar() {
                             <input
                                 type="text"
                                 placeholder="Ism Familiya *"
-                                value={form.ism}
-                                onChange={(e) => setForm({ ...form, ism: e.target.value })}
+                                value={form.name}
+                                onChange={(e) => setForm({ ...form, name: e.target.value })}
                                 className="border border-gray-300 p-3 rounded-lg"
                                 required
                             />
                             <input
                                 type="text"
                                 placeholder="Lavozim *"
-                                value={form.lavozim}
-                                onChange={(e) => setForm({ ...form, lavozim: e.target.value })}
+                                value={form.position}
+                                onChange={(e) => setForm({ ...form, position: e.target.value })}
                                 className="border border-gray-300 p-3 rounded-lg"
                                 required
                             />
                             <input
                                 type="number"
                                 placeholder="Maosh (so'm) *"
-                                value={form.maosh}
-                                onChange={(e) => setForm({ ...form, maosh: e.target.value })}
+                                value={form.salary}
+                                onChange={(e) => setForm({ ...form, salary: e.target.value })}
                                 className="border border-gray-300 p-3 rounded-lg"
                                 required
                                 min="0"
@@ -222,8 +222,8 @@ export default function Xodimlar() {
                             <input
                                 type="number"
                                 placeholder="Ishlagan kunlar"
-                                value={form.ishlagan}
-                                onChange={(e) => setForm({ ...form, ishlagan: e.target.value })}
+                                value={form.worked_days}
+                                onChange={(e) => setForm({ ...form, worked_days: e.target.value })}
                                 className="border border-gray-300 p-3 rounded-lg"
                                 min="0"
                                 max="31"
@@ -231,8 +231,8 @@ export default function Xodimlar() {
                             <input
                                 type="number"
                                 placeholder="Dam olgan kunlar"
-                                value={form.damolgan}
-                                onChange={(e) => setForm({ ...form, damolgan: e.target.value })}
+                                value={form.rest_days}
+                                onChange={(e) => setForm({ ...form, rest_days: e.target.value })}
                                 className="border border-gray-300 p-3 rounded-lg"
                                 min="0"
                                 max="31"
@@ -260,7 +260,7 @@ export default function Xodimlar() {
             )}
 
             <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-                {filteredXodimlar.length === 0 ? (
+                {filteredEmployees.length === 0 ? (
                     <div className="text-center py-12">
                         <p className="text-gray-500">Xodimlar topilmadi</p>
                     </div>
@@ -278,24 +278,24 @@ export default function Xodimlar() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredXodimlar.map((xodim) => {
-                                const totalPayment = (xodim.maosh || 0) + (xodim.bonus || 0)
+                            {filteredEmployees.map((xodim) => {
+                                const totalPayment = (xodim.salary || 0) + (xodim.bonus || 0)
                                 return (
                                     <tr key={xodim.id} className="border-t hover:bg-gray-50 transition">
-                                        <td className="px-6 py-4 font-medium">{xodim.ism}</td>
+                                        <td className="px-6 py-4 font-medium">{xodim.name}</td>
                                         <td className="px-6 py-4">
                                             <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                                                {xodim.lavozim}
+                                                {xodim.position}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4">{xodim.maosh?.toLocaleString()} so'm</td>
+                                        <td className="px-6 py-4">{xodim.salary?.toLocaleString()} so'm</td>
                                         <td className="px-6 py-4">{xodim.bonus?.toLocaleString()} so'm</td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-2">
                                                 <Calendar size={16} className="text-gray-400" />
-                                                <span className="text-green-600 font-medium">{xodim.ishlagan}</span>
+                                                <span className="text-green-600 font-medium">{xodim.worked_days}</span>
                                                 <span className="text-gray-400">/</span>
-                                                <span className="text-red-600 font-medium">{xodim.damolgan}</span>
+                                                <span className="text-red-600 font-medium">{xodim.rest_days}</span>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 font-bold text-green-600">

@@ -8,10 +8,10 @@ import { useLayout } from '@/context/LayoutContext'
 
 export default function Ombor() {
     const { toggleSidebar } = useLayout()
-    const [mahsulotlar, setMahsulotlar] = useState([])
+    const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
-    const [filterKategoriya, setFilterKategoriya] = useState('Hammasi')
+    const [filterCategory, setFilterCategory] = useState('Hammasi')
 
     useEffect(() => {
         loadData()
@@ -21,12 +21,12 @@ export default function Ombor() {
         try {
             setLoading(true)
             const { data, error } = await supabase
-                .from('mahsulotlar')
+                .from('products')
                 .select('*')
-                .order('nomi', { ascending: true })
+                .order('name', { ascending: true })
 
             if (error) throw error
-            setMahsulotlar(data || [])
+            setProducts(data || [])
         } catch (error) {
             console.error('Error loading inventory:', error)
         } finally {
@@ -34,34 +34,34 @@ export default function Ombor() {
         }
     }
 
-    async function updateStock(id, currentMiqdor, change) {
-        const newMiqdor = Math.max(0, currentMiqdor + change)
+    async function updateStock(id, currentStock, change) {
+        const newStock = Math.max(0, currentStock + change)
         try {
             const { error } = await supabase
-                .from('mahsulotlar')
-                .update({ miqdor: newMiqdor })
+                .from('products')
+                .update({ stock: newStock })
                 .eq('id', id)
 
             if (error) throw error
             // Update local state for immediate feedback
-            setMahsulotlar(prev => prev.map(m => m.id === id ? { ...m, miqdor: newMiqdor } : m))
+            setProducts(prev => prev.map(m => m.id === id ? { ...m, stock: newStock } : m))
         } catch (error) {
             console.error('Error updating stock:', error)
             alert('Xatolik yuz berdi!')
         }
     }
 
-    const kategoriyalar = ['Hammasi', ...new Set(mahsulotlar.map(m => m.kategoriya).filter(Boolean))]
+    const categories = ['Hammasi', ...new Set(products.map(m => m.category).filter(Boolean))]
 
-    const filteredInventory = mahsulotlar.filter(m => {
-        const matchesSearch = m.nomi?.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesCategory = filterKategoriya === 'Hammasi' || m.kategoriya === filterKategoriya
+    const filteredInventory = products.filter(m => {
+        const matchesSearch = m.name?.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchesCategory = filterCategory === 'Hammasi' || m.category === filterCategory
         return matchesSearch && matchesCategory
     })
 
-    const lowStockItems = mahsulotlar.filter(m => (m.miqdor || 0) < 10)
-    const outOfStockItems = mahsulotlar.filter(m => (m.miqdor || 0) === 0)
-    const totalInventoryValue = mahsulotlar.reduce((sum, m) => sum + ((m.miqdor || 0) * (m.narx || 0)), 0)
+    const lowStockItems = products.filter(m => (m.stock || 0) < 10)
+    const outOfStockItems = products.filter(m => (m.stock || 0) === 0)
+    const totalInventoryValue = products.reduce((sum, m) => sum + ((m.stock || 0) * (m.price || 0)), 0)
 
     if (loading) {
         return (
@@ -75,12 +75,12 @@ export default function Ombor() {
 
     return (
         <div>
-            <Header title="Ombor Boshqaruvi" toggleSidebar={toggleSidebar} />
+            <Header title="Ombor Boshqaruvi (Warehouse)" toggleSidebar={toggleSidebar} />
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
                     <p className="text-sm text-gray-500">Jami Mahsulotlar</p>
-                    <p className="text-2xl font-bold mt-1">{mahsulotlar.length} tur</p>
+                    <p className="text-2xl font-bold mt-1">{products.length} tur</p>
                 </div>
                 <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-yellow-500">
                     <div className="flex justify-between items-start">
@@ -121,11 +121,11 @@ export default function Ombor() {
                 <div className="flex items-center gap-2">
                     <Filter size={20} className="text-gray-500" />
                     <select
-                        value={filterKategoriya}
-                        onChange={(e) => setFilterKategoriya(e.target.value)}
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
                         className="border border-gray-300 px-4 py-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
                     >
-                        {kategoriyalar.map(cat => (
+                        {categories.map(cat => (
                             <option key={cat} value={cat}>{cat}</option>
                         ))}
                     </select>
@@ -158,29 +158,29 @@ export default function Ombor() {
                                 <tr key={item.id} className="hover:bg-gray-50 transition">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            {item.rasm_url ? (
-                                                <img src={item.rasm_url} alt={item.nomi} className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
+                                            {item.image_url ? (
+                                                <img src={item.image_url} alt={item.name} className="w-10 h-10 rounded-lg object-cover bg-gray-100" />
                                             ) : (
                                                 <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">
                                                     <Package size={20} />
                                                 </div>
                                             )}
-                                            <span className="font-medium text-gray-800">{item.nomi}</span>
+                                            <span className="font-medium text-gray-800">{item.name}</span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 text-gray-600">{item.kategoriya || '-'}</td>
+                                    <td className="px-6 py-4 text-gray-600">{item.category || '-'}</td>
                                     <td className="px-6 py-4">
-                                        <span className={`font-bold ${item.miqdor < 10 ? 'text-red-600 scale-110' : 'text-gray-800'}`}>
-                                            {item.miqdor}
+                                        <span className={`font-bold ${item.stock < 10 ? 'text-red-600 scale-110' : 'text-gray-800'}`}>
+                                            {item.stock}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-gray-600">
-                                        {item.narx?.toLocaleString()} so'm
+                                        {item.price?.toLocaleString()} so'm
                                     </td>
                                     <td className="px-6 py-4">
-                                        {item.miqdor === 0 ? (
+                                        {item.stock === 0 ? (
                                             <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-bold rounded-full">Tugagan</span>
-                                        ) : item.miqdor < 10 ? (
+                                        ) : item.stock < 10 ? (
                                             <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded-full">Kam qolgan</span>
                                         ) : (
                                             <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">Yetarli</span>
@@ -189,14 +189,14 @@ export default function Ombor() {
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2">
                                             <button
-                                                onClick={() => updateStock(item.id, item.miqdor, -1)}
+                                                onClick={() => updateStock(item.id, item.stock, -1)}
                                                 className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition"
                                                 title="Sotildi / Chiqim"
                                             >
                                                 <Minus size={18} />
                                             </button>
                                             <button
-                                                onClick={() => updateStock(item.id, item.miqdor, 1)}
+                                                onClick={() => updateStock(item.id, item.stock, 1)}
                                                 className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition"
                                                 title="Kirdi / Kirib keldi"
                                             >
@@ -227,7 +227,7 @@ export default function Ombor() {
                     <div className="flex flex-wrap gap-2">
                         {lowStockItems.map(item => (
                             <span key={item.id} className="bg-white px-3 py-1 rounded-full text-sm border border-yellow-200 text-yellow-700">
-                                {item.nomi} ({item.miqdor} ta)
+                                {item.name} ({item.stock} ta)
                             </span>
                         ))}
                     </div>

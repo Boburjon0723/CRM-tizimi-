@@ -42,10 +42,23 @@ export default function StatistikaPage() {
     async function loadData() {
         try {
             setLoading(true)
+            // Load Orders with items for category analysis
+            const ordersPromise = supabase.from('orders').select(`
+                *,
+                order_items (
+                    quantity,
+                    price,
+                    products (name, category)
+                )
+            `)
+
+            const transPromise = supabase.from('transactions').select('*')
+            const productsPromise = supabase.from('products').select('*')
+
             const [ordersRes, financeRes, productsRes] = await Promise.all([
-                supabase.from('buyurtmalar').select('*'),
-                supabase.from('moliya').select('*'),
-                supabase.from('mahsulotlar').select('*')
+                ordersPromise,
+                transPromise,
+                productsPromise
             ])
 
             setData({
@@ -65,43 +78,63 @@ export default function StatistikaPage() {
     const startDate = new Date()
     startDate.setDate(now.getDate() - parseInt(filterRange))
 
-    const filteredOrders = data.orders.filter(o => new Date(o.sana) >= startDate)
-    const filteredFinance = data.finance.filter(f => new Date(f.sana) >= startDate)
+    const filteredOrders = data.orders.filter(o => new Date(o.created_at) >= startDate)
+    const filteredFinance = data.finance.filter(f => new Date(f.date) >= startDate)
 
     // 1. Sales Trend (by day)
     const salesTrend = {}
     filteredOrders.forEach(o => {
-        const day = o.sana
-        salesTrend[day] = (salesTrend[day] || 0) + (o.summa || 0)
+        const day = new Date(o.created_at).toLocaleDateString('en-CA') // YYYY-MM-DD
+        salesTrend[day] = (salesTrend[day] || 0) + (o.total_amount || 0)
     })
     const salesChartData = Object.entries(salesTrend)
         .map(([date, amount]) => ({ date, amount }))
         .sort((a, b) => a.date.localeCompare(b.date))
 
-    // 2. Kirim vs Chiqim
+    // 2. Income vs Expense
     const financeTrend = {}
     filteredFinance.forEach(f => {
-        const day = f.sana
-        if (!financeTrend[day]) financeTrend[day] = { date: day, kirim: 0, chiqim: 0 }
-        if (f.tur === 'Kirim') financeTrend[day].kirim += (f.summa || 0)
-        else financeTrend[day].chiqim += (f.summa || 0)
+        const day = f.date
+        if (!financeTrend[day]) financeTrend[day] = { date: day, income: 0, expense: 0 }
+        if (f.type === 'income') financeTrend[day].income += (f.amount || 0)
+        else financeTrend[day].expense += (f.amount || 0)
     })
     const financeChartData = Object.values(financeTrend).sort((a, b) => a.date.localeCompare(b.date))
 
     // 3. Category distribution
+    // We need to iterate over orders -> order_items -> products.category
     const catSales = {}
-    data.orders.forEach(o => {
-        const product = data.products.find(p => p.nomi === o.mahsulot)
-        const cat = product?.kategoriya || 'Boshqa'
-        catSales[cat] = (catSales[cat] || 0) + (o.summa || 0)
+    filteredOrders.forEach(o => {
+        if (o.order_items) {
+            o.order_items.forEach(item => {
+                const cat = item.products?.category || 'Boshqa'
+                const amount = (item.price || 0) * (item.quantity || 1)
+                catSales[cat] = (catSales[cat] || 0) + amount
+            })
+        }
     })
     const categoryData = Object.entries(catSales).map(([name, value]) => ({ name, value }))
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.summa || 0), 0)
-    const totalKirim = filteredFinance.filter(f => f.tur === 'Kirim').reduce((sum, f) => sum + (f.summa || 0), 0)
-    const totalChiqim = filteredFinance.filter(f => f.tur === 'Chiqim').reduce((sum, f) => sum + (f.summa || 0), 0)
+    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.total_amount || 0), 0)
+    const totalIncome = filteredFinance.filter(f => f.type === 'income').reduce((sum, f) => sum + (f.amount || 0), 0)
+    const totalExpense = filteredFinance.filter(f => f.type === 'expense').reduce((sum, f) => sum + (f.amount || 0), 0)
+
+    // Top Selling Products
+    const productSales = {}
+    filteredOrders.forEach(o => {
+        if (o.order_items) {
+            o.order_items.forEach(item => {
+                const name = item.products?.name || 'Noma\'lum'
+                productSales[name] = (productSales[name] || 0) + ((item.price || 0) * (item.quantity || 1))
+            })
+        }
+    })
+    const topProducts = Object.entries(productSales)
+        .map(([name, total]) => ({ name, total }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 6)
 
     if (loading) {
         return (
@@ -155,7 +188,7 @@ export default function StatistikaPage() {
                         </div>
                         <div>
                             <p className="text-sm text-gray-500">Umumiy Kirim</p>
-                            <p className="text-2xl font-bold">{(totalKirim / 1000000).toFixed(1)}M so'm</p>
+                            <p className="text-2xl font-bold">{(totalIncome / 1000000).toFixed(1)}M</p>
                         </div>
                     </div>
                 </div>
@@ -166,7 +199,7 @@ export default function StatistikaPage() {
                         </div>
                         <div>
                             <p className="text-sm text-gray-500">Umumiy Chiqim</p>
-                            <p className="text-2xl font-bold">{(totalChiqim / 1000000).toFixed(1)}M so'm</p>
+                            <p className="text-2xl font-bold">{(totalExpense / 1000000).toFixed(1)}M</p>
                         </div>
                     </div>
                 </div>
@@ -207,8 +240,8 @@ export default function StatistikaPage() {
                                 <YAxis hide />
                                 <Tooltip />
                                 <Legend />
-                                <Bar dataKey="kirim" fill="#10b981" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="chiqim" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="income" name="Kirim" fill="#10b981" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="expense" name="Chiqim" fill="#ef4444" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
@@ -242,15 +275,15 @@ export default function StatistikaPage() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h3 className="text-lg font-semibold mb-4">Top Sotilayotgan Mahsulotlar</h3>
                     <div className="space-y-4">
-                        {data.orders.slice(0, 6).map((order, idx) => (
+                        {topProducts.map((prod, idx) => (
                             <div key={idx} className="flex justify-between items-center">
                                 <div className="flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
                                         {idx + 1}
                                     </div>
-                                    <span className="text-sm font-medium text-gray-700">{order.mahsulot}</span>
+                                    <span className="text-sm font-medium text-gray-700">{prod.name}</span>
                                 </div>
-                                <span className="text-sm font-bold text-blue-600">{order.summa?.toLocaleString()} so'm</span>
+                                <span className="text-sm font-bold text-blue-600">{prod.total?.toLocaleString()} so'm</span>
                             </div>
                         ))}
                     </div>
@@ -259,4 +292,3 @@ export default function StatistikaPage() {
         </div>
     )
 }
-
