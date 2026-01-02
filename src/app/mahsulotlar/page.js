@@ -9,6 +9,7 @@ import { useLayout } from '@/context/LayoutContext'
 export default function Mahsulotlar() {
     const { toggleSidebar } = useLayout()
     const [products, setProducts] = useState([])
+    const [categories, setCategories] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
     const [editId, setEditId] = useState(null)
@@ -18,15 +19,35 @@ export default function Mahsulotlar() {
         name: '',
         stock: '', // miqdor
         sale_price: '', // narx
-        category: '',
+        purchase_price: '', // tannarx
+        category_id: '',
         image_url: '',
         description: '', // tavsif
+        min_stock: '10', // kam qolganda ogohlantirish
         is_active: true // web_active
     })
 
-    useEffect(() => {
-        loadProducts()
-    }, [])
+    async function loadData() {
+        try {
+            setLoading(true)
+            // Load Categories
+            const { data: catData } = await supabase.from('categories').select('*').order('name')
+            setCategories(catData || [])
+
+            // Load Products
+            const { data, error } = await supabase
+                .from('products')
+                .select('*, categories(name)')
+                .order('created_at', { ascending: false })
+
+            if (error) throw error
+            setProducts(data || [])
+        } catch (error) {
+            console.error('Error loading data:', error)
+        } finally {
+            setLoading(false)
+        }
+    }
 
     async function handleImageUpload(e) {
         const file = e.target.files[0]
@@ -38,7 +59,7 @@ export default function Mahsulotlar() {
             const fileName = `${Math.random()}.${fileExt}`
             const filePath = `${fileName}`
 
-            // Ensure bucket exists in Supabase Storage or replace 'products' with your actual bucket name
+            // Use 'products' bucket as per TechGear schema
             const { error: uploadError } = await supabase.storage
                 .from('products')
                 .upload(filePath, file)
@@ -58,22 +79,6 @@ export default function Mahsulotlar() {
         }
     }
 
-    async function loadProducts() {
-        try {
-            const { data, error } = await supabase
-                .from('products')
-                .select('*')
-                .order('created_at', { ascending: false })
-
-            if (error) throw error
-            setProducts(data || [])
-        } catch (error) {
-            console.error('Error loading products:', error)
-        } finally {
-            setLoading(false)
-        }
-    }
-
     async function handleSubmit(e) {
         e.preventDefault()
         if (!form.name || !form.sale_price) {
@@ -84,11 +89,13 @@ export default function Mahsulotlar() {
         try {
             const productData = {
                 name: form.name,
-                stock: parseInt(form.stock) || 0,
-                sale_price: parseInt(form.sale_price) || 0,
-                category: form.category,
+                stock: parseFloat(form.stock) || 0,
+                sale_price: parseFloat(form.sale_price) || 0,
+                purchase_price: parseFloat(form.purchase_price) || 0,
+                category_id: form.category_id || null,
                 image_url: form.image_url,
                 description: form.description,
+                min_stock: parseInt(form.min_stock) || 0,
                 is_active: form.is_active
             }
 
@@ -106,9 +113,9 @@ export default function Mahsulotlar() {
                 if (error) throw error
             }
 
-            setForm({ name: '', stock: '', sale_price: '', category: '', image_url: '', description: '', is_active: true })
+            setForm({ name: '', stock: '', sale_price: '', purchase_price: '', category_id: '', image_url: '', description: '', min_stock: '10', is_active: true })
             setIsAdding(false)
-            loadProducts()
+            loadData()
         } catch (error) {
             console.error('Error saving product:', error)
             alert('Xatolik: ' + error.message)
@@ -125,7 +132,7 @@ export default function Mahsulotlar() {
                 .eq('id', id)
 
             if (error) throw error
-            loadProducts()
+            loadData()
         } catch (error) {
             console.error('Error deleting product:', error)
             alert('O\'chirishda xatolik!')
@@ -137,9 +144,11 @@ export default function Mahsulotlar() {
             name: item.name,
             stock: item.stock,
             sale_price: item.sale_price,
-            category: item.category || '',
+            purchase_price: item.purchase_price || '',
+            category_id: item.category_id || '',
             image_url: item.image_url || '',
             description: item.description || '',
+            min_stock: item.min_stock || '10',
             is_active: item.is_active ?? true
         })
         setEditId(item.id)
@@ -147,14 +156,14 @@ export default function Mahsulotlar() {
     }
 
     function handleCancel() {
-        setForm({ name: '', stock: '', sale_price: '', category: '', image_url: '', description: '', is_active: true })
+        setForm({ name: '', stock: '', sale_price: '', purchase_price: '', category_id: '', image_url: '', description: '', min_stock: '10', is_active: true })
         setEditId(null)
         setIsAdding(false)
     }
 
     const filteredProducts = products.filter(p =>
         p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.category?.toLowerCase().includes(searchTerm.toLowerCase())
+        p.categories?.name?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     if (loading) {
@@ -207,8 +216,20 @@ export default function Mahsulotlar() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                             <input className="border p-3 rounded-lg" placeholder="Nomi *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
                             <input type="number" className="border p-3 rounded-lg" placeholder="Soni (Stock)" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} />
-                            <input type="number" className="border p-3 rounded-lg" placeholder="Narxi *" value={form.sale_price} onChange={e => setForm({ ...form, sale_price: e.target.value })} required />
-                            <input className="border p-3 rounded-lg" placeholder="Kategoriya" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
+                            <input type="number" className="border p-3 rounded-lg" placeholder="Sotilish narxi *" value={form.sale_price} onChange={e => setForm({ ...form, sale_price: e.target.value })} required />
+                            <input type="number" className="border p-3 rounded-lg" placeholder="Tannarxi (Purchase price)" value={form.purchase_price} onChange={e => setForm({ ...form, purchase_price: e.target.value })} />
+                            <input type="number" className="border p-3 rounded-lg" placeholder="Minimal qoldiq (Min stock)" value={form.min_stock} onChange={e => setForm({ ...form, min_stock: e.target.value })} />
+
+                            <select
+                                className="border p-3 rounded-lg"
+                                value={form.category_id}
+                                onChange={e => setForm({ ...form, category_id: e.target.value })}
+                            >
+                                <option value="">Kategoriya tanlang</option>
+                                {categories.map(cat => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
 
                             {/* Image Upload */}
                             <div className="flex flex-col gap-2">
@@ -266,12 +287,12 @@ export default function Mahsulotlar() {
                                     {item.image_url ? <img src={item.image_url} alt="" className="w-10 h-10 rounded object-cover bg-gray-100" /> : <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center"><Image size={20} className="text-gray-400" /></div>}
                                     <div>
                                         <div className="font-medium">{item.name}</div>
-                                        <div className="text-xs text-gray-500">{item.category}</div>
+                                        <div className="text-xs text-gray-500">{item.categories?.name || '-'}</div>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4">{item.sale_price?.toLocaleString()}</td>
                                 <td className="px-6 py-4">
-                                    <span className={`px-2 py-1 rounded text-xs ${item.stock < 10 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{item.stock}</span>
+                                    <span className={`px-2 py-1 rounded text-xs ${item.stock <= (item.min_stock || 10) ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>{item.stock}</span>
                                 </td>
                                 <td className="px-6 py-4">
                                     {item.is_active ? <Eye size={16} className="text-green-500" /> : <EyeOff size={16} className="text-gray-400" />}

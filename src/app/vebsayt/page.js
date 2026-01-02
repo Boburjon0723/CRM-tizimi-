@@ -73,7 +73,7 @@ export default function Vebsayt() {
       // Load web orders
       const { data: ordersData } = await supabase
         .from('orders')
-        .select('*, customers(name, phone), order_items(products(name), quantity)')
+        .select('*, order_items(product_name, quantity)')
         .eq('source', 'website')
         .order('created_at', { ascending: false })
 
@@ -252,7 +252,7 @@ export default function Vebsayt() {
         <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white p-6 rounded-xl shadow-lg">
           <p className="text-sm opacity-80">Yangi Buyurtmalar</p>
           <p className="text-3xl font-bold mt-2">
-            {webOrders.filter(o => o.status === 'Yangi').length}
+            {webOrders.filter(o => o.status === 'new' || o.status === 'Yangi').length}
           </p>
         </div>
       </div>
@@ -535,9 +535,9 @@ export default function Vebsayt() {
                 const firstItem = order.order_items?.[0] || {};
                 return (
                   <tr key={order.id} className="border-t hover:bg-gray-50">
-                    <td className="px-6 py-4 font-medium">{order.customers?.name || 'Foydalanuvchi'}</td>
-                    <td className="px-6 py-4">{order.customers?.phone || '-'}</td>
-                    <td className="px-6 py-4">{firstItem.products?.name || 'Mavjud emas'}</td>
+                    <td className="px-6 py-4 font-medium">{order.customer_name || order.customers?.name || 'Foydalanuvchi'}</td>
+                    <td className="px-6 py-4">{order.customer_phone || order.customers?.phone || '-'}</td>
+                    <td className="px-6 py-4">{firstItem.product_name || firstItem.products?.name || 'Mavjud emas'}</td>
                     <td className="px-6 py-4">{firstItem.quantity || order.quantity || 1}</td>
                     <td className="px-6 py-4 font-semibold text-green-600">
                       {order.total?.toLocaleString()} so'm
@@ -564,16 +564,17 @@ export default function Vebsayt() {
                       <select
                         value={order.status}
                         onChange={(e) => handleOrderStatusChange(order.id, e.target.value)}
-                        className={`px-3 py-1 rounded-full text-sm ${order.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
-                          order.status === 'Qabul qilindi' ? 'bg-yellow-100 text-yellow-800' :
-                            order.status === 'Yetkazilmoqda' ? 'bg-purple-100 text-purple-800' :
-                              'bg-green-100 text-green-800'
+                        className={`px-3 py-1 rounded-full text-sm ${order.status === 'new' || order.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
+                            order.status === 'pending' || order.status === 'Qabul qilindi' ? 'bg-yellow-100 text-yellow-800' :
+                              order.status === 'shipping' || order.status === 'Yetkazilmoqda' ? 'bg-purple-100 text-purple-800' :
+                                order.status === 'completed' || order.status === 'Tugallandi' ? 'bg-green-100 text-green-800' :
+                                  'bg-gray-100 text-gray-800'
                           }`}
                       >
-                        <option>Yangi</option>
-                        <option>Qabul qilindi</option>
-                        <option>Yetkazilmoqda</option>
-                        <option>Tugallandi</option>
+                        <option value="new">Yangi</option>
+                        <option value="pending">Qabul qilindi</option>
+                        <option value="completed">Tugallandi</option>
+                        <option value="cancelled">Bekor qilindi</option>
                       </select>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">

@@ -23,6 +23,7 @@ export default function Buyurtmalar() {
         quantity: '1',
         total: '',
         status: 'Yangi',
+        note: '',
         source: 'admin'
     })
 
@@ -61,14 +62,14 @@ export default function Buyurtmalar() {
         try {
             setLoading(true)
 
-            // Load Orders with Customer and Items
+            // Load Orders with Item details (including product_name)
             const { data: ordersData, error: ordersError } = await supabase
                 .from('orders')
                 .select(`
                     *,
                     customers (id, name, phone),
                     order_items (
-                        id, quantity, price,
+                        id, quantity, price, product_name,
                         products (id, name)
                     )
                 `)
@@ -100,10 +101,14 @@ export default function Buyurtmalar() {
         }
 
         try {
+            const customer = customers.find(c => c.id === form.customer_id)
             const orderPayload = {
                 customer_id: form.customer_id,
+                customer_name: customer?.name || '',
+                customer_phone: customer?.phone || '',
                 total: parseFloat(form.total),
-                status: form.status,
+                status: form.status === 'Yangi' ? 'new' : form.status === 'Jarayonda' ? 'pending' : form.status === 'Tugallandi' ? 'completed' : form.status === 'Bekor qilindi' ? 'cancelled' : form.status,
+                note: form.note,
                 source: form.source
             }
 
@@ -133,8 +138,10 @@ export default function Buyurtmalar() {
                 const itemPayload = {
                     order_id: orderId,
                     product_id: form.product_id,
+                    product_name: product?.name || '',
                     quantity: parseInt(form.quantity),
-                    price: product ? product.sale_price : 0 // Snapshot price
+                    price: product ? product.sale_price : 0, // Snapshot price
+                    subtotal: (parseInt(form.quantity) || 0) * (product ? product.sale_price : 0)
                 }
 
                 const { error: itemError } = await supabase
@@ -148,7 +155,7 @@ export default function Buyurtmalar() {
                 await sendTelegramNotification(message)
             }
 
-            setForm({ customer_id: '', product_id: '', quantity: '1', total: '', status: 'Yangi', source: 'admin' })
+            setForm({ customer_id: '', product_id: '', quantity: '1', total: '', status: 'Yangi', note: '', source: 'admin' })
             setIsAdding(false)
             setEditId(null)
             loadData()
@@ -184,7 +191,8 @@ export default function Buyurtmalar() {
 
             if (error) throw error
             // Optimistic update
-            setOrders(orders.map(o => o.id === id ? { ...o, status: newStatus } : o))
+            const mappedStatus = newStatus === 'Yangi' ? 'new' : newStatus === 'Jarayonda' ? 'pending' : newStatus === 'Tugallandi' ? 'completed' : newStatus === 'Bekor qilindi' ? 'cancelled' : newStatus;
+            setOrders(orders.map(o => o.id === id ? { ...o, status: mappedStatus } : o))
         } catch (error) {
             console.error('Error updating status:', error)
         }
@@ -201,6 +209,7 @@ export default function Buyurtmalar() {
             quantity: item.order_items?.[0]?.quantity || '1',
             total: item.total,
             status: item.status,
+            note: item.note || '',
             source: item.source
         })
         setEditId(item.id)
@@ -238,17 +247,21 @@ export default function Buyurtmalar() {
     }
 
     const filteredOrders = orders.filter(b => {
-        const customerName = b.customers?.name || 'Noma\'lum'
+        const customerName = b.customer_name || b.customers?.name || 'Noma\'lum'
         const matchesSearch = customerName.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesStatus = filterStatus === 'Hammasi' || b.status === filterStatus
+        const matchesStatus = filterStatus === 'Hammasi' || b.status === filterStatus ||
+            (filterStatus === 'Yangi' && b.status === 'new') ||
+            (filterStatus === 'Jarayonda' && b.status === 'pending') ||
+            (filterStatus === 'Tugallandi' && b.status === 'completed') ||
+            (filterStatus === 'Bekor qilindi' && b.status === 'cancelled')
         return matchesSearch && matchesStatus
     })
 
     const totalSumma = filteredOrders.reduce((sum, b) => sum + (b.total || 0), 0)
     const statusCounts = {
-        Yangi: orders.filter(b => b.status === 'Yangi').length,
-        Jarayonda: orders.filter(b => b.status === 'Jarayonda').length,
-        Tugallandi: orders.filter(b => b.status === 'Tugallandi').length
+        Yangi: orders.filter(b => b.status === 'Yangi' || b.status === 'new').length,
+        Jarayonda: orders.filter(b => b.status === 'Jarayonda' || b.status === 'pending').length,
+        Tugallandi: orders.filter(b => b.status === 'Tugallandi' || b.status === 'completed').length
     }
 
     if (loading) {
@@ -408,10 +421,10 @@ export default function Buyurtmalar() {
                                     onChange={(e) => setForm({ ...form, status: e.target.value })}
                                     className="w-full border p-2 rounded-lg"
                                 >
-                                    <option>Yangi</option>
-                                    <option>Jarayonda</option>
-                                    <option>Tugallandi</option>
-                                    <option>Bekor qilindi</option>
+                                    <option value="new">Yangi</option>
+                                    <option value="pending">Jarayonda</option>
+                                    <option value="completed">Tugallandi</option>
+                                    <option value="cancelled">Bekor qilindi</option>
                                 </select>
                             </div>
 
@@ -425,6 +438,15 @@ export default function Buyurtmalar() {
                                     <option value="admin">Admin Panel</option>
                                     <option value="website">Websayt</option>
                                 </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Eslatma (Note)</label>
+                                <textarea
+                                    value={form.note}
+                                    onChange={(e) => setForm({ ...form, note: e.target.value })}
+                                    className="w-full border p-2 rounded-lg"
+                                    rows="1"
+                                />
                             </div>
                         </div>
                         <div className="flex gap-3">
@@ -476,15 +498,16 @@ export default function Buyurtmalar() {
                                             <div className="text-sm text-gray-900">{new Date(item.created_at).toLocaleDateString()}</div>
                                         </td>
                                         <td className="px-6 py-4 font-medium text-gray-900">
-                                            {item.customers?.name || 'Noma\'lum'}
-                                            <div className="text-xs text-gray-500">{item.customers?.phone}</div>
+                                            {item.customer_name || item.customers?.name || 'Noma\'lum'}
+                                            <div className="text-xs text-gray-500">{item.customer_phone || item.customers?.phone}</div>
+                                            {item.note && <div className="text-xs text-amber-600 italic">Note: {item.note}</div>}
                                         </td>
                                         <td className="px-6 py-4 text-gray-600">
                                             {item.order_items && item.order_items.length > 0 ? (
                                                 <div className="space-y-1">
                                                     {item.order_items.map((oi, idx) => (
                                                         <div key={oi.id || idx} className="text-sm">
-                                                            {oi.quantity}x {oi.products?.name}
+                                                            {oi.quantity}x {oi.product_name || oi.products?.name}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -517,18 +540,16 @@ export default function Buyurtmalar() {
                                             <select
                                                 value={item.status}
                                                 onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                                                className={`px-3 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${item.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
-                                                    item.status === 'Jarayonda' ? 'bg-yellow-100 text-yellow-800' :
-                                                        item.status === 'Tugallandi' ? 'bg-green-100 text-green-800' :
+                                                className={`px-3 py-1 rounded-full text-xs font-medium border-0 cursor-pointer ${item.status === 'new' || item.status === 'Yangi' ? 'bg-blue-100 text-blue-800' :
+                                                    item.status === 'pending' || item.status === 'Jarayonda' ? 'bg-yellow-100 text-yellow-800' :
+                                                        item.status === 'completed' || item.status === 'Tugallandi' ? 'bg-green-100 text-green-800' :
                                                             'bg-gray-100 text-gray-800'
                                                     }`}
                                             >
-                                                <option>Yangi</option>
-                                                <option>Qabul qilindi</option>
-                                                <option>Jarayonda</option>
-                                                <option>Yetkazilmoqda</option>
-                                                <option>Tugallandi</option>
-                                                <option>Bekor qilindi</option>
+                                                <option value="new">Yangi</option>
+                                                <option value="pending">Jarayonda</option>
+                                                <option value="completed">Tugallandi</option>
+                                                <option value="cancelled">Bekor qilindi</option>
                                             </select>
                                         </td>
                                         <td className="px-6 py-4">
