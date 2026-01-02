@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification, formatOrderNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Filter, ShoppingCart, Clock, CheckCircle } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Filter, ShoppingCart, Clock, CheckCircle, FileText } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 
 export default function Buyurtmalar() {
@@ -462,6 +462,7 @@ export default function Buyurtmalar() {
                                     <th className="px-6 py-4 text-left">Mijoz</th>
                                     <th className="px-6 py-4 text-left">Mahsulotlar</th>
                                     <th className="px-6 py-4 text-left">Summa</th>
+                                    <th className="px-6 py-4 text-left">To'lov</th>
                                     <th className="px-6 py-4 text-left">Status</th>
                                     <th className="px-6 py-4 text-left">Manba</th>
                                     <th className="px-6 py-4 text-left">Amallar</th>
@@ -493,6 +494,24 @@ export default function Buyurtmalar() {
                                         </td>
                                         <td className="px-6 py-4 font-semibold text-green-600">
                                             {item.total?.toLocaleString()} so'm
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col gap-1 text-xs">
+                                                <span className="font-medium text-gray-600">
+                                                    {item.payment_method_detail || '-'}
+                                                </span>
+                                                {item.receipt_url && (
+                                                    <a
+                                                        href={item.receipt_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 hover:underline flex items-center gap-1"
+                                                    >
+                                                        <FileText size={12} />
+                                                        Chek
+                                                    </a>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-6 py-4">
                                             <select

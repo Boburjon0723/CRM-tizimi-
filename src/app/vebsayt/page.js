@@ -18,7 +18,10 @@ export default function Vebsayt() {
     work_hours: 'Dushanba-Shanba: 9:00-20:00',
     telegram_url: '@mysayt',
     instagram_url: '@mysayt',
-    facebook_url: 'mysayt'
+    facebook_url: 'mysayt',
+    humo_card: '',
+    uzcard_card: '',
+    visa_card: ''
   })
 
   const [banners, setBanners] = useState([])
@@ -342,6 +345,44 @@ export default function Vebsayt() {
               onChange={(e) => setSettings({ ...settings, facebook_url: e.target.value })}
               className="border p-3 rounded-lg"
             />
+            <div className="col-span-2 border-t pt-4 mt-2">
+              <h4 className="font-semibold mb-3 flex items-center gap-2 text-blue-600">
+                <Settings size={18} />
+                To'lov Ma'lumotlari (Karta raqamlari)
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1 font-medium">HUMO</label>
+                  <input
+                    type="text"
+                    placeholder="8600 ...."
+                    value={settings.humo_card || ''}
+                    onChange={(e) => setSettings({ ...settings, humo_card: e.target.value })}
+                    className="w-full border p-3 rounded-lg font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1 font-medium">UZCARD</label>
+                  <input
+                    type="text"
+                    placeholder="8600 ...."
+                    value={settings.uzcard_card || ''}
+                    onChange={(e) => setSettings({ ...settings, uzcard_card: e.target.value })}
+                    className="w-full border p-3 rounded-lg font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1 font-medium">VISA</label>
+                  <input
+                    type="text"
+                    placeholder="4000 ...."
+                    value={settings.visa_card || ''}
+                    onChange={(e) => setSettings({ ...settings, visa_card: e.target.value })}
+                    className="w-full border p-3 rounded-lg font-mono text-sm"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
           <button
             onClick={handleSaveSettings}
@@ -484,6 +525,7 @@ export default function Vebsayt() {
                 <th className="px-6 py-4 text-left">Mahsulot</th>
                 <th className="px-6 py-4 text-left">Miqdor</th>
                 <th className="px-6 py-4 text-left">Summa</th>
+                <th className="px-6 py-4 text-left">To'lov</th>
                 <th className="px-6 py-4 text-left">Status</th>
                 <th className="px-6 py-4 text-left">Sana</th>
               </tr>
@@ -499,6 +541,24 @@ export default function Vebsayt() {
                     <td className="px-6 py-4">{firstItem.quantity || order.quantity || 1}</td>
                     <td className="px-6 py-4 font-semibold text-green-600">
                       {order.total?.toLocaleString()} so'm
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-medium text-gray-600">
+                          {order.payment_method_detail || 'Noma\'lum'}
+                        </span>
+                        {order.receipt_url && (
+                          <a
+                            href={order.receipt_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                          >
+                            <FileText size={12} />
+                            Chekni ko'rish
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <select
