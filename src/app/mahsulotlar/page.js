@@ -27,6 +27,10 @@ export default function Mahsulotlar() {
         is_active: true // web_active
     })
 
+    useEffect(() => {
+        loadData()
+    }, [])
+
     async function loadData() {
         try {
             setLoading(true)
