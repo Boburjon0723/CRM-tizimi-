@@ -3,20 +3,29 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Phone, MapPin, UserPlus, Users, TrendingUp, Package, BarChart3, MessageCircle, Send } from 'lucide-react'
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import {
+    Plus, Edit, Trash2, Save, X, Search, Phone, MapPin, Mail,
+    Users, TrendingUp, Package, BarChart3, Calendar, UserCheck, ShoppingBag
+} from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 
 export default function Mijozlar() {
     const { toggleSidebar } = useLayout()
     const [customers, setCustomers] = useState([])
+    const [registeredUsers, setRegisteredUsers] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
-    const [selectedCustomer, setSelectedCustomer] = useState(null)
-    const [message, setMessage] = useState('')
-    const [showChat, setShowChat] = useState(false)
     const [isAdding, setIsAdding] = useState(false)
-    const [form, setForm] = useState({ name: '', phone: '', address: '', notes: '' })
+    const [editId, setEditId] = useState(null)
+    const [activeTab, setActiveTab] = useState('customers') // 'customers' or 'registered'
+    const [form, setForm] = useState({
+        name: '',
+        email: '',
+        phone: '',
+        address: '',
+        notes: ''
+    })
 
     useEffect(() => {
         loadData()
@@ -25,7 +34,8 @@ export default function Mijozlar() {
     async function loadData() {
         try {
             setLoading(true)
-            // Fetch customers
+
+            // Fetch customers from customers table
             const { data: customersData, error: custError } = await supabase
                 .from('customers')
                 .select('*')
@@ -33,19 +43,56 @@ export default function Mijozlar() {
 
             if (custError) throw custError
 
-            // Fetch orders for stats (using new 'orders' table)
-            const { data: ordersData, error: ordError } = await supabase
-                .from('orders')
-                .select('customer_id, total, created_at')
+            // Fetch registered users using database function
+            const { data: registeredData, error: regError } = await supabase
+                .rpc('get_registered_users')
 
-            if (ordError) {
-                console.error("Error loading orders for stats:", ordError)
-                // Continue without stats if orders fail, or if table empty
+            if (regError) {
+                console.error('Error loading registered users:', regError)
+                // Fallback: try to fetch directly from profiles if exists
+                const { data: profilesData } = await supabase
+                    .from('user_profiles')
+                    .select('*')
+
+                if (profilesData && profilesData.length > 0) {
+                    setRegisteredUsers(profilesData.map(u => ({
+                        id: u.id,
+                        name: u.display_name || 'No name',
+                        email: u.email || '-',
+                        phone: u.phone || '-',
+                        totalOrders: 0,
+                        totalSpend: 0,
+                        created_at: u.created_at,
+                        lastOrder: u.last_login
+                    })))
+                }
+            } else {
+                // Format registered users data  
+                const formattedUsers = (registeredData || []).map(user => ({
+                    id: user.id,
+                    name: user.display_name || user.email?.split('@')[0] || 'No name',
+                    email: user.email,
+                    phone: user.phone,
+                    totalOrders: Number(user.total_orders) || 0,
+                    totalSpend: Number(user.total_spend) || 0,
+                    created_at: user.created_at,
+                    lastOrder: user.last_sign_in_at
+                }))
+                setRegisteredUsers(formattedUsers)
             }
 
-            // Map stats to customers
+            // Fetch orders for customer stats
+            const { data: allOrders } = await supabase
+                .from('orders')
+                .select('*')
+
+            // Enrich customers with order stats
             const enrichedCustomers = (customersData || []).map(cust => {
-                const custOrders = (ordersData || []).filter(o => o.customer_id === cust.id)
+                const custOrders = (allOrders || []).filter(o =>
+                    o.customer_email === cust.email ||
+                    o.customer_phone === cust.phone ||
+                    o.customer_id === cust.id
+                )
                 const totalSpend = custOrders.reduce((sum, o) => sum + (o.total || 0), 0)
                 const lastOrder = custOrders.length > 0
                     ? custOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0].created_at
@@ -55,37 +102,101 @@ export default function Mijozlar() {
                     ...cust,
                     totalOrders: custOrders.length,
                     totalSpend: totalSpend,
-                    lastOrder: lastOrder ? new Date(lastOrder).toLocaleDateString() : 'Yo\'q'
+                    lastOrder: lastOrder
                 }
             })
 
             setCustomers(enrichedCustomers)
         } catch (error) {
-            console.error('Error loading customers:', error)
+            console.error('Error loading data:', error)
         } finally {
             setLoading(false)
         }
     }
 
-    async function handleAddCustomer(e) {
+    async function handleSubmit(e) {
         e.preventDefault()
+        if (!form.name || !form.phone) {
+            alert('Ism va telefon raqami majburiy!')
+            return
+        }
+
         try {
-            const { error } = await supabase.from('customers').insert([form])
-            if (error) throw error
+            if (editId) {
+                // Update existing
+                const { error } = await supabase
+                    .from('customers')
+                    .update(form)
+                    .eq('id', editId)
+
+                if (error) throw error
+                alert('Mijoz yangilandi!')
+            } else {
+                // Add new
+                const { error } = await supabase
+                    .from('customers')
+                    .insert([form])
+
+                if (error) throw error
+                alert('Mijoz qo\'shildi!')
+            }
 
             setIsAdding(false)
-            setForm({ name: '', phone: '', address: '', notes: '' })
+            setEditId(null)
+            setForm({ name: '', email: '', phone: '', address: '', notes: '' })
             loadData()
-            alert('Mijoz qo\'shildi!')
         } catch (error) {
-            console.error('Error adding customer:', error)
-            alert('Xatolik!')
+            console.error('Error saving customer:', error)
+            alert('Xatolik yuz berdi!')
         }
     }
 
+    async function handleDelete(id) {
+        if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return
+
+        try {
+            const { error } = await supabase
+                .from('customers')
+                .delete()
+                .eq('id', id)
+
+            if (error) throw error
+            loadData()
+            alert('Mijoz o\'chirildi!')
+        } catch (error) {
+            console.error('Error deleting customer:', error)
+            alert('O\'chirishda xatolik!')
+        }
+    }
+
+    function handleEdit(customer) {
+        setEditId(customer.id)
+        setForm({
+            name: customer.name,
+            email: customer.email || '',
+            phone: customer.phone,
+            address: customer.address || '',
+            notes: customer.notes || ''
+        })
+        setIsAdding(true)
+    }
+
+    function handleCancel() {
+        setIsAdding(false)
+        setEditId(null)
+        setForm({ name: '', email: '', phone: '', address: '', notes: '' })
+    }
+
     const filteredCustomers = customers.filter(c =>
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (c.phone && c.phone.toLowerCase().includes(searchTerm.toLowerCase()))
+        c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+
+    const filteredUsers = registeredUsers.filter(u =>
+        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     // Top customers for chart
@@ -93,31 +204,23 @@ export default function Mijozlar() {
         .sort((a, b) => b.totalSpend - a.totalSpend)
         .slice(0, 5)
 
-    const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
-
-    function handleSendMessage() {
-        if (!message.trim()) return
-        alert(`${selectedCustomer.name}ga xabar yuborildi: ${message}`)
-        setMessage('')
-        setShowChat(false)
-    }
-
     if (loading) {
         return (
-            <div className="p-8">
-                <div className="flex items-center justify-center h-screen">
-                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+            <div className="flex items-center justify-center h-screen">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Yuklanmoqda...</p>
                 </div>
             </div>
         )
     }
 
-
     return (
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="max-w-7xl mx-auto px-4 md:px-6">
             <Header title="Mijozlar" toggleSidebar={toggleSidebar} />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
                     <div className="flex justify-between items-start">
                         <div>
@@ -125,202 +228,393 @@ export default function Mijozlar() {
                             <p className="text-3xl font-bold mt-2">{customers.length}</p>
                         </div>
                         <div className="p-3 bg-white/20 rounded-xl">
-                            <Users className="text-white" size={24} />
+                            <Users size={24} />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-medium text-gray-600">Ro'yxatdan o'tganlar</p>
+                            <p className="text-3xl font-bold text-green-600 mt-2">{registeredUsers.length}</p>
+                        </div>
+                        <div className="p-3 bg-green-50 rounded-xl">
+                            <UserCheck className="text-green-600" size={24} />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-medium text-gray-600">Buyurtmalar</p>
+                            <p className="text-3xl font-bold text-purple-600 mt-2">
+                                {customers.reduce((sum, c) => sum + c.totalOrders, 0)}
+                            </p>
+                        </div>
+                        <div className="p-3 bg-purple-50 rounded-xl">
+                            <ShoppingBag className="text-purple-600" size={24} />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <p className="text-sm font-medium text-gray-600">Jami Daromad</p>
+                            <p className="text-2xl font-bold text-amber-600 mt-2">
+                                {(customers.reduce((sum, c) => sum + c.totalSpend, 0) / 1000000).toFixed(1)}M
+                            </p>
+                        </div>
+                        <div className="p-3 bg-amber-50 rounded-xl">
+                            <TrendingUp className="text-amber-600" size={24} />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold text-gray-800 mb-6">Top Mijozlar (Xarajat bo'yicha)</h3>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={topCustomers}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} dy={10} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
-                                <Tooltip
-                                    cursor={{ fill: '#f3f4f6' }}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                />
-                                <Bar dataKey="totalSpend" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
+            {/* Chart */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6 md:mb-8">
+                <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
+                    <BarChart3 className="text-blue-600" size={20} />
+                    Top 5 Mijozlar (Xarajat bo'yicha)
+                </h3>
+                <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={topCustomers}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                            <XAxis
+                                dataKey="name"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#6b7280', fontSize: 12 }}
+                                angle={-45}
+                                textAnchor="end"
+                                height={80}
+                            />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6b7280', fontSize: 12 }} />
+                            <Tooltip
+                                cursor={{ fill: '#f3f4f6' }}
+                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                            />
+                            <Bar dataKey="totalSpend" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                        </BarChart>
+                    </ResponsiveContainer>
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                <div className="relative w-full md:w-96">
-                    <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
-                    <input
-                        type="text"
-                        placeholder="Ism yoki telefon..."
-                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
+            {/* Tabs */}
+            <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
                 <button
-                    onClick={() => setIsAdding(!isAdding)}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
+                    onClick={() => setActiveTab('customers')}
+                    className={`px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'customers'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                        }`}
                 >
-                    {isAdding ? <X size={20} /> : <UserPlus size={20} />}
-                    <span className="hidden sm:inline">{isAdding ? 'Bekor' : 'Yangi Mijoz'}</span>
+                    <Users className="inline mr-2" size={20} />
+                    Mijozlar Bazasi ({customers.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('registered')}
+                    className={`px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'registered'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                        }`}
+                >
+                    <UserCheck className="inline mr-2" size={20} />
+                    Ro'yxatdan O'tganlar ({registeredUsers.length})
                 </button>
             </div>
 
-            {isAdding && (
-                <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 mb-8 max-w-2xl fade-in">
-                    <h3 className="text-xl font-bold text-gray-800 mb-6">Yangi Mijoz Qo'shish</h3>
-                    <form onSubmit={handleAddCustomer} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <label className="block text-sm font-bold text-gray-700">Ismi</label>
+            {/* Search and Add */}
+            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                    <input
+                        type="text"
+                        placeholder="Qidirish (ism, telefon, email)..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                </div>
+                {activeTab === 'customers' && !isAdding && (
+                    <button
+                        onClick={() => setIsAdding(true)}
+                        className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 shadow-md shadow-blue-200 font-bold whitespace-nowrap"
+                    >
+                        <Plus size={20} />
+                        Mijoz Qo'shish
+                    </button>
+                )}
+            </div>
+
+            {/* Add/Edit Form */}
+            {isAdding && activeTab === 'customers' && (
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">
+                        {editId ? 'Mijozni Tahrirlash' : 'Yangi Mijoz Qo\'shish'}
+                    </h3>
+                    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Ism *</label>
                             <input
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                placeholder="To'liq ismi"
+                                type="text"
                                 value={form.name}
-                                onChange={e => setForm({ ...form, name: e.target.value })}
+                                onChange={(e) => setForm({ ...form, name: e.target.value })}
                                 required
+                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-bold text-gray-700">Telefon</label>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Telefon *</label>
                             <input
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                placeholder="+998..."
+                                type="tel"
                                 value={form.phone}
-                                onChange={e => setForm({ ...form, phone: e.target.value })}
+                                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                                required
+                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-bold text-gray-700">Manzil</label>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                             <input
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                placeholder="Shahar, Ko'cha..."
+                                type="email"
+                                value={form.email}
+                                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Manzil</label>
+                            <input
+                                type="text"
                                 value={form.address}
-                                onChange={e => setForm({ ...form, address: e.target.value })}
+                                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="block text-sm font-bold text-gray-700">Izoh</label>
-                            <input
-                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                placeholder="Qo'shimcha ma'lumot"
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Izoh</label>
+                            <textarea
                                 value={form.notes}
-                                onChange={e => setForm({ ...form, notes: e.target.value })}
+                                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                                rows={3}
+                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
-                        <div className="md:col-span-2 flex justify-end">
+                        <div className="md:col-span-2 flex gap-3 justify-end">
+                            <button
+                                type="button"
+                                onClick={handleCancel}
+                                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                            >
+                                <X className="inline mr-2" size={18} />
+                                Bekor qilish
+                            </button>
                             <button
                                 type="submit"
-                                className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-green-600/30 transition-all flex items-center gap-2"
+                                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                             >
-                                <Save size={20} /> Saqlash
+                                <Save className="inline mr-2" size={18} />
+                                Saqlash
                             </button>
                         </div>
                     </form>
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                <th className="px-6 py-4 rounded-tl-2xl">Mijoz</th>
-                                <th className="px-6 py-4">Aloqa</th>
-                                <th className="px-6 py-4">Buyurtmalar</th>
-                                <th className="px-6 py-4">Jami Xarajat</th>
-                                <th className="px-6 py-4">Oxirgi Buyurtma</th>
-                                <th className="px-6 py-4 rounded-tr-2xl text-center">Amallar</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {filteredCustomers.length > 0 ? (
-                                filteredCustomers.map((customer) => (
-                                    <tr key={customer.id} className="hover:bg-blue-50/30 transition-colors group">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700 flex items-center justify-center font-bold shadow-sm">
-                                                    {customer.name[0]}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-gray-900">{customer.name}</div>
-                                                    <div className="text-xs text-gray-500">{customer.address || 'Manzil yo\'q'}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2 text-gray-600 bg-gray-50 px-3 py-1.5 rounded-lg inline-block text-sm font-medium">
-                                                <Phone size={14} className="text-blue-500" />
-                                                {customer.phone || '-'}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="font-bold text-gray-700 bg-gray-100 px-2 py-1 rounded-md text-sm">{customer.totalOrders} ta</span>
-                                        </td>
-                                        <td className="px-6 py-4 font-bold text-gray-900 font-mono">
-                                            ${customer.totalSpend.toLocaleString()}
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-gray-500">
-                                            {customer.lastOrder}
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <button
-                                                onClick={() => {
-                                                    setSelectedCustomer(customer)
-                                                    setShowChat(true)
-                                                }}
-                                                className="inline-flex items-center gap-2 bg-blue-50 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-100 transition-colors font-bold text-sm"
-                                            >
-                                                <MessageCircle size={18} />
-                                                SMS
-                                            </button>
+            {/* Customers Table */}
+            {activeTab === 'customers' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                            <thead className="bg-gray-50 border-b border-gray-100">
+                                <tr>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Mijoz</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Aloqa</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Manzil</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Buyurtmalar</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Jami Xarajat</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Oxirgi Buyurtma</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Amallar</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredCustomers.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="py-12 text-center text-gray-500">
+                                            <Users size={48} className="mx-auto mb-4 text-gray-300" />
+                                            <p className="font-medium">Mijozlar topilmadi</p>
                                         </td>
                                     </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan="6" className="px-6 py-16 text-center text-gray-400">
-                                        <div className="flex flex-col items-center">
-                                            <Users size={48} className="mb-4 opacity-20" />
-                                            <p className="font-medium">Mijozlar topilmadi</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                ) : (
+                                    filteredCustomers.map((customer) => (
+                                        <tr key={customer.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                                        <Users className="text-blue-600" size={20} />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="font-bold text-gray-900">{customer.name}</p>
+                                                        {customer.notes && (
+                                                            <p className="text-xs text-gray-500 truncate">{customer.notes}</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="space-y-1">
+                                                    {customer.phone && (
+                                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                            <Phone size={14} className="flex-shrink-0" />
+                                                            <span>{customer.phone}</span>
+                                                        </div>
+                                                    )}
+                                                    {customer.email && (
+                                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                            <Mail size={14} className="flex-shrink-0" />
+                                                            <span className="truncate max-w-[200px]">{customer.email}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                {customer.address ? (
+                                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                        <MapPin size={14} className="flex-shrink-0" />
+                                                        <span className="truncate max-w-[200px]">{customer.address}</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400">-</span>
+                                                )}
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-bold">
+                                                    {customer.totalOrders}
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className="font-bold text-green-600">
+                                                    {customer.totalSpend.toLocaleString()} so'm
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                {customer.lastOrder ? (
+                                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                        <Calendar size={14} />
+                                                        {new Date(customer.lastOrder).toLocaleDateString('uz-UZ')}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-gray-400">Yo'q</span>
+                                                )}
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => handleEdit(customer)}
+                                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                        title="Tahrirlash"
+                                                    >
+                                                        <Edit size={18} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(customer.id)}
+                                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="O'chirish"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            )}
 
-            {/* Chat Modal */}
-            {showChat && selectedCustomer && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                        <div className="p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm">
-                                    {selectedCustomer.name[0]}
-                                </div>
-                                <h3 className="font-bold">{selectedCustomer.name}</h3>
-                            </div>
-                            <button onClick={() => setShowChat(false)} className="p-2 hover:bg-white/20 rounded-full transition-colors"><X size={20} /></button>
-                        </div>
-                        <div className="p-6">
-                            <textarea
-                                className="w-full border border-gray-200 p-4 rounded-xl mb-4 focus:ring-2 focus:ring-blue-500 outline-none resize-none bg-gray-50"
-                                rows="4"
-                                placeholder="Xabar matni..."
-                                value={message}
-                                onChange={e => setMessage(e.target.value)}
-                            ></textarea>
-                            <button onClick={handleSendMessage} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/30">
-                                <Send size={18} /> Yuborish
-                            </button>
-                        </div>
+            {/* Registered Users Table */}
+            {activeTab === 'registered' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-6 border-b border-gray-100">
+                        <p className="text-sm text-gray-600">
+                            <UserCheck className="inline mr-2" size={18} />
+                            Veb-saytda buyurtma bergan barcha foydalanuvchilar
+                        </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full">
+                            <thead className="bg-gray-50 border-b border-gray-100">
+                                <tr>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Foydalanuvchi</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Aloqa</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Buyurtmalar</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Jami Xarajat</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Oxirgi Faollik</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredUsers.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="py-12 text-center text-gray-500">
+                                            <UserCheck size={48} className="mx-auto mb-4 text-gray-300" />
+                                            <p className="font-medium">Ro'yxatdan o'tgan foydalanuvchilar topilmadi</p>
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredUsers.map((user, index) => (
+                                        <tr key={index} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                                        <UserCheck className="text-green-600" size={20} />
+                                                    </div>
+                                                    <p className="font-bold text-gray-900">{user.name}</p>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="space-y-1">
+                                                    {user.phone && (
+                                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                            <Phone size={14} className="flex-shrink-0" />
+                                                            <span>{user.phone}</span>
+                                                        </div>
+                                                    )}
+                                                    {user.email && (
+                                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                            <Mail size={14} className="flex-shrink-0" />
+                                                            <span className="truncate max-w-[200px]">{user.email}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-bold">
+                                                    {user.totalOrders}
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className="font-bold text-green-600">
+                                                    {user.totalSpend.toLocaleString()} so'm
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                    <Calendar size={14} />
+                                                    {new Date(user.lastOrder).toLocaleDateString('uz-UZ')}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}

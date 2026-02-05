@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
-import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type, Settings, FileText, AlertCircle, Plus, X, Trash2, Eye, EyeOff, Wallet } from 'lucide-react'
+import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type, Settings, FileText, AlertCircle, Plus, X, Trash2, Eye, EyeOff, Wallet, TrendingUp, Heart, Award, Mail } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 
 export default function Vebsayt() {
@@ -26,11 +26,14 @@ export default function Vebsayt() {
 
   const [categories, setCategories] = useState([])
   const [newCategory, setNewCategory] = useState('')
+  const [categoryImage, setCategoryImage] = useState('')
+  const [uploadingCategory, setUploadingCategory] = useState(false)
 
   const [banners, setBanners] = useState([])
   const [products, setProducts] = useState([])
   const [webOrders, setWebOrders] = useState([])
   const [reviews, setReviews] = useState([])
+  const [subscriptions, setSubscriptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('sozlamalar')
   const [isAddingBanner, setIsAddingBanner] = useState(false)
@@ -78,6 +81,10 @@ export default function Vebsayt() {
         `)
         .order('created_at', { ascending: false })
       setReviews(reviewsData || [])
+
+      // Load subscriptions
+      const { data: subsData } = await supabase.from('newsletter_subscriptions').select('*').order('created_at', { ascending: false })
+      setSubscriptions(subsData || [])
 
     } catch (error) {
       console.error('Error loading data:', error)
@@ -178,12 +185,45 @@ export default function Vebsayt() {
     }
   }
 
+  async function handleCategoryImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+
+    try {
+      setUploadingCategory(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Math.random()}.${fileExt}`
+      const filePath = `categories/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('products') // Using products bucket, but we can change if needed
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data } = supabase.storage
+        .from('products')
+        .getPublicUrl(filePath)
+
+      setCategoryImage(data.publicUrl)
+    } catch (error) {
+      console.error('Error uploading category image:', error)
+      alert('Rasm yuklashda xatolik!')
+    } finally {
+      setUploadingCategory(false)
+    }
+  }
+
   async function handleSaveCategory() {
     if (!newCategory.trim()) return
     try {
-      const { error } = await supabase.from('categories').insert([{ name: newCategory }])
+      const { error } = await supabase.from('categories').insert([{
+        name: newCategory,
+        image_url: categoryImage
+      }])
       if (error) throw error
       setNewCategory('')
+      setCategoryImage('')
       loadData()
       alert('Kategoriya qo\'shildi!')
     } catch (error) {
@@ -225,13 +265,27 @@ export default function Vebsayt() {
     }
   }
 
+  async function handleDeleteSubscription(id) {
+    if (!confirm('Ushbu obunachini o\'chirmoqchimisiz?')) return
+    try {
+      const { error } = await supabase.from('newsletter_subscriptions').delete().eq('id', id)
+      if (error) throw error
+      loadData()
+    } catch (error) {
+      console.error('Error deleting subscription:', error)
+      alert('Xatolik!')
+    }
+  }
+
   const tabs = [
     { id: 'sozlamalar', icon: Settings, label: 'Sozlamalar' },
+    { id: 'biz-haqimizda', icon: FileText, label: 'Biz Haqimizda' },
     { id: 'banners', icon: Image, label: 'Bannerlar' },
     { id: 'kategoriyalar', icon: Layout, label: 'Kategoriyalar' },
     { id: 'mahsulotlar', icon: FileText, label: 'Mahsulotlar' },
     { id: 'buyurtmalar', icon: Globe, label: 'Web Buyurtmalar' },
-    { id: 'sharhlar', icon: AlertCircle, label: 'Sharhlar' }
+    { id: 'sharhlar', icon: AlertCircle, label: 'Sharhlar' },
+    { id: 'obunalar', icon: Mail, label: 'Obunalar' }
   ]
 
   if (loading) {
@@ -246,11 +300,11 @@ export default function Vebsayt() {
 
 
   return (
-    <div className="max-w-7xl mx-auto px-6">
+    <div className="max-w-7xl mx-auto px-4 md:px-6">
       <Header title="Web Sayt Boshqaruvi" toggleSidebar={toggleSidebar} />
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
           <div className="flex justify-between items-start">
             <div>
@@ -386,6 +440,40 @@ export default function Vebsayt() {
               />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">Email</label>
+              <input
+                type="email"
+                placeholder="info@pardacenter.uz"
+                value={settings.email || ''}
+                onChange={(e) => setSettings({ ...settings, email: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-600">Latitude (Kenglik)</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  placeholder="41.311158"
+                  value={settings.latitude || ''}
+                  onChange={(e) => setSettings({ ...settings, latitude: e.target.value })}
+                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-600">Longitude (Uzunlik)</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  placeholder="69.279737"
+                  value={settings.longitude || ''}
+                  onChange={(e) => setSettings({ ...settings, longitude: e.target.value })}
+                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-semibold text-gray-600">Telegram</label>
               <input
                 type="text"
@@ -463,6 +551,180 @@ export default function Vebsayt() {
               <Save size={20} />
               Saqlash
             </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'biz-haqimizda' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
+          <h3 className="text-2xl font-bold text-gray-800 mb-8 flex items-center gap-2">
+            <FileText className="text-blue-600" />
+            Biz Haqimizda Sahifasi
+          </h3>
+
+          <div className="space-y-8">
+            {/* Hero Section */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Layout size={20} className="text-blue-600" />
+                Hero Qismi
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-600">Sarlavha</label>
+                  <input
+                    type="text"
+                    placeholder="We bring elegance to your home"
+                    value={settings.about_hero_title || ''}
+                    onChange={(e) => setSettings({ ...settings, about_hero_title: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-600">Qo'shimcha matn</label>
+                  <textarea
+                    placeholder="Specializing in premium products..."
+                    rows={3}
+                    value={settings.about_hero_subtitle || ''}
+                    onChange={(e) => setSettings({ ...settings, about_hero_subtitle: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all resize-none"
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-600">Rasm URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://images.unsplash.com/..."
+                    value={settings.about_hero_image || ''}
+                    onChange={(e) => setSettings({ ...settings, about_hero_image: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Statistics Section */}
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border border-green-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <TrendingUp size={20} className="text-green-600" />
+                Statistika (4 ta)
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map((num) => (
+                  <div key={num} className="bg-white p-4 rounded-lg border border-gray-200">
+                    <p className="text-xs font-bold text-gray-500 mb-2">Statistika #{num}</p>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="10,000+"
+                        value={settings[`stat${num}_value`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`stat${num}_value`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Happy Customers"
+                        value={settings[`stat${num}_label`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`stat${num}_label`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all text-sm"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Mission & Vision Section */}
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Heart size={20} className="text-purple-600" />
+                Missiya va Viziya
+              </h4>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">Sarlavha</label>
+                  <input
+                    type="text"
+                    placeholder="Crafting details that matter"
+                    value={settings.about_mission_title || ''}
+                    onChange={(e) => setSettings({ ...settings, about_mission_title: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">Matn 1</label>
+                  <textarea
+                    placeholder="Started as a small family business..."
+                    rows={3}
+                    value={settings.about_mission_text1 || ''}
+                    onChange={(e) => setSettings({ ...settings, about_mission_text1: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all resize-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">Matn 2</label>
+                  <textarea
+                    placeholder="Our mission is to provide..."
+                    rows={3}
+                    value={settings.about_mission_text2 || ''}
+                    onChange={(e) => setSettings({ ...settings, about_mission_text2: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all resize-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">Rasm URL</label>
+                  <input
+                    type="text"
+                    placeholder="https://images.unsplash.com/..."
+                    value={settings.about_mission_image || ''}
+                    onChange={(e) => setSettings({ ...settings, about_mission_image: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Values Section */}
+            <div className="bg-gradient-to-br from-orange-50 to-yellow-50 p-6 rounded-xl border border-orange-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Award size={20} className="text-orange-600" />
+                Qadriyatlar (3 ta)
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[1, 2, 3].map((num) => (
+                  <div key={num} className="bg-white p-4 rounded-lg border border-gray-200">
+                    <p className="text-xs font-bold text-gray-500 mb-3">Qadriyat #{num}</p>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder="Premium Quality"
+                        value={settings[`value${num}_title`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`value${num}_title`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all text-sm font-semibold"
+                      />
+                      <textarea
+                        placeholder="We use only the finest materials..."
+                        rows={4}
+                        value={settings[`value${num}_desc`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`value${num}_desc`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all text-sm resize-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={handleSaveSettings}
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 font-bold transition-all"
+              >
+                <Save size={20} />
+                Saqlash
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -584,23 +846,58 @@ export default function Vebsayt() {
       {activeTab === 'kategoriyalar' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
           <h3 className="text-xl font-bold text-gray-800 mb-6">Kategoriyalar Boshqaruvi</h3>
-          <div className="flex gap-4 mb-8">
-            <input
-              type="text"
-              placeholder="Yangi kategoriya nomi"
-              className="border border-gray-200 p-4 rounded-xl flex-1 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-            />
-            <button onClick={handleSaveCategory} className="bg-blue-600 text-white px-8 py-4 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 flex items-center gap-2 transition-all">
-              <Plus size={20} /> Qo'shish
-            </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-gray-50 p-6 rounded-2xl border border-dashed border-gray-200">
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">Kategoriya Nomi</label>
+              <input
+                type="text"
+                placeholder="Masalan: Pardalar"
+                className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+              />
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">Kategoriya Rasmi</label>
+              <div className="flex gap-4 items-center">
+                <div className="w-16 h-16 rounded-xl bg-white border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {categoryImage ? (
+                    <img src={categoryImage} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Layout className="text-gray-300" size={24} />
+                  )}
+                </div>
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Rasm URL yoki yuklang"
+                    className="flex-1 border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm bg-white"
+                    value={categoryImage}
+                    onChange={(e) => setCategoryImage(e.target.value)}
+                  />
+                  <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center">
+                    <input type="file" className="hidden" onChange={handleCategoryImageUpload} accept="image/*" />
+                    {uploadingCategory ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent animate-spin rounded-full"></div> : <Image size={20} className="text-gray-500" />}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="md:col-span-2 flex justify-end">
+              <button
+                onClick={handleSaveCategory}
+                className="bg-blue-600 text-white px-10 py-4 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 flex items-center gap-2 transition-all"
+                disabled={uploadingCategory}
+              >
+                <Plus size={20} /> Kategoriya qo'shish
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-xl overflow-hidden border border-gray-100">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-sm uppercase tracking-wider font-bold">
+                  <th className="px-6 py-4 w-20">Rasm</th>
                   <th className="px-6 py-4">Kategoriya Nomi</th>
                   <th className="px-6 py-4 text-right">Amallar</th>
                 </tr>
@@ -608,6 +905,17 @@ export default function Vebsayt() {
               <tbody className="divide-y divide-gray-50">
                 {categories.map(cat => (
                   <tr key={cat.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-3">
+                      <div className="w-10 h-10 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden">
+                        {cat.image_url ? (
+                          <img src={cat.image_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-300">
+                            <Layout size={16} />
+                          </div>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-6 py-4 font-bold text-gray-800">{cat.name}</td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => handleDeleteCategory(cat.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
@@ -805,6 +1113,53 @@ export default function Vebsayt() {
                   </tr>
                 ))}
                 {reviews.length === 0 && <tr><td colSpan="6" className="text-center py-12 text-gray-400">Sharhlar yo'q</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'obunalar' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden fade-in">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px] text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
+                  <th className="px-6 py-4">Email</th>
+                  <th className="px-6 py-4">Sana</th>
+                  <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4 text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {subscriptions.map(sub => (
+                  <tr key={sub.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-4 font-bold text-gray-900">{sub.email}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">
+                      {new Date(sub.created_at).toLocaleString('uz-UZ')}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${sub.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                        {sub.status === 'active' ? 'Faol' : sub.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleDeleteSubscription(sub.id)}
+                        className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {subscriptions.length === 0 && (
+                  <tr>
+                    <td colSpan="4" className="text-center py-12 text-gray-400">
+                      Hozircha obunachilar yo'q.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

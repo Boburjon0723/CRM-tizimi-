@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse } from 'lucide-react'
+import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLayout } from '@/context/LayoutContext'
 
@@ -20,6 +20,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
     { href: '/ombor', icon: Warehouse, label: 'Ombor' },
     { href: '/buyurtmalar', icon: ShoppingCart, label: 'Buyurtmalar' },
     { href: '/mijozlar', icon: UserCircle, label: 'Mijozlar' },
+    { href: '/xabarlar', icon: MessageSquare, label: 'Xabarlar' },
     { href: '/xodimlar', icon: Users, label: 'Xodimlar' },
     { href: '/moliya', icon: DollarSign, label: 'Moliya' },
     { href: '/statistika', icon: BarChart3, label: 'Statistika' },

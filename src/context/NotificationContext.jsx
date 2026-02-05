@@ -11,7 +11,7 @@ export function NotificationProvider({ children }) {
 
     useEffect(() => {
         // Subscribe to new orders from website
-        const channel = supabase
+        const orderChannel = supabase
             .channel('order_notifications')
             .on('postgres_changes',
                 {
@@ -39,8 +39,37 @@ export function NotificationProvider({ children }) {
             )
             .subscribe()
 
+        // Subscribe to new contact messages
+        const messageChannel = supabase
+            .channel('message_notifications')
+            .on('postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'contact_messages'
+                },
+                (payload) => {
+                    const newMessage = payload.new
+                    const notification = {
+                        id: newMessage.id,
+                        type: 'message',
+                        title: 'Yangi xabar!',
+                        message: `${newMessage.name} - ${newMessage.subject || newMessage.message.substring(0, 50)}...`,
+                        data: newMessage,
+                        read: false,
+                        timestamp: new Date()
+                    }
+
+                    setNotifications(prev => [notification, ...prev])
+                    setUnreadCount(prev => prev + 1)
+                    playNotificationSound()
+                }
+            )
+            .subscribe()
+
         return () => {
-            supabase.removeChannel(channel)
+            supabase.removeChannel(orderChannel)
+            supabase.removeChannel(messageChannel)
         }
     }, [])
 

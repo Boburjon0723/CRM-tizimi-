@@ -30,7 +30,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
     }
 
     return (
-        <header className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100 px-6 py-4 mb-8 transition-all duration-300">
+        <header className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100 px-4 md:px-6 py-3 md:py-4 mb-6 md:mb-8 transition-all duration-300">
             <div className="flex justify-between items-center max-w-7xl mx-auto w-full">
                 <div className="flex items-center gap-4">
                     <button
@@ -40,7 +40,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                         <Menu size={24} />
                     </button>
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-800 tracking-tight">{title}</h2>
+                        <h2 className="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">{title}</h2>
                         <p className="hidden md:block text-sm text-gray-500 font-medium">
                             {new Date().toLocaleDateString('uz-UZ', {
                                 weekday: 'long',
@@ -67,7 +67,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                         </button>
 
                         {showNotifications && (
-                            <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
+                            <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
                                 <div className="flex items-center justify-between p-4 border-b border-gray-100">
                                     <h3 className="font-bold text-gray-800">Bildirishnomalar</h3>
                                     {unreadCount > 0 && (

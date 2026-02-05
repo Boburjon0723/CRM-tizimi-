@@ -48,7 +48,11 @@ export default function StatistikaPage() {
                 order_items (
                     quantity,
                     price,
-                    products (name, category)
+                    product_name,
+                    products (
+                        name,
+                        categories (name)
+                    )
                 )
             `)
 
@@ -101,13 +105,11 @@ export default function StatistikaPage() {
     })
     const financeChartData = Object.values(financeTrend).sort((a, b) => a.date.localeCompare(b.date))
 
-    // 3. Category distribution
-    // We need to iterate over orders -> order_items -> products.category
     const catSales = {}
     filteredOrders.forEach(o => {
         if (o.order_items) {
             o.order_items.forEach(item => {
-                const cat = item.products?.category || 'Boshqa'
+                const cat = item.products?.categories?.name || 'Boshqa'
                 const amount = (item.price || 0) * (item.quantity || 1)
                 catSales[cat] = (catSales[cat] || 0) + amount
             })
@@ -126,7 +128,7 @@ export default function StatistikaPage() {
     filteredOrders.forEach(o => {
         if (o.order_items) {
             o.order_items.forEach(item => {
-                const name = item.products?.name || 'Noma\'lum'
+                const name = item.product_name || item.products?.name || 'Noma\'lum'
                 productSales[name] = (productSales[name] || 0) + ((item.price || 0) * (item.quantity || 1))
             })
         }

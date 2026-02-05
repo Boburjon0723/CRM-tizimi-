@@ -39,29 +39,38 @@ export default function Dashboard() {
 
   async function loadData() {
     try {
-      const [mahsulotRes, xodimRes, buyurtmaRes, moliyaRes] = await Promise.all([
-        supabase.from('mahsulotlar').select('miqdor'),
-        supabase.from('xodimlar').select('id'),
-        supabase.from('buyurtmalar').select('*').order('created_at', { ascending: false }).limit(5),
-        supabase.from('moliya').select('tur, summa, sana')
+      const [productsRes, employeesRes, ordersRes, transactionsRes] = await Promise.all([
+        supabase.from('products').select('stock'),
+        supabase.from('employees').select('id'),
+        supabase.from('orders').select('*, customers(name)').order('created_at', { ascending: false }).limit(5),
+        supabase.from('transactions').select('type, amount, date')
       ])
 
-      const totalMahsulot = mahsulotRes.data?.reduce((sum, m) => sum + (m.miqdor || 0), 0) || 0
-      const totalXodim = xodimRes.data?.length || 0
-      const totalBuyurtma = buyurtmaRes.data?.length || 0
+      const totalStock = productsRes.data?.reduce((sum, p) => sum + (p.stock || 0), 0) || 0
+      const totalEmployees = employeesRes.data?.length || 0
+      const totalOrders = (await supabase.from('orders').select('id', { count: 'exact', head: true })).count || 0
 
-      const kirim = moliyaRes.data?.filter(m => m.tur === 'Kirim').reduce((sum, m) => sum + m.summa, 0) || 0
-      const chiqim = moliyaRes.data?.filter(m => m.tur === 'Chiqim').reduce((sum, m) => sum + m.summa, 0) || 0
-      const foyda = kirim - chiqim
+      const income = transactionsRes.data?.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
+      const expense = transactionsRes.data?.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
+      const profit = income - expense
 
       setStats({
-        mahsulotlar: totalMahsulot,
-        xodimlar: totalXodim,
-        buyurtmalar: totalBuyurtma,
-        foyda: foyda
+        mahsulotlar: totalStock,
+        xodimlar: totalEmployees,
+        buyurtmalar: totalOrders,
+        foyda: profit
       })
 
-      setRecentOrders(buyurtmaRes.data || [])
+      // Format recent orders for display
+      const formattedRecentOrders = (ordersRes.data || []).map(order => ({
+        id: order.id,
+        mijoz: order.customers?.name || 'Mijoz',
+        mahsulot: 'Order #' + order.id.toString().slice(0, 8),
+        summa: order.total,
+        status: order.status
+      }))
+
+      setRecentOrders(formattedRecentOrders)
 
       // Process chart data for last 7 days
       const days = ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan']
@@ -76,10 +85,10 @@ export default function Dashboard() {
         weeklyData[dateStr] = { name: dayName, kirim: 0, chiqim: 0 }
       }
 
-      moliyaRes.data?.forEach(m => {
-        if (weeklyData[m.sana]) {
-          if (m.tur === 'Kirim') weeklyData[m.sana].kirim += m.summa
-          else weeklyData[m.sana].chiqim += m.summa
+      transactionsRes.data?.forEach(t => {
+        if (weeklyData[t.date]) {
+          if (t.type === 'income') weeklyData[t.date].kirim += (Number(t.amount) || 0)
+          else weeklyData[t.date].chiqim += (Number(t.amount) || 0)
         }
       })
 
@@ -109,7 +118,7 @@ export default function Dashboard() {
     <div className="max-w-7xl mx-auto">
       <Header title="Dashboard" toggleSidebar={toggleSidebar} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 px-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8 px-4 md:px-6">
         <StatCard
           icon={Package}
           title="Umumiy Mahsulotlar"
@@ -140,7 +149,7 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8 px-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-8 mb-6 md:mb-8 px-4 md:px-6">
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
