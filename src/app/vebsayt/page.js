@@ -21,7 +21,9 @@ export default function Vebsayt() {
     facebook_url: 'mysayt',
     humo_card: '',
     uzcard_card: '',
-    visa_card: ''
+    visa_card: '',
+    hero_desktop_url: '',
+    hero_mobile_url: ''
   })
 
   const [categories, setCategories] = useState([])
@@ -399,11 +401,31 @@ export default function Vebsayt() {
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-semibold text-gray-600">Banner matn</label>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">Hero Rasm (Desktop) URL</label>
               <input
                 type="text"
-                placeholder="Banner matn"
+                placeholder="Desktop uchun katta rasm URL"
+                value={settings.hero_desktop_url || ''}
+                onChange={(e) => setSettings({ ...settings, hero_desktop_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">Hero Rasm (Mobil) URL</label>
+              <input
+                type="text"
+                placeholder="Telefon uchun kichik rasm URL"
+                value={settings.hero_mobile_url || ''}
+                onChange={(e) => setSettings({ ...settings, hero_mobile_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-semibold text-gray-600">Banner matn / Subtitle</label>
+              <input
+                type="text"
+                placeholder="Banner ostidagi matn"
                 value={settings.banner_text || ''}
                 onChange={(e) => setSettings({ ...settings, banner_text: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
@@ -672,7 +694,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-600">Rasm URL</label>
+                  <label className="text-sm font-semibold text-gray-600">Ustaxona Rasmi (Our Workshop) URL</label>
                   <input
                     type="text"
                     placeholder="https://images.unsplash.com/..."
@@ -680,6 +702,7 @@ export default function Vebsayt() {
                     onChange={(e) => setSettings({ ...settings, about_mission_image: e.target.value })}
                     className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
                   />
+                  <p className="text-xs text-gray-400">Bu rasm "Biz haqimizda" sahifasida "Our Story/Ustaxona" qismida ko'rinadi.</p>
                 </div>
               </div>
             </div>
