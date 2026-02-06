@@ -10,10 +10,19 @@ export const metadata = {
   title: 'CRM Boshqaruv Tizimi',
   description: 'Sex boshligi uchun to\'liq CRM tizimi',
   manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico' },
+    ],
+    apple: [
+      { url: '/icons/icon-192x192.png' },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'CRM Dashboard',
+    title: 'CRM Boshqaruv Tizimi',
   },
 }
 

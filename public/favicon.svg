@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="cyanTealGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22d3ee;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0d9488;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Outer Ring (Double Arrows) -->
+  <path d="M 50,5 A 45,45 0 0,1 95,50 L 85,50 A 35,35 0 0,0 50,15 Z" fill="url(#cyanTealGradient)" />
+  <path d="M 95,50 L 100,55 L 90,60 L 95,50" fill="#0d9488" />
+  
+  <path d="M 50,95 A 45,45 0 0,1 5,50 L 15,50 A 35,35 0 0,0 50,85 Z" fill="url(#cyanTealGradient)" transform="rotate(180 50 50)" />
+  <path d="M 5,50 L 0,45 L 10,40 L 5,50" fill="#22d3ee" />
+  
+  <!-- CRM Text -->
+  <text x="50" y="62" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="900" fill="#0f172a" text-anchor="middle" letter-spacing="-1">CRM</text>
+</svg>
