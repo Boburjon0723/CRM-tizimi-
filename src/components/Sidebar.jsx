@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLayout } from '@/context/LayoutContext'
@@ -13,6 +14,15 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
 
   const pathname = usePathname()
   const router = useRouter()
+  const [siteName, setSiteName] = useState('TechGear')
+
+  useEffect(() => {
+    async function getSettings() {
+      const { data } = await supabase.from('settings').select('site_name').limit(1).single()
+      if (data?.site_name) setSiteName(data.site_name)
+    }
+    getSettings()
+  }, [])
 
   const menuItems = [
     { href: '/', icon: Home, label: 'Dashboard' },
@@ -45,14 +55,14 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
         />
       )}
 
-      <div className={`w-72 bg-gradient-to-b from-blue-900 via-slate-900 to-slate-900 text-white min-h-screen p-6 fixed left-0 top-0 z-50 transition-all duration-300 shadow-2xl ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="flex justify-between items-center mb-10">
+      <div className={`w-72 bg-gradient-to-b from-blue-900 via-slate-900 to-slate-900 text-white h-screen p-6 fixed left-0 top-0 z-50 transition-all duration-300 shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="flex justify-between items-center mb-8 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <span className="font-bold text-xl">CRM</span>
+            <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center shadow-lg backdrop-blur-sm border border-white/10">
+              <img src="/favicon.svg" alt="CRM Logo" className="w-8 h-8 object-contain" />
             </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">TechGear</h1>
+            <div className="min-w-0">
+              <h1 className="text-xl font-bold tracking-tight truncate">{siteName}</h1>
               <p className="text-xs text-blue-200">Boshqaruv Tizimi</p>
             </div>
           </div>
@@ -64,7 +74,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
           </button>
         </div>
 
-        <nav className="space-y-2">
+        <nav className="space-y-1.5 flex-1 overflow-y-auto pr-2 custom-scrollbar pb-6">
           {menuItems.map((item) => {
             const isActive = pathname === item.href
             const Icon = item.icon
@@ -89,7 +99,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
           })}
         </nav>
 
-        <div className="absolute bottom-6 left-6 right-6">
+        <div className="pt-6 border-t border-white/5 flex-shrink-0">
           <button
             onClick={handleLogout}
             className="flex w-full items-center gap-3 px-4 py-3.5 rounded-xl text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-all border border-transparent hover:border-red-500/20"

@@ -37,11 +37,11 @@ export default function LoginPage() {
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-900 px-4">
             <div className="bg-white/10 backdrop-blur-lg p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20">
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-500 mb-4 shadow-lg shadow-blue-500/30">
-                        <Lock className="text-white" size={32} />
+                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/10 mb-4 shadow-xl backdrop-blur-md border border-white/10 transition-transform hover:scale-105 duration-300">
+                        <img src="/favicon.svg" alt="Logo" className="w-12 h-12 object-contain" />
                     </div>
-                    <h1 className="text-3xl font-bold text-white mb-2">Xush Kelibsiz!</h1>
-                    <p className="text-blue-200 text-sm">CRM tizimiga kirish uchun ma'lumotlaringizni kiriting</p>
+                    <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">CRM Boshqaruv</h1>
+                    <p className="text-blue-200 text-sm">Tizimga kirish uchun ma'lumotlaringizni kiriting</p>
                 </div>
 
                 <form onSubmit={handleLogin} className="space-y-6">
@@ -90,7 +90,7 @@ export default function LoginPage() {
 
                 <div className="mt-8 text-center">
                     <p className="text-blue-200/60 text-xs">
-                        &copy; 2024 TechGear CRM. Barcha huquqlar himoyalangan.
+                        &copy; {new Date().getFullYear()} CRM Tizimi. Barcha huquqlar himoyalangan.
                     </p>
                 </div>
             </div>
