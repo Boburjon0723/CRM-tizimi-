@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import { Plus, Edit, Trash2, Save, X, Search, Filter, AlertTriangle, TrendingUp, Package, RefreshCcw, Minus } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function Ombor() {
     const { toggleSidebar } = useLayout()
