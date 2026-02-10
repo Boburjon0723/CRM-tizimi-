@@ -2,7 +2,7 @@ import { Inter } from 'next/font/google'
 import { LanguageProvider } from '@/context/LanguageContext'
 import { LayoutProvider } from '@/context/LayoutContext'
 import { NotificationProvider } from '@/context/NotificationContext'
-import { AuthWrapper } from '@/components/AuthWrapper'
+import AuthWrapper from '@/components/AuthWrapper'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
