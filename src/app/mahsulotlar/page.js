@@ -5,9 +5,11 @@ import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload, Loader2, Package, AlertTriangle } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function Mahsulotlar() {
     const { toggleSidebar } = useLayout()
+    const { t } = useLanguage()
     const [products, setProducts] = useState([])
     const [categories, setCategories] = useState([])
     const [loading, setLoading] = useState(true)
@@ -96,7 +98,7 @@ export default function Mahsulotlar() {
     async function handleSubmit(e) {
         e.preventDefault()
         if (!form.name || !form.sale_price) {
-            alert('Nom va Narx majburiy!')
+            alert(t('products.requiredError') || 'Nom va Narx majburiy!')
             return
         }
 
@@ -138,12 +140,12 @@ export default function Mahsulotlar() {
             loadData()
         } catch (error) {
             console.error('Error saving product:', error)
-            alert('Xatolik: ' + error.message)
+            alert(t('common.saveError'))
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return
+        if (!confirm(t('common.deleteConfirm'))) return
 
         try {
             const { error } = await supabase
@@ -155,7 +157,7 @@ export default function Mahsulotlar() {
             loadData()
         } catch (error) {
             console.error('Error deleting product:', error)
-            alert('O\'chirishda xatolik!')
+            alert(t('common.deleteError'))
         }
     }
 
@@ -238,7 +240,7 @@ export default function Mahsulotlar() {
 
     return (
         <div className="max-w-7xl mx-auto px-6">
-            <Header title="Mahsulotlar" toggleSidebar={toggleSidebar} />
+            <Header title={t('common.products')} toggleSidebar={toggleSidebar} />
 
             {/* Actions Bar */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
@@ -246,7 +248,7 @@ export default function Mahsulotlar() {
                     <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Qidiruv..."
+                        placeholder={t('products.searchPlaceholder')}
                         className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -258,7 +260,7 @@ export default function Mahsulotlar() {
                         value={filterCategory}
                         onChange={(e) => setFilterCategory(e.target.value)}
                     >
-                        <option value="all">Barcha Kategoriyalar</option>
+                        <option value="all">{t('products.allCategories')}</option>
                         {categories.map(cat => (
                             <option key={cat.id} value={cat.name}>{cat.name}</option>
                         ))}
@@ -285,7 +287,7 @@ export default function Mahsulotlar() {
                         className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
                     >
                         <Plus size={20} />
-                        <span className="hidden sm:inline">Qo'shish</span>
+                        <span className="hidden sm:inline">{t('common.add')}</span>
                     </button>
                 </div>
             </div>
@@ -296,13 +298,13 @@ export default function Mahsulotlar() {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                <th className="px-6 py-4 rounded-tl-2xl">Rasm</th>
-                                <th className="px-6 py-4">Nomi</th>
-                                <th className="px-6 py-4">Kategoriya</th>
-                                <th className="px-6 py-4">Narxi (Sotuv)</th>
-                                <th className="px-6 py-4">Ombor</th>
-                                <th className="px-6 py-4">Holat</th>
-                                <th className="px-6 py-4 rounded-tr-2xl text-right">Amallar</th>
+                                <th className="px-6 py-4 rounded-tl-2xl">{t('products.image')}</th>
+                                <th className="px-6 py-4">{t('products.name')}</th>
+                                <th className="px-6 py-4">{t('products.category')}</th>
+                                <th className="px-6 py-4">{t('products.salePrice')}</th>
+                                <th className="px-6 py-4">{t('common.warehouse')}</th>
+                                <th className="px-6 py-4">{t('products.status')}</th>
+                                <th className="px-6 py-4 rounded-tr-2xl text-right">{t('products.actions')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -346,7 +348,7 @@ export default function Mahsulotlar() {
                                                 : 'bg-red-100 text-red-700 hover:bg-red-200'
                                                 }`}
                                         >
-                                            {item.is_active ? 'Faol' : 'Nofaol'}
+                                            {item.is_active ? t('products.active') : t('products.inactive')}
                                         </button>
                                     </td>
                                     <td className="px-6 py-4 text-right">
@@ -373,7 +375,7 @@ export default function Mahsulotlar() {
                     {filteredProducts.length === 0 && (
                         <div className="text-center py-12">
                             <Package size={48} className="mx-auto text-gray-200 mb-4" />
-                            <p className="text-gray-400 font-medium">Mahsulotlar topilmadi</p>
+                            <p className="text-gray-400 font-medium">{t('products.noProducts')}</p>
                         </div>
                     )}
                 </div>
@@ -385,7 +387,7 @@ export default function Mahsulotlar() {
                     <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
                         <div className="p-6 border-b flex justify-between items-center sticky top-0 bg-white z-10">
                             <h2 className="text-xl font-bold text-gray-900">
-                                {editId ? 'Mahsulotni Tahrirlash' : 'Yangi Mahsulot'}
+                                {editId ? t('products.editProduct') : t('products.newProduct')}
                             </h2>
                             <button
                                 onClick={() => setIsModalOpen(false)}
@@ -553,14 +555,14 @@ export default function Mahsulotlar() {
                                     onClick={() => setIsModalOpen(false)}
                                     className="px-6 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors"
                                 >
-                                    Bekor qilish
+                                    {t('common.cancel')}
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={uploading}
                                     className="px-6 py-3 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/30 transition-all disabled:opacity-50"
                                 >
-                                    {uploading ? 'Yuklanmoqda...' : 'Saqlash'}
+                                    {uploading ? t('common.loading') : t('common.save')}
                                 </button>
                             </div>
                         </form>

@@ -1,37 +1,4 @@
-import { Inter } from 'next/font/google'
-import './globals.css'
-import AuthWrapper from '@/components/AuthWrapper'
-import { LayoutProvider } from '@/context/LayoutContext'
-import { NotificationProvider } from '@/context/NotificationContext'
-
-const inter = Inter({ subsets: ['latin'] })
-
-export const metadata = {
-  title: 'CRM Boshqaruv Tizimi',
-  description: 'Sex boshligi uchun to\'liq CRM tizimi',
-  manifest: '/manifest.json',
-  icons: {
-    icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/favicon.ico' },
-    ],
-    apple: [
-      { url: '/icons/icon-192x192.png' },
-    ],
-  },
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'CRM Boshqaruv Tizimi',
-  },
-}
-
-export const viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  maximumScale: 1,
-  themeColor: '#000000',
-}
+import { LanguageProvider } from '@/context/LanguageContext'
 
 export default function RootLayout({ children }) {
   return (
@@ -44,13 +11,15 @@ export default function RootLayout({ children }) {
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
       </head>
       <body className={inter.className}>
-        <LayoutProvider>
-          <NotificationProvider>
-            <AuthWrapper>
-              {children}
-            </AuthWrapper>
-          </NotificationProvider>
-        </LayoutProvider>
+        <LanguageProvider>
+          <LayoutProvider>
+            <NotificationProvider>
+              <AuthWrapper>
+                {children}
+              </AuthWrapper>
+            </NotificationProvider>
+          </LayoutProvider>
+        </LanguageProvider>
       </body>
     </html>
   )

@@ -5,9 +5,11 @@ import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import { UserPlus, Edit, Trash2, Save, X, Search, Calendar, Users, DollarSign, CreditCard } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function Xodimlar() {
     const { toggleSidebar } = useLayout()
+    const { t } = useLanguage()
     const [employees, setEmployees] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
@@ -45,7 +47,7 @@ export default function Xodimlar() {
     async function handleSubmit(e) {
         e.preventDefault()
         if (!form.name || !form.position || !form.monthly_salary) {
-            alert('Ism, lavozim va maosh majburiy!')
+            alert(t('employees.requiredError'))
             return
         }
 
@@ -80,12 +82,12 @@ export default function Xodimlar() {
             loadEmployees()
         } catch (error) {
             console.error('Error saving employee:', error)
-            alert('Xatolik yuz berdi!')
+            alert(t('common.saveError'))
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return
+        if (!confirm(t('employees.deleteConfirm'))) return
 
         try {
             const { error } = await supabase
@@ -97,7 +99,7 @@ export default function Xodimlar() {
             loadEmployees()
         } catch (error) {
             console.error('Error deleting employee:', error)
-            alert('O\'chirishda xatolik!')
+            alert(t('employees.deleteError'))
         }
     }
 
@@ -142,13 +144,13 @@ export default function Xodimlar() {
 
     return (
         <div className="max-w-7xl mx-auto px-6">
-            <Header title="Xodimlar" toggleSidebar={toggleSidebar} />
+            <Header title={t('common.employees')} toggleSidebar={toggleSidebar} />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-blue-100">Jami Xodimlar</p>
+                            <p className="text-sm font-medium text-blue-100">{t('employees.totalEmployees')}</p>
                             <p className="text-3xl font-bold mt-2">{employees.length}</p>
                         </div>
                         <div className="p-3 bg-white/20 rounded-xl">
@@ -159,7 +161,7 @@ export default function Xodimlar() {
                 <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-xl shadow-lg shadow-green-200">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-green-100">Jami Maoshlar</p>
+                            <p className="text-sm font-medium text-green-100">{t('employees.totalSalaries')}</p>
                             <p className="text-3xl font-bold mt-2">${(totalSalary).toLocaleString()}</p>
                         </div>
                         <div className="p-3 bg-white/20 rounded-xl">
@@ -170,7 +172,7 @@ export default function Xodimlar() {
                 <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-xl shadow-lg shadow-purple-200">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-purple-100">Jami To'lovlar</p>
+                            <p className="text-sm font-medium text-purple-100">{t('employees.totalPayouts')}</p>
                             <p className="text-3xl font-bold mt-2">${(totalPayout).toLocaleString()}</p>
                         </div>
                         <div className="p-3 bg-white/20 rounded-xl">
@@ -185,7 +187,7 @@ export default function Xodimlar() {
                     <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Xodim qidirish..."
+                        placeholder={t('employees.searchPlaceholder')}
                         className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -197,22 +199,22 @@ export default function Xodimlar() {
                     className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
                 >
                     {isAdding ? <X size={20} /> : <UserPlus size={20} />}
-                    <span className="hidden sm:inline">{isAdding ? 'Bekor' : 'Yangi xodim'}</span>
+                    <span className="hidden sm:inline">{isAdding ? t('common.cancel') : t('employees.addEmployee')}</span>
                 </button>
             </div>
 
             {isAdding && (
                 <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 mb-8 fade-in">
                     <h3 className="text-xl font-bold text-gray-800 mb-6">
-                        {editId ? 'Xodimni tahrirlash' : 'Yangi xodim qo\'shish'}
+                        {editId ? t('employees.editEmployee') : t('employees.addEmployeeTitle')}
                     </h3>
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Ism Familiya *</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('employees.nameLabel')}</label>
                                 <input
                                     type="text"
-                                    placeholder="Ism Familiya"
+                                    placeholder={t('employees.name')}
                                     value={form.name}
                                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -220,10 +222,10 @@ export default function Xodimlar() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Lavozim *</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('employees.positionLabel')}</label>
                                 <input
                                     type="text"
-                                    placeholder="Lavozim"
+                                    placeholder={t('employees.position')}
                                     value={form.position}
                                     onChange={(e) => setForm({ ...form, position: e.target.value })}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -231,10 +233,10 @@ export default function Xodimlar() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Maosh ($) *</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('employees.salaryLabel')}</label>
                                 <input
                                     type="number"
-                                    placeholder="Maosh miqdori"
+                                    placeholder={t('employees.salaryPlaceholder')}
                                     value={form.monthly_salary}
                                     onChange={(e) => setForm({ ...form, monthly_salary: e.target.value })}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -243,10 +245,10 @@ export default function Xodimlar() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Bonus ($)</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('employees.bonus')}</label>
                                 <input
                                     type="number"
-                                    placeholder="Bonus miqdori"
+                                    placeholder={t('employees.bonusPlaceholder')}
                                     value={form.bonus_percent}
                                     onChange={(e) => setForm({ ...form, bonus_percent: e.target.value })}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -254,7 +256,7 @@ export default function Xodimlar() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Ishlagan kunlar</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('employees.workedDays')}</label>
                                 <input
                                     type="number"
                                     placeholder="0"
@@ -266,7 +268,7 @@ export default function Xodimlar() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Dam olgan kunlar</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('employees.restDays')}</label>
                                 <input
                                     type="number"
                                     placeholder="0"
@@ -284,14 +286,14 @@ export default function Xodimlar() {
                                 onClick={handleCancel}
                                 className="px-6 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors"
                             >
-                                Bekor qilish
+                                {t('common.cancel')}
                             </button>
                             <button
                                 type="submit"
                                 className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-600/30 font-bold transition-all"
                             >
                                 <Save size={20} />
-                                Saqlash
+                                {t('common.save')}
                             </button>
                         </div>
                     </form>
@@ -302,20 +304,20 @@ export default function Xodimlar() {
                 {filteredEmployees.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                         <Users size={48} className="mb-4 opacity-20" />
-                        <p className="font-medium text-lg">Xodimlar topilmadi</p>
+                        <p className="font-medium text-lg">{t('employees.noEmployees')}</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                    <th className="px-6 py-4 rounded-tl-2xl">Ism</th>
-                                    <th className="px-6 py-4">Lavozim</th>
-                                    <th className="px-6 py-4">Maosh</th>
-                                    <th className="px-6 py-4">Bonus</th>
-                                    <th className="px-6 py-4">Ishlagan/Dam</th>
-                                    <th className="px-6 py-4">Jami To'lov</th>
-                                    <th className="px-6 py-4 rounded-tr-2xl text-right">Amallar</th>
+                                    <th className="px-6 py-4 rounded-tl-2xl">{t('employees.name')}</th>
+                                    <th className="px-6 py-4">{t('employees.position')}</th>
+                                    <th className="px-6 py-4">{t('employees.salary')}</th>
+                                    <th className="px-6 py-4">{t('employees.bonus')}</th>
+                                    <th className="px-6 py-4">{t('employees.workedDays')}/{t('employees.restDays')}</th>
+                                    <th className="px-6 py-4">{t('employees.totalPayment')}</th>
+                                    <th className="px-6 py-4 rounded-tr-2xl text-right">{t('common.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
@@ -336,12 +338,12 @@ export default function Xodimlar() {
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex flex-col items-center">
-                                                        <span className="text-xs text-gray-400 font-bold uppercase">Ish</span>
+                                                        <span className="text-xs text-gray-400 font-bold uppercase">{t('employees.work')}</span>
                                                         <span className="text-green-600 font-bold">{xodim.worked_days || 0}</span>
                                                     </div>
                                                     <div className="h-8 w-px bg-gray-200"></div>
                                                     <div className="flex flex-col items-center">
-                                                        <span className="text-xs text-gray-400 font-bold uppercase">Dam</span>
+                                                        <span className="text-xs text-gray-400 font-bold uppercase">{t('employees.rest')}</span>
                                                         <span className="text-red-500 font-bold">{xodim.rest_days || 0}</span>
                                                     </div>
                                                 </div>

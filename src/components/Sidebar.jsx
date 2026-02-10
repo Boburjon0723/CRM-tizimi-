@@ -6,9 +6,11 @@ import { useState, useEffect } from 'react'
 import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }) {
   const { sidebarOpen, setSidebarOpen } = useLayout()
+  const { t } = useLanguage()
   const isOpen = propIsOpen !== undefined ? propIsOpen : sidebarOpen
   const setIsOpen = propSetIsOpen || setSidebarOpen
 
@@ -25,16 +27,16 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
   }, [])
 
   const menuItems = [
-    { href: '/', icon: Home, label: 'Dashboard' },
-    { href: '/mahsulotlar', icon: Package, label: 'Mahsulotlar' },
-    { href: '/ombor', icon: Warehouse, label: 'Ombor' },
-    { href: '/buyurtmalar', icon: ShoppingCart, label: 'Buyurtmalar' },
-    { href: '/mijozlar', icon: UserCircle, label: 'Mijozlar' },
-    { href: '/xabarlar', icon: MessageSquare, label: 'Xabarlar' },
-    { href: '/xodimlar', icon: Users, label: 'Xodimlar' },
-    { href: '/moliya', icon: DollarSign, label: 'Moliya' },
-    { href: '/statistika', icon: BarChart3, label: 'Statistika' },
-    { href: '/vebsayt', icon: Globe, label: 'Web Sayt' },
+    { href: '/', icon: Home, label: t('common.dashboard') },
+    { href: '/mahsulotlar', icon: Package, label: t('common.products') },
+    { href: '/ombor', icon: Warehouse, label: t('common.warehouse') },
+    { href: '/buyurtmalar', icon: ShoppingCart, label: t('common.orders') },
+    { href: '/mijozlar', icon: UserCircle, label: t('common.customers') },
+    { href: '/xabarlar', icon: MessageSquare, label: t('common.messages') },
+    { href: '/xodimlar', icon: Users, label: t('common.employees') },
+    { href: '/moliya', icon: DollarSign, label: t('common.finance') },
+    { href: '/statistika', icon: BarChart3, label: t('common.statistics') },
+    { href: '/vebsayt', icon: Globe, label: t('common.website') },
   ]
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut()
@@ -63,7 +65,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
             </div>
             <div className="min-w-0">
               <h1 className="text-xl font-bold tracking-tight truncate">{siteName}</h1>
-              <p className="text-xs text-blue-200">Boshqaruv Tizimi</p>
+              <p className="text-xs text-blue-200">{t('common.managementSystem')}</p>
             </div>
           </div>
           <button
@@ -105,7 +107,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
             className="flex w-full items-center gap-3 px-4 py-3.5 rounded-xl text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-all border border-transparent hover:border-red-500/20"
           >
             <LogOut size={20} />
-            <span className="font-medium">Chiqish</span>
+            <span className="font-medium">{t('common.logout')}</span>
           </button>
         </div>
       </div>

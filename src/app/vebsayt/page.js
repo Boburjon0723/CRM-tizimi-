@@ -6,9 +6,11 @@ import { sendTelegramNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
 import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type, Settings, FileText, AlertCircle, Plus, X, Trash2, Eye, EyeOff, Wallet, TrendingUp, Heart, Award, Mail } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function Vebsayt() {
   const { toggleSidebar } = useLayout()
+  const { t } = useLanguage()
   const [settings, setSettings] = useState({
     site_name: 'Mening Sexim',
     logo_url: '',
@@ -102,7 +104,7 @@ export default function Vebsayt() {
         if (payload.new.source === 'website') {
           playNotificationSound()
           setWebOrders(prev => [payload.new, ...prev])
-          sendTelegramNotification(`🆕 Yangi buyurtma!\nMijoz: ${payload.new.customer_name}\nTel: ${payload.new.customer_phone}\nSumma: ${payload.new.total}`)
+          sendTelegramNotification(`${t('website.orders.newOrderAlert')}!\nMijoz: ${payload.new.customer_name}\nTel: ${payload.new.customer_phone}\nSumma: ${payload.new.total}`)
         }
       })
       .subscribe()
@@ -121,25 +123,25 @@ export default function Vebsayt() {
     try {
       const { data, error } = await supabase.from('settings').upsert([settings]).select()
       if (error) throw error
-      alert('Sozlamalar saqlandi!')
+      alert(t('website.saveSuccess'))
     } catch (error) {
       console.error('Error saving settings:', error)
-      alert('Xatolik!')
+      alert(t('common.saveError'))
     }
   }
 
   async function handleSaveBanner() {
-    if (!bannerForm.title || !bannerForm.image_url) return alert('Sarlavha va Rasm URL majburiy!')
+    if (!bannerForm.title || !bannerForm.image_url) return alert(t('website.banners.requiredError'))
     try {
       const { error } = await supabase.from('banners').upsert([bannerForm])
       if (error) throw error
       setIsAddingBanner(false)
       setBannerForm({ title: '', subtitle: '', image_url: '', link: '', active: true })
       loadData()
-      alert('Banner saqlandi!')
+      alert(t('website.banners.saveSuccess'))
     } catch (error) {
       console.error('Error saving banner:', error)
-      alert('Xatolik!')
+      alert(t('common.saveError'))
     }
   }
 
@@ -153,7 +155,7 @@ export default function Vebsayt() {
   }
 
   async function handleDeleteBanner(id) {
-    if (!confirm('O\'chirmoqchimisiz?')) return
+    if (!confirm(t('common.deleteConfirm'))) return
     try {
       await supabase.from('banners').delete().eq('id', id)
       loadData()
@@ -210,7 +212,7 @@ export default function Vebsayt() {
       setCategoryImage(data.publicUrl)
     } catch (error) {
       console.error('Error uploading category image:', error)
-      alert('Rasm yuklashda xatolik!')
+      alert(t('common.saveError'))
     } finally {
       setUploadingCategory(false)
     }
@@ -227,22 +229,22 @@ export default function Vebsayt() {
       setNewCategory('')
       setCategoryImage('')
       loadData()
-      alert('Kategoriya qo\'shildi!')
+      alert(t('website.categories.saveSuccess'))
     } catch (error) {
       console.error('Error adding category:', error)
-      alert('Xatolik!')
+      alert(t('common.saveError'))
     }
   }
 
   async function handleDeleteCategory(id) {
-    if (!confirm('O\'chirmoqchimisiz? Agar bu kategoriyada mahsulotlar bo\'lsa, xatolik berishi mumkin.')) return
+    if (!confirm(t('website.categories.deleteConfirm'))) return
     try {
       const { error } = await supabase.from('categories').delete().eq('id', id)
       if (error) throw error
       loadData()
     } catch (error) {
       console.error('Error deleting category:', error)
-      alert('O\'chirish mumkin emas (ehtimol bog\'langan mahsulotlar bordir)')
+      alert(t('website.categories.deleteError'))
     }
   }
 
@@ -258,7 +260,7 @@ export default function Vebsayt() {
   }
 
   async function handleDeleteReview(id) {
-    if (!confirm('O\'chirmoqchimisiz?')) return
+    if (!confirm(t('common.deleteConfirm'))) return
     try {
       await supabase.from('reviews').delete().eq('id', id)
       loadData()
@@ -268,26 +270,26 @@ export default function Vebsayt() {
   }
 
   async function handleDeleteSubscription(id) {
-    if (!confirm('Ushbu obunachini o\'chirmoqchimisiz?')) return
+    if (!confirm(t('website.subscriptions.deleteConfirm'))) return
     try {
       const { error } = await supabase.from('newsletter_subscriptions').delete().eq('id', id)
       if (error) throw error
       loadData()
     } catch (error) {
       console.error('Error deleting subscription:', error)
-      alert('Xatolik!')
+      alert(t('common.saveError'))
     }
   }
 
   const tabs = [
-    { id: 'sozlamalar', icon: Settings, label: 'Sozlamalar' },
-    { id: 'biz-haqimizda', icon: FileText, label: 'Biz Haqimizda' },
-    { id: 'banners', icon: Image, label: 'Bannerlar' },
-    { id: 'kategoriyalar', icon: Layout, label: 'Kategoriyalar' },
-    { id: 'mahsulotlar', icon: FileText, label: 'Mahsulotlar' },
-    { id: 'buyurtmalar', icon: Globe, label: 'Web Buyurtmalar' },
-    { id: 'sharhlar', icon: AlertCircle, label: 'Sharhlar' },
-    { id: 'obunalar', icon: Mail, label: 'Obunalar' }
+    { id: 'sozlamalar', icon: Settings, label: t('website.tabs.settings') },
+    { id: 'biz-haqimizda', icon: FileText, label: t('website.tabs.about') },
+    { id: 'banners', icon: Image, label: t('website.tabs.banners') },
+    { id: 'kategoriyalar', icon: Layout, label: t('website.tabs.categories') },
+    { id: 'mahsulotlar', icon: FileText, label: t('website.tabs.products') },
+    { id: 'buyurtmalar', icon: Globe, label: t('website.tabs.orders') },
+    { id: 'sharhlar', icon: AlertCircle, label: t('website.tabs.reviews') },
+    { id: 'obunalar', icon: Mail, label: t('website.tabs.subscriptions') }
   ]
 
   if (loading) {
@@ -295,6 +297,7 @@ export default function Vebsayt() {
       <div className="p-8">
         <div className="flex items-center justify-center h-screen">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+          <div className="ml-4 font-bold text-blue-600">{t('common.loading')}</div>
         </div>
       </div>
     )
@@ -303,14 +306,14 @@ export default function Vebsayt() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6">
-      <Header title="Web Sayt Boshqaruvi" toggleSidebar={toggleSidebar} />
+      <Header title={t('common.website')} toggleSidebar={toggleSidebar} />
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
         <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-blue-100">Jami Bannerlar</p>
+              <p className="text-sm font-medium text-blue-100">{t('website.totalBanners')}</p>
               <p className="text-3xl font-bold mt-2">{banners.length}</p>
             </div>
             <div className="p-3 bg-white/20 rounded-xl">
@@ -321,7 +324,7 @@ export default function Vebsayt() {
         <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-2xl shadow-lg shadow-green-200">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-green-100">Web'da Ko'rinayotgan</p>
+              <p className="text-sm font-medium text-green-100">{t('website.visibleOnWeb')}</p>
               <p className="text-3xl font-bold mt-2">{products.filter(p => p.is_active).length}</p>
             </div>
             <div className="p-3 bg-white/20 rounded-xl">
@@ -332,7 +335,7 @@ export default function Vebsayt() {
         <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg shadow-purple-200">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-purple-100">Web Buyurtmalar</p>
+              <p className="text-sm font-medium text-purple-100">{t('website.webOrders')}</p>
               <p className="text-3xl font-bold mt-2">{webOrders.length}</p>
             </div>
             <div className="p-3 bg-white/20 rounded-xl">
@@ -343,7 +346,7 @@ export default function Vebsayt() {
         <div className="bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-2xl shadow-lg shadow-red-200">
           <div className="flex justify-between items-start">
             <div>
-              <p className="text-sm font-medium text-red-100">Yangi Sharhlar</p>
+              <p className="text-sm font-medium text-red-100">{t('website.newReviews')}</p>
               <p className="text-3xl font-bold mt-2">{reviews.filter(r => r.status === 'pending').length}</p>
             </div>
             <div className="p-3 bg-white/20 rounded-xl">
@@ -378,91 +381,91 @@ export default function Vebsayt() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
           <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
             <Settings className="text-blue-600" />
-            Sayt Sozlamalari
+            {t('website.settings.title')}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Sayt nomi</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.siteName')}</label>
               <input
                 type="text"
-                placeholder="Sayt nomi"
+                placeholder={t('website.settings.siteName')}
                 value={settings.site_name || ''}
                 onChange={(e) => setSettings({ ...settings, site_name: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Logo URL</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.logoUrl')}</label>
               <input
                 type="text"
-                placeholder="Logo URL"
+                placeholder={t('website.settings.logoUrl')}
                 value={settings.logo_url || ''}
                 onChange={(e) => setSettings({ ...settings, logo_url: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Hero Rasm (Desktop) URL</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.heroDesktop')}</label>
               <input
                 type="text"
-                placeholder="Desktop uchun katta rasm URL"
+                placeholder={t('website.settings.heroDesktop')}
                 value={settings.hero_desktop_url || ''}
                 onChange={(e) => setSettings({ ...settings, hero_desktop_url: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Hero Rasm (Mobil) URL</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.heroMobile')}</label>
               <input
                 type="text"
-                placeholder="Telefon uchun kichik rasm URL"
+                placeholder={t('website.settings.heroMobile')}
                 value={settings.hero_mobile_url || ''}
                 onChange={(e) => setSettings({ ...settings, hero_mobile_url: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-semibold text-gray-600">Banner matn / Subtitle</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.bannerText')}</label>
               <input
                 type="text"
-                placeholder="Banner ostidagi matn"
+                placeholder={t('website.settings.bannerText')}
                 value={settings.banner_text || ''}
                 onChange={(e) => setSettings({ ...settings, banner_text: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Telefon</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.phone')}</label>
               <input
                 type="tel"
-                placeholder="Telefon"
+                placeholder={t('website.settings.phone')}
                 value={settings.phone || ''}
                 onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Manzil</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.address')}</label>
               <input
                 type="text"
-                placeholder="Manzil"
+                placeholder={t('website.settings.address')}
                 value={settings.address || ''}
                 onChange={(e) => setSettings({ ...settings, address: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Ish vaqti</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.workHours')}</label>
               <input
                 type="text"
-                placeholder="Ish vaqti"
+                placeholder={t('website.settings.workHours')}
                 value={settings.work_hours || ''}
                 onChange={(e) => setSettings({ ...settings, work_hours: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Email</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.email')}</label>
               <input
                 type="email"
                 placeholder="info@pardacenter.uz"
@@ -473,7 +476,7 @@ export default function Vebsayt() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-600">Latitude (Kenglik)</label>
+                <label className="text-sm font-semibold text-gray-600">{t('website.settings.latitude')}</label>
                 <input
                   type="number"
                   step="0.000001"
@@ -484,7 +487,7 @@ export default function Vebsayt() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold text-gray-600">Longitude (Uzunlik)</label>
+                <label className="text-sm font-semibold text-gray-600">{t('website.settings.longitude')}</label>
                 <input
                   type="number"
                   step="0.000001"
@@ -496,30 +499,30 @@ export default function Vebsayt() {
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Telegram</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.telegram')}</label>
               <input
                 type="text"
-                placeholder="Telegram"
+                placeholder={t('website.settings.telegram')}
                 value={settings.telegram_url || ''}
                 onChange={(e) => setSettings({ ...settings, telegram_url: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Instagram</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.instagram')}</label>
               <input
                 type="text"
-                placeholder="Instagram"
+                placeholder={t('website.settings.instagram')}
                 value={settings.instagram_url || ''}
                 onChange={(e) => setSettings({ ...settings, instagram_url: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-600">Facebook</label>
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.facebook')}</label>
               <input
                 type="text"
-                placeholder="Facebook"
+                placeholder={t('website.settings.facebook')}
                 value={settings.facebook_url || ''}
                 onChange={(e) => setSettings({ ...settings, facebook_url: e.target.value })}
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
@@ -529,11 +532,11 @@ export default function Vebsayt() {
             <div className="col-span-1 md:col-span-2 border-t border-gray-100 pt-6 mt-2">
               <h4 className="font-bold mb-4 flex items-center gap-2 text-gray-800">
                 <Wallet size={20} className="text-green-600" />
-                To'lov Ma'lumotlari (Karta raqamlari)
+                {t('website.settings.paymentInfo')}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
-                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">HUMO</label>
+                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">{t('website.settings.humo')}</label>
                   <input
                     type="text"
                     placeholder="8600 ...."
@@ -543,7 +546,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">UZCARD</label>
+                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">{t('website.settings.uzcard')}</label>
                   <input
                     type="text"
                     placeholder="8600 ...."
@@ -553,7 +556,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">VISA</label>
+                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">{t('website.settings.visa')}</label>
                   <input
                     type="text"
                     placeholder="4000 ...."
@@ -571,7 +574,7 @@ export default function Vebsayt() {
               className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 font-bold transition-all"
             >
               <Save size={20} />
-              Saqlash
+              {t('common.save')}
             </button>
           </div>
         </div>
@@ -581,7 +584,7 @@ export default function Vebsayt() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
           <h3 className="text-2xl font-bold text-gray-800 mb-8 flex items-center gap-2">
             <FileText className="text-blue-600" />
-            Biz Haqimizda Sahifasi
+            {t('website.about.title')}
           </h3>
 
           <div className="space-y-8">
@@ -589,11 +592,11 @@ export default function Vebsayt() {
             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
               <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <Layout size={20} className="text-blue-600" />
-                Hero Qismi
+                {t('website.about.heroSection')}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-600">Sarlavha</label>
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.heroTitle')}</label>
                   <input
                     type="text"
                     placeholder="We bring elegance to your home"
@@ -603,7 +606,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-600">Qo'shimcha matn</label>
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.heroSubtitle')}</label>
                   <textarea
                     placeholder="Specializing in premium products..."
                     rows={3}
@@ -613,7 +616,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-600">Rasm URL</label>
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.heroImage')}</label>
                   <input
                     type="text"
                     placeholder="https://images.unsplash.com/..."
@@ -629,7 +632,7 @@ export default function Vebsayt() {
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border border-green-100">
               <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <TrendingUp size={20} className="text-green-600" />
-                Statistika (4 ta)
+                {t('website.about.statsSection')}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[1, 2, 3, 4].map((num) => (
@@ -660,11 +663,11 @@ export default function Vebsayt() {
             <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-100">
               <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <Heart size={20} className="text-purple-600" />
-                Missiya va Viziya
+                {t('website.about.missionSection')}
               </h4>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-600">Sarlavha</label>
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionTitle')}</label>
                   <input
                     type="text"
                     placeholder="Crafting details that matter"
@@ -674,7 +677,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-600">Matn 1</label>
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionText1')}</label>
                   <textarea
                     placeholder="Started as a small family business..."
                     rows={3}
@@ -684,7 +687,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-600">Matn 2</label>
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionText2')}</label>
                   <textarea
                     placeholder="Our mission is to provide..."
                     rows={3}
@@ -694,7 +697,7 @@ export default function Vebsayt() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-600">Ustaxona Rasmi (Our Workshop) URL</label>
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionImage')}</label>
                   <input
                     type="text"
                     placeholder="https://images.unsplash.com/..."
@@ -702,7 +705,7 @@ export default function Vebsayt() {
                     onChange={(e) => setSettings({ ...settings, about_mission_image: e.target.value })}
                     className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
                   />
-                  <p className="text-xs text-gray-400">Bu rasm "Biz haqimizda" sahifasida "Our Story/Ustaxona" qismida ko'rinadi.</p>
+                  <p className="text-xs text-gray-400">{t('website.about.missionImageHint')}</p>
                 </div>
               </div>
             </div>
@@ -711,7 +714,7 @@ export default function Vebsayt() {
             <div className="bg-gradient-to-br from-orange-50 to-yellow-50 p-6 rounded-xl border border-orange-100">
               <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <Award size={20} className="text-orange-600" />
-                Qadriyatlar (3 ta)
+                {t('website.about.valuesSection')}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[1, 2, 3].map((num) => (
@@ -745,7 +748,7 @@ export default function Vebsayt() {
                 className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 font-bold transition-all"
               >
                 <Save size={20} />
-                Saqlash
+                {t('common.save')}
               </button>
             </div>
           </div>
@@ -760,38 +763,38 @@ export default function Vebsayt() {
               className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 transition-all"
             >
               {isAddingBanner ? <X size={20} /> : <Plus size={20} />}
-              {isAddingBanner ? 'Bekor qilish' : 'Yangi banner'}
+              {isAddingBanner ? t('common.cancel') : t('website.banners.newBanner')}
             </button>
           </div>
 
           {isAddingBanner && (
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Yangi Banner</h3>
+              <h3 className="text-lg font-bold text-gray-800 mb-4">{t('website.banners.newBanner')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <input
                   type="text"
-                  placeholder="Sarlavha *"
+                  placeholder={t('website.banners.title')}
                   value={bannerForm.title}
                   onChange={(e) => setBannerForm({ ...bannerForm, title: e.target.value })}
                   className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
                 />
                 <input
                   type="text"
-                  placeholder="Qo'shimcha matn"
+                  placeholder={t('website.banners.subtitle')}
                   value={bannerForm.subtitle}
                   onChange={(e) => setBannerForm({ ...bannerForm, subtitle: e.target.value })}
                   className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
                 />
                 <input
                   type="text"
-                  placeholder="Rasm URL *"
+                  placeholder={t('website.banners.imageUrl')}
                   value={bannerForm.image_url}
                   onChange={(e) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
                   className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all col-span-1 md:col-span-2"
                 />
                 <input
                   type="text"
-                  placeholder="Havola (ixtiyoriy)"
+                  placeholder={t('website.banners.link')}
                   value={bannerForm.link}
                   onChange={(e) => setBannerForm({ ...bannerForm, link: e.target.value })}
                   className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all col-span-1 md:col-span-2"
@@ -802,7 +805,7 @@ export default function Vebsayt() {
                   onClick={handleSaveBanner}
                   className="bg-green-600 text-white px-8 py-3 rounded-xl hover:bg-green-700 font-bold shadow-green-200 shadow-lg transition-all"
                 >
-                  Saqlash
+                  {t('common.save')}
                 </button>
               </div>
             </div>
@@ -820,7 +823,7 @@ export default function Vebsayt() {
                   />
                   {!banner.active && (
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                      <span className="bg-red-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg">Nofaol</span>
+                      <span className="bg-red-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg">{t('common.inactive')}</span>
                     </div>
                   )}
                 </div>
@@ -837,7 +840,7 @@ export default function Vebsayt() {
                         }`}
                     >
                       {banner.active ? <EyeOff size={16} /> : <Eye size={16} />}
-                      {banner.active ? 'Yashirish' : 'Ko\'rsatish'}
+                      {banner.active ? t('common.hide') : t('common.show')}
                     </button>
                     <button
                       onClick={() => {
@@ -848,7 +851,7 @@ export default function Vebsayt() {
                       className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                     >
                       <Settings size={16} />
-                      Tahrirlash
+                      {t('common.edit')}
                     </button>
                   </div>
                   <button
@@ -856,7 +859,7 @@ export default function Vebsayt() {
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
                   >
                     <Trash2 size={16} />
-                    O'chirib yuborish
+                    {t('common.delete')}
                   </button>
                 </div>
               </div>
@@ -868,20 +871,20 @@ export default function Vebsayt() {
 
       {activeTab === 'kategoriyalar' && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
-          <h3 className="text-xl font-bold text-gray-800 mb-6">Kategoriyalar Boshqaruvi</h3>
+          <h3 className="text-xl font-bold text-gray-800 mb-6">{t('website.tabs.categories')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-gray-50 p-6 rounded-2xl border border-dashed border-gray-200">
             <div className="space-y-4">
-              <label className="text-sm font-bold text-gray-600 block">Kategoriya Nomi</label>
+              <label className="text-sm font-bold text-gray-600 block">{t('website.categories.name')}</label>
               <input
                 type="text"
-                placeholder="Masalan: Pardalar"
+                placeholder={t('website.categories.name')}
                 className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
               />
             </div>
             <div className="space-y-4">
-              <label className="text-sm font-bold text-gray-600 block">Kategoriya Rasmi</label>
+              <label className="text-sm font-bold text-gray-600 block">{t('website.categories.image')}</label>
               <div className="flex gap-4 items-center">
                 <div className="w-16 h-16 rounded-xl bg-white border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
                   {categoryImage ? (
@@ -893,7 +896,7 @@ export default function Vebsayt() {
                 <div className="flex-1 flex gap-2">
                   <input
                     type="text"
-                    placeholder="Rasm URL yoki yuklang"
+                    placeholder={t('website.categories.image')}
                     className="flex-1 border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm bg-white"
                     value={categoryImage}
                     onChange={(e) => setCategoryImage(e.target.value)}
@@ -911,7 +914,7 @@ export default function Vebsayt() {
                 className="bg-blue-600 text-white px-10 py-4 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 flex items-center gap-2 transition-all"
                 disabled={uploadingCategory}
               >
-                <Plus size={20} /> Kategoriya qo'shish
+                <Plus size={20} /> {t('website.categories.addCategory')}
               </button>
             </div>
           </div>
@@ -920,9 +923,9 @@ export default function Vebsayt() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-sm uppercase tracking-wider font-bold">
-                  <th className="px-6 py-4 w-20">Rasm</th>
-                  <th className="px-6 py-4">Kategoriya Nomi</th>
-                  <th className="px-6 py-4 text-right">Amallar</th>
+                  <th className="px-6 py-4 w-20">{t('common.image')}</th>
+                  <th className="px-6 py-4">{t('website.categories.name')}</th>
+                  <th className="px-6 py-4 text-right">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -949,8 +952,8 @@ export default function Vebsayt() {
                 ))}
                 {categories.length === 0 && (
                   <tr>
-                    <td colSpan="2" className="px-6 py-12 text-center text-gray-400">
-                      Hozircha kategoriyalar yo'q. Yangi qo'shing.
+                    <td colSpan="3" className="px-6 py-12 text-center text-gray-400">
+                      {t('website.categories.noCategories') || t('common.noData')}
                     </td>
                   </tr>
                 )}
@@ -966,12 +969,12 @@ export default function Vebsayt() {
             <table className="w-full min-w-[800px] text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
-                  <th className="px-6 py-4">Rasm</th>
-                  <th className="px-6 py-4">Mahsulot</th>
-                  <th className="px-6 py-4">Kategoriya</th>
-                  <th className="px-6 py-4">Narx</th>
-                  <th className="px-6 py-4">Ombor</th>
-                  <th className="px-6 py-4">Holati</th>
+                  <th className="px-6 py-4">{t('common.image')}</th>
+                  <th className="px-6 py-4">{t('common.products')}</th>
+                  <th className="px-6 py-4">{t('website.categories.addCategory')}</th>
+                  <th className="px-6 py-4">{t('products.price')}</th>
+                  <th className="px-6 py-4">{t('products.stock')}</th>
+                  <th className="px-6 py-4">{t('common.status')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -995,7 +998,7 @@ export default function Vebsayt() {
                     <td className="px-6 py-3 font-medium text-gray-700 font-mono">${product.sale_price?.toLocaleString()}</td>
                     <td className="px-6 py-3">
                       <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${product.stock > 10 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {product.stock} dona
+                        {product.stock} {t('products.unit')}
                       </span>
                     </td>
                     <td className="px-6 py-3">
@@ -1007,7 +1010,7 @@ export default function Vebsayt() {
                           }`}
                       >
                         {product.is_active ? <Eye size={14} /> : <EyeOff size={14} />}
-                        {product.is_active ? 'Saytda bor' : 'Yashirilgan'}
+                        {product.is_active ? t('common.show') : t('common.hide')}
                       </button>
                     </td>
                   </tr>
@@ -1024,14 +1027,14 @@ export default function Vebsayt() {
             <table className="w-full min-w-[900px] text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
-                  <th className="px-6 py-4">Mijoz</th>
-                  <th className="px-6 py-4">Telefon</th>
-                  <th className="px-6 py-4">Mahsulot</th>
-                  <th className="px-6 py-4">Miqdor</th>
-                  <th className="px-6 py-4">Summa</th>
-                  <th className="px-6 py-4">To'lov</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Sana</th>
+                  <th className="px-6 py-4">{t('website.orders.customer')}</th>
+                  <th className="px-6 py-4">{t('website.orders.phone')}</th>
+                  <th className="px-6 py-4">{t('common.products')}</th>
+                  <th className="px-6 py-4">{t('common.quantity')}</th>
+                  <th className="px-6 py-4">{t('website.orders.amount')}</th>
+                  <th className="px-6 py-4">{t('common.payment')}</th>
+                  <th className="px-6 py-4">{t('common.status')}</th>
+                  <th className="px-6 py-4">{t('common.date')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1039,9 +1042,9 @@ export default function Vebsayt() {
                   const firstItem = order.order_items?.[0] || {};
                   return (
                     <tr key={order.id} className="hover:bg-blue-50/30 transition-colors">
-                      <td className="px-6 py-4 font-bold text-gray-900">{order.customer_name || order.customers?.name || 'Foydalanuvchi'}</td>
+                      <td className="px-6 py-4 font-bold text-gray-900">{order.customer_name || order.customers?.name || t('common.user')}</td>
                       <td className="px-6 py-4 text-gray-600">{order.customer_phone || order.customers?.phone || '-'}</td>
-                      <td className="px-6 py-4 text-gray-800">{firstItem.product_name || firstItem.products?.name || 'Mavjud emas'}</td>
+                      <td className="px-6 py-4 text-gray-800">{firstItem.product_name || firstItem.products?.name || t('common.noData')}</td>
                       <td className="px-6 py-4 font-bold text-center">{firstItem.quantity || order.quantity || 1}</td>
                       <td className="px-6 py-4 font-bold text-green-600 font-mono">
                         ${order.total?.toLocaleString()}
@@ -1049,7 +1052,7 @@ export default function Vebsayt() {
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
                           <span className="text-xs font-bold uppercase text-gray-500 bg-gray-100 px-2 py-0.5 rounded w-fit">
-                            {order.payment_method_detail || 'Noma\'lum'}
+                            {order.payment_method_detail || t('common.unknown')}
                           </span>
                           {order.receipt_url && (
                             <a
@@ -1059,7 +1062,7 @@ export default function Vebsayt() {
                               className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"
                             >
                               <FileText size={12} />
-                              Chekni ko'rish
+                              {t('common.viewReceipt')}
                             </a>
                           )}
                         </div>
@@ -1075,14 +1078,14 @@ export default function Vebsayt() {
                                   'bg-gray-100 text-gray-800 focus:ring-gray-400'
                             }`}
                         >
-                          <option value="new">Yangi</option>
-                          <option value="pending">Qabul qilindi</option>
-                          <option value="completed">Tugallandi</option>
-                          <option value="cancelled">Bekor qilindi</option>
+                          <option value="new">{t('orders.statusNew')}</option>
+                          <option value="pending">{t('orders.statusAccepted')}</option>
+                          <option value="completed">{t('orders.statusCompleted')}</option>
+                          <option value="cancelled">{t('orders.statusCancelled')}</option>
                         </select>
                       </td>
                       <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">
-                        {new Date(order.created_at).toLocaleDateString('uz-UZ')}
+                        {new Date(order.created_at).toLocaleDateString(t('common.langCode') === 'uz' ? 'uz-UZ' : t('common.langCode') === 'ru' ? 'ru-RU' : 'en-US')}
                       </td>
                     </tr>
                   )
@@ -1098,18 +1101,18 @@ export default function Vebsayt() {
             <table className="w-full min-w-[800px] text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
-                  <th className="px-6 py-4">Mahsulot</th>
-                  <th className="px-6 py-4">Baho</th>
-                  <th className="px-6 py-4">Sharh</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4">Sana</th>
-                  <th className="px-6 py-4">Amallar</th>
+                  <th className="px-6 py-4">{t('website.reviews.product')}</th>
+                  <th className="px-6 py-4">{t('website.reviews.rating')}</th>
+                  <th className="px-6 py-4">{t('website.reviews.comment')}</th>
+                  <th className="px-6 py-4">{t('website.reviews.status')}</th>
+                  <th className="px-6 py-4">{t('common.date')}</th>
+                  <th className="px-6 py-4">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {reviews.map(review => (
                   <tr key={review.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="px-6 py-4 font-bold text-gray-900">{review.products?.name || 'Noma\'lum'}</td>
+                    <td className="px-6 py-4 font-bold text-gray-900">{review.products?.name || t('common.unknown')}</td>
                     <td className="px-6 py-4">
                       <div className="flex text-yellow-400 gap-0.5">
                         {[...Array(5)].map((_, i) => (
@@ -1123,19 +1126,19 @@ export default function Vebsayt() {
                         review.status === 'rejected' ? 'bg-red-100 text-red-700' :
                           'bg-yellow-100 text-yellow-700'
                         }`}>
-                        {review.status === 'approved' ? 'Tasdiqlangan' :
-                          review.status === 'rejected' ? 'Rad etilgan' : 'Kutilmoqda'}
+                        {review.status === 'approved' ? t('common.approved') :
+                          review.status === 'rejected' ? t('common.rejected') : t('common.pending')}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">{new Date(review.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">{new Date(review.created_at).toLocaleDateString(t('common.langCode') === 'uz' ? 'uz-UZ' : t('common.langCode') === 'ru' ? 'ru-RU' : 'en-US')}</td>
                     <td className="px-6 py-4 flex gap-2">
-                      <button onClick={() => handleReviewStatus(review.id, 'approved')} className="text-green-600 hover:bg-green-100 p-2 rounded-lg transition-colors" title="Tasdiqlash"><Eye size={18} /></button>
-                      <button onClick={() => handleReviewStatus(review.id, 'rejected')} className="text-yellow-600 hover:bg-yellow-100 p-2 rounded-lg transition-colors" title="Yashirish"><EyeOff size={18} /></button>
-                      <button onClick={() => handleDeleteReview(review.id)} className="text-red-600 hover:bg-red-100 p-2 rounded-lg transition-colors" title="O'chirish"><Trash2 size={18} /></button>
+                      <button onClick={() => handleReviewStatus(review.id, 'approved')} className="text-green-600 hover:bg-green-100 p-2 rounded-lg transition-colors" title={t('common.approve')}><Eye size={18} /></button>
+                      <button onClick={() => handleReviewStatus(review.id, 'rejected')} className="text-yellow-600 hover:bg-yellow-100 p-2 rounded-lg transition-colors" title={t('common.hide')}><EyeOff size={18} /></button>
+                      <button onClick={() => handleDeleteReview(review.id)} className="text-red-600 hover:bg-red-100 p-2 rounded-lg transition-colors" title={t('common.delete')}><Trash2 size={18} /></button>
                     </td>
                   </tr>
                 ))}
-                {reviews.length === 0 && <tr><td colSpan="6" className="text-center py-12 text-gray-400">Sharhlar yo'q</td></tr>}
+                {reviews.length === 0 && <tr><td colSpan="6" className="text-center py-12 text-gray-400">{t('website.reviews.noReviews')}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1148,10 +1151,10 @@ export default function Vebsayt() {
             <table className="w-full min-w-[800px] text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
-                  <th className="px-6 py-4">Email</th>
-                  <th className="px-6 py-4">Sana</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-right">Amallar</th>
+                  <th className="px-6 py-4">{t('website.subscriptions.email')}</th>
+                  <th className="px-6 py-4">{t('website.subscriptions.date')}</th>
+                  <th className="px-6 py-4">{t('common.status')}</th>
+                  <th className="px-6 py-4 text-right">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1159,11 +1162,11 @@ export default function Vebsayt() {
                   <tr key={sub.id} className="hover:bg-blue-50/30 transition-colors">
                     <td className="px-6 py-4 font-bold text-gray-900">{sub.email}</td>
                     <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">
-                      {new Date(sub.created_at).toLocaleString('uz-UZ')}
+                      {new Date(sub.created_at).toLocaleString(t('common.langCode') === 'uz' ? 'uz-UZ' : t('common.langCode') === 'ru' ? 'ru-RU' : 'en-US')}
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${sub.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                        {sub.status === 'active' ? 'Faol' : sub.status}
+                        {sub.status === 'active' ? t('common.active') : sub.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -1179,7 +1182,7 @@ export default function Vebsayt() {
                 {subscriptions.length === 0 && (
                   <tr>
                     <td colSpan="4" className="text-center py-12 text-gray-400">
-                      Hozircha obunachilar yo'q.
+                      {t('website.subscriptions.noSubscriptions')}
                     </td>
                   </tr>
                 )}

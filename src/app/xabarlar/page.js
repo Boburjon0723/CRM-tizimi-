@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react'
 import { Mail, Trash2, Eye, MessageSquare, Calendar, Phone, User, Filter } from 'lucide-react'
 import Header from '@/components/Header'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 import { supabase } from '@/lib/supabase'
 
 export default function Xabarlar() {
     const { toggleSidebar } = useLayout()
+    const { t, language } = useLanguage()
     const [messages, setMessages] = useState([])
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState('all') // all, new, read, replied
@@ -54,7 +56,7 @@ export default function Xabarlar() {
     }
 
     async function handleDelete(id) {
-        if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return
+        if (!confirm(t('messages.deleteConfirm'))) return
 
         try {
             const { error } = await supabase
@@ -66,7 +68,7 @@ export default function Xabarlar() {
             loadMessages()
         } catch (error) {
             console.error('Error deleting message:', error)
-            alert('O\'chirishda xatolik!')
+            alert(t('messages.deleteError'))
         }
     }
 
@@ -89,15 +91,15 @@ export default function Xabarlar() {
             loadMessages()
         } catch (error) {
             console.error('Error updating message:', error)
-            alert('Yangilashda xatolik!')
+            alert(t('messages.updateError'))
         }
     }
 
     const filterButtons = [
-        { value: 'all', label: 'Hammasi', color: 'gray' },
-        { value: 'new', label: 'Yangi', color: 'blue' },
-        { value: 'read', label: 'O\'qilgan', color: 'gray' },
-        { value: 'replied', label: 'Javob berilgan', color: 'green' }
+        { value: 'all', label: t('messages.all'), color: 'gray' },
+        { value: 'new', label: t('messages.new'), color: 'blue' },
+        { value: 'read', label: t('messages.read'), color: 'gray' },
+        { value: 'replied', label: t('messages.replied'), color: 'green' }
     ]
 
     const getStatusColor = (status) => {
@@ -111,14 +113,14 @@ export default function Xabarlar() {
 
     return (
         <div className="max-w-7xl mx-auto px-4 md:px-6">
-            <Header title="Xabarlar" toggleSidebar={toggleSidebar} />
+            <Header title={t('common.messages')} toggleSidebar={toggleSidebar} />
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white shadow-lg shadow-blue-200">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-blue-100">Jami Xabarlar</p>
+                            <p className="text-sm font-medium text-blue-100">{t('messages.totalMessages')}</p>
                             <p className="text-3xl font-bold mt-2">{messages.length}</p>
                         </div>
                         <MessageSquare size={36} className="opacity-80" />
@@ -128,7 +130,7 @@ export default function Xabarlar() {
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-600">Yangi</p>
+                            <p className="text-sm font-medium text-gray-600">{t('messages.new')}</p>
                             <p className="text-2xl font-bold text-blue-600 mt-2">
                                 {messages.filter(m => m.status === 'new').length}
                             </p>
@@ -140,7 +142,7 @@ export default function Xabarlar() {
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-600">O'qilgan</p>
+                            <p className="text-sm font-medium text-gray-600">{t('messages.read')}</p>
                             <p className="text-2xl font-bold text-gray-600 mt-2">
                                 {messages.filter(m => m.status === 'read').length}
                             </p>
@@ -152,7 +154,7 @@ export default function Xabarlar() {
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-sm font-medium text-gray-600">Javob berilgan</p>
+                            <p className="text-sm font-medium text-gray-600">{t('messages.replied')}</p>
                             <p className="text-2xl font-bold text-green-600 mt-2">
                                 {messages.filter(m => m.status === 'replied').length}
                             </p>
@@ -182,24 +184,24 @@ export default function Xabarlar() {
             {/* Messages Table */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 {loading ? (
-                    <div className="p-8 text-center text-gray-500">Yuklanmoqda...</div>
+                    <div className="p-8 text-center text-gray-500">{t('messages.loading')}</div>
                 ) : messages.length === 0 ? (
                     <div className="p-8 text-center text-gray-500">
                         <MessageSquare size={48} className="mx-auto mb-4 text-gray-300" />
-                        <p className="font-medium text-lg">Xabarlar topilmadi</p>
+                        <p className="font-medium text-lg">{t('messages.noMessages')}</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="min-w-full">
                             <thead className="bg-gray-50 border-b border-gray-100">
                                 <tr>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Mijoz</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Aloqa</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Mavzu</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Xabar</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Sana</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Status</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Amallar</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('messages.customer')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('messages.contact')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('messages.subject')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('messages.message')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('messages.date')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('messages.status')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('messages.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -235,7 +237,7 @@ export default function Xabarlar() {
                                         <td className="py-4 px-6">
                                             <div className="flex items-center gap-2 text-sm text-gray-500 whitespace-nowrap">
                                                 <Calendar size={14} />
-                                                {new Date(message.created_at).toLocaleDateString('uz-UZ')}
+                                                {new Date(message.created_at).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}
                                             </div>
                                         </td>
                                         <td className="py-4 px-6">
@@ -244,9 +246,9 @@ export default function Xabarlar() {
                                                 onChange={(e) => handleStatusChange(message.id, e.target.value)}
                                                 className={`px-3 py-1 rounded-full text-xs font-bold ${getStatusColor(message.status)} border-0 cursor-pointer`}
                                             >
-                                                <option value="new">Yangi</option>
-                                                <option value="read">O'qilgan</option>
-                                                <option value="replied">Javob berilgan</option>
+                                                <option value="new">{t('messages.new')}</option>
+                                                <option value="read">{t('messages.read')}</option>
+                                                <option value="replied">{t('messages.replied')}</option>
                                             </select>
                                         </td>
                                         <td className="py-4 px-6">

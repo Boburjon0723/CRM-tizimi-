@@ -7,9 +7,11 @@ import StatCard from '@/components/StatCard'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
 import { Package, Users, ShoppingCart, DollarSign, TrendingUp, TrendingDown } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function Dashboard() {
   const { toggleSidebar } = useLayout()
+  const { t, language } = useLanguage()
   const [stats, setStats] = useState({
     mahsulotlar: 0,
     xodimlar: 0,
@@ -73,7 +75,7 @@ export default function Dashboard() {
       setRecentOrders(formattedRecentOrders)
 
       // Process chart data for last 7 days
-      const days = ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan']
+      const daysUz = [t('dashboard.sun'), t('dashboard.mon'), t('dashboard.tue'), t('dashboard.wed'), t('dashboard.thu'), t('dashboard.fri'), t('dashboard.sat')]
       const weeklyData = {}
 
       // Initialize last 7 days
@@ -81,7 +83,7 @@ export default function Dashboard() {
         const date = new Date()
         date.setDate(date.getDate() - i)
         const dateStr = date.toISOString().split('T')[0]
-        const dayName = days[date.getDay()]
+        const dayName = daysUz[date.getDay()]
         weeklyData[dateStr] = { name: dayName, kirim: 0, chiqim: 0 }
       }
 
@@ -106,7 +108,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-center h-screen">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Yuklanmoqda...</p>
+            <p className="text-gray-600">{t('common.loading')}</p>
           </div>
         </div>
       </div>
@@ -116,33 +118,33 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <Header title="Dashboard" toggleSidebar={toggleSidebar} />
+      <Header title={t('common.dashboard')} toggleSidebar={toggleSidebar} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8 px-4 md:px-6">
         <StatCard
           icon={Package}
-          title="Umumiy Mahsulotlar"
+          title={t('dashboard.products')}
           value={stats.mahsulotlar}
           color="bg-blue-500"
           trend={12}
         />
         <StatCard
           icon={Users}
-          title="Xodimlar Soni"
+          title={t('dashboard.employees')}
           value={stats.xodimlar}
           color="bg-green-500"
           trend={5}
         />
         <StatCard
           icon={ShoppingCart}
-          title="Buyurtmalar"
+          title={t('common.orders')}
           value={stats.buyurtmalar}
           color="bg-purple-500"
           trend={-3}
         />
         <StatCard
           icon={DollarSign}
-          title="Foyda"
+          title={t('dashboard.profit')}
           value={`${(stats.foyda / 1000000).toFixed(1)}M`}
           color="bg-amber-500"
           trend={18}
@@ -154,11 +156,11 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
               <TrendingUp size={20} className="text-blue-600" />
-              Haftalik Statistika
+              {t('dashboard.weeklyStats')}
             </h3>
             <select className="bg-gray-50 border-none text-sm font-medium text-gray-500 rounded-lg p-2 outline-none">
-              <option>Bu hafta</option>
-              <option>O'tgan hafta</option>
+              <option>{t('dashboard.thisWeek')}</option>
+              <option>{t('dashboard.lastWeek')}</option>
             </select>
           </div>
           <ResponsiveContainer width="100%" height={320}>
@@ -170,7 +172,10 @@ export default function Dashboard() {
                 contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                 cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
               />
-              <Legend wrapperStyle={{ paddingTop: '20px' }} />
+              <Legend
+                formatter={(value) => value === 'kirim' ? t('dashboard.income') : t('dashboard.expense')}
+                wrapperStyle={{ paddingTop: '20px' }}
+              />
               <Line type="monotone" dataKey="kirim" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
               <Line type="monotone" dataKey="chiqim" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, fill: '#ef4444', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
             </LineChart>
@@ -178,12 +183,12 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-6">So'nggi Buyurtmalar</h3>
+          <h3 className="text-lg font-bold text-gray-800 mb-6">{t('dashboard.recentOrders')}</h3>
           <div className="space-y-4">
             {recentOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                 <ShoppingCart size={40} className="mb-3 opacity-20" />
-                <p>Hozircha buyurtmalar yo'q</p>
+                <p>{t('dashboard.noOrders')}</p>
               </div>
             ) : (
               recentOrders.map(order => (
@@ -211,20 +216,20 @@ export default function Dashboard() {
             )}
           </div>
           <button className="w-full mt-6 py-2.5 text-sm font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all">
-            Barchasini ko'rish
+            {t('dashboard.viewAll')}
           </button>
         </div>
       </div>
 
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mx-6 mb-8">
-        <h3 className="text-lg font-bold text-gray-800 mb-6">Oylik Kirim-Chiqim</h3>
+        <h3 className="text-lg font-bold text-gray-800 mb-6">{t('dashboard.monthlyStats')}</h3>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={chartData} barSize={40}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
             <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} dy={10} />
             <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
             <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            <Legend />
+            <Legend formatter={(value) => value === 'kirim' ? t('dashboard.income') : t('dashboard.expense')} />
             <Bar dataKey="kirim" fill="#2563eb" radius={[4, 4, 0, 0]} />
             <Bar dataKey="chiqim" fill="#ef4444" radius={[4, 4, 0, 0]} />
           </BarChart>

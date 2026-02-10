@@ -1,6 +1,7 @@
-import { Bell, Search, User, Menu, X, ShoppingBag } from 'lucide-react'
+import { Bell, Search, User, Menu, X, ShoppingBag, Globe } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useNotifications } from '@/context/NotificationContext'
+import { useLanguage } from '@/context/LanguageContext'
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 
@@ -8,13 +9,19 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
     const { toggleSidebar: contextToggleSidebar } = useLayout()
     const toggleSidebar = propToggleSidebar || contextToggleSidebar
     const { notifications, unreadCount, markAsRead, markAllAsRead, clearNotification } = useNotifications()
+    const { language, changeLanguage, t } = useLanguage()
     const [showNotifications, setShowNotifications] = useState(false)
+    const [showLangMenu, setShowLangMenu] = useState(false)
     const dropdownRef = useRef(null)
+    const langRef = useRef(null)
 
     useEffect(() => {
         function handleClickOutside(event) {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
                 setShowNotifications(false)
+            }
+            if (langRef.current && !langRef.current.contains(event.target)) {
+                setShowLangMenu(false)
             }
         }
         document.addEventListener('mousedown', handleClickOutside)
@@ -23,10 +30,23 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
 
     function formatTimeAgo(timestamp) {
         const seconds = Math.floor((new Date() - new Date(timestamp)) / 1000)
-        if (seconds < 60) return 'hozirgina'
-        if (seconds < 3600) return `${Math.floor(seconds / 60)} daqiqa oldin`
-        if (seconds < 86400) return `${Math.floor(seconds / 3600)} soat oldin`
-        return `${Math.floor(seconds / 86400)} kun oldin`
+
+        if (language === 'uz') {
+            if (seconds < 60) return 'hozirgina'
+            if (seconds < 3600) return `${Math.floor(seconds / 60)} daqiqa oldin`
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)} soat oldin`
+            return `${Math.floor(seconds / 86400)} kun oldin`
+        } else if (language === 'ru') {
+            if (seconds < 60) return 'только что'
+            if (seconds < 3600) return `${Math.floor(seconds / 60)} мин. назад`
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)} ч. назад`
+            return `${Math.floor(seconds / 86400)} дн. назад`
+        } else {
+            if (seconds < 60) return 'just now'
+            if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`
+            return `${Math.floor(seconds / 86400)} d ago`
+        }
     }
 
     return (
@@ -42,7 +62,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                     <div>
                         <h2 className="text-xl md:text-2xl font-bold text-gray-800 tracking-tight">{title}</h2>
                         <p className="hidden md:block text-sm text-gray-500 font-medium">
-                            {new Date().toLocaleDateString('uz-UZ', {
+                            {new Date().toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US', {
                                 weekday: 'long',
                                 year: 'numeric',
                                 month: 'long',
@@ -53,6 +73,40 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Language Switcher */}
+                    <div className="relative" ref={langRef}>
+                        <button
+                            onClick={() => setShowLangMenu(!showLangMenu)}
+                            className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-xl text-gray-500 transition-all font-medium uppercase text-sm"
+                        >
+                            <Globe size={20} className="text-blue-600" />
+                            <span>{language}</span>
+                        </button>
+
+                        {showLangMenu && (
+                            <div className="absolute right-0 mt-2 w-32 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
+                                <button
+                                    onClick={() => { changeLanguage('uz'); setShowLangMenu(false); }}
+                                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors ${language === 'uz' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}
+                                >
+                                    O'zbekcha
+                                </button>
+                                <button
+                                    onClick={() => { changeLanguage('ru'); setShowLangMenu(false); }}
+                                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors ${language === 'ru' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}
+                                >
+                                    Русский
+                                </button>
+                                <button
+                                    onClick={() => { changeLanguage('en'); setShowLangMenu(false); }}
+                                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors ${language === 'en' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}
+                                >
+                                    English
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setShowNotifications(!showNotifications)}
@@ -69,13 +123,13 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                         {showNotifications && (
                             <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
                                 <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                                    <h3 className="font-bold text-gray-800">Bildirishnomalar</h3>
+                                    <h3 className="font-bold text-gray-800">{t('common.notifications')}</h3>
                                     {unreadCount > 0 && (
                                         <button
                                             onClick={markAllAsRead}
                                             className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                                         >
-                                            Hammasini o'qilgan qilish
+                                            {t('common.markAllRead')}
                                         </button>
                                     )}
                                 </div>
@@ -84,7 +138,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                     {notifications.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                                             <Bell size={40} className="mb-3 opacity-20" />
-                                            <p className="text-sm">Bildirishnomalar yo'q</p>
+                                            <p className="text-sm">{t('common.noNotifications')}</p>
                                         </div>
                                     ) : (
                                         notifications.map(notification => (
@@ -136,7 +190,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                         onClick={() => setShowNotifications(false)}
                                         className="block w-full py-3 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
                                     >
-                                        Barcha buyurtmalarni ko'rish
+                                        {t('common.viewAllOrders')}
                                     </Link>
                                 )}
                             </div>
@@ -150,8 +204,8 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                             <User size={18} />
                         </div>
                         <div className="hidden sm:block text-left">
-                            <p className="text-sm font-bold text-gray-700 leading-none">Admin</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Boshqaruvchi</p>
+                            <p className="text-sm font-bold text-gray-700 leading-none">{t('common.admin')}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{t('common.manager')}</p>
                         </div>
                     </button>
                 </div>

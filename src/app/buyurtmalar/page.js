@@ -7,8 +7,12 @@ import Header from '@/components/Header'
 import { Plus, Edit, Trash2, Save, X, Search, Filter, ShoppingCart, Clock, CheckCircle, FileText } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 
+import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
+
 export default function Buyurtmalar() {
     const { toggleSidebar } = useLayout()
+    const { t, language } = useLanguage()
     const [orders, setOrders] = useState([])
     const [customers, setCustomers] = useState([])
     const [products, setProducts] = useState([])
@@ -100,7 +104,7 @@ export default function Buyurtmalar() {
     async function handleSubmit(e) {
         e.preventDefault()
         if (!form.customer_id || !form.product_id || !form.total) {
-            alert('Mijoz, mahsulot va summa majburiy!')
+            alert(t('orders.requiredMessage') || 'Mijoz, mahsulot va summa majburiy!')
             return
         }
 
@@ -165,12 +169,12 @@ export default function Buyurtmalar() {
             loadData()
         } catch (error) {
             console.error('Error saving order:', error)
-            alert('Xatolik yuz berdi!')
+            alert(t('common.saveError'))
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return
+        if (!confirm(t('common.deleteConfirm'))) return
 
         try {
             const { error } = await supabase
@@ -182,7 +186,7 @@ export default function Buyurtmalar() {
             loadData()
         } catch (error) {
             console.error('Error deleting order:', error)
-            alert('O\'chirishda xatolik!')
+            alert(t('common.deleteError'))
         }
     }
 
@@ -251,9 +255,9 @@ export default function Buyurtmalar() {
     }
 
     const filteredOrders = orders.filter(b => {
-        const customerName = b.customer_name || b.customers?.name || 'Noma\'lum'
+        const customerName = b.customer_name || b.customers?.name || t('common.unknown') || 'Noma\'lum'
         const matchesSearch = customerName.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesStatus = filterStatus === 'Hammasi' || b.status === filterStatus ||
+        const matchesStatus = filterStatus === 'Hammasi' || filterStatus === t('orders.allStatuses') || b.status === filterStatus ||
             (filterStatus === 'Yangi' && b.status === 'new') ||
             (filterStatus === 'Jarayonda' && b.status === 'pending') ||
             (filterStatus === 'Tugallandi' && b.status === 'completed') ||
@@ -281,13 +285,13 @@ export default function Buyurtmalar() {
 
     return (
         <div className="max-w-7xl mx-auto px-6">
-            <Header title="Buyurtmalar" toggleSidebar={toggleSidebar} />
+            <Header title={t('common.orders')} toggleSidebar={toggleSidebar} />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-blue-100">Jami Buyurtmalar</p>
+                            <p className="text-sm font-medium text-blue-100">{t('dashboard.newOrders')}</p>
                             <p className="text-3xl font-bold mt-2">{orders.length}</p>
                         </div>
                         <div className="p-3 bg-white/20 rounded-xl">
@@ -298,7 +302,7 @@ export default function Buyurtmalar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Yangi</p>
+                            <p className="text-sm font-medium text-gray-500">{t('orders.statusNew')}</p>
                             <p className="text-3xl font-bold mt-2 text-blue-600">{statusCounts.Yangi}</p>
                         </div>
                         <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
@@ -309,7 +313,7 @@ export default function Buyurtmalar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Tugallandi</p>
+                            <p className="text-sm font-medium text-gray-500">{t('orders.statusCompleted')}</p>
                             <p className="text-3xl font-bold mt-2 text-green-600">{statusCounts.Tugallandi}</p>
                         </div>
                         <div className="p-3 bg-green-50 rounded-xl text-green-600">
@@ -320,7 +324,7 @@ export default function Buyurtmalar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">Jami Summa</p>
+                            <p className="text-sm font-medium text-gray-500">{t('common.totalRevenue')}</p>
                             <p className="text-3xl font-bold mt-2 text-gray-800">${(totalSumma).toLocaleString()}</p>
                         </div>
                         <div className="p-3 bg-amber-50 rounded-xl text-amber-600 font-bold text-xl">
@@ -335,7 +339,7 @@ export default function Buyurtmalar() {
                     <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Mijoz bo'yicha qidirish..."
+                        placeholder={t('orders.searchPlaceholder')}
                         className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -350,11 +354,11 @@ export default function Buyurtmalar() {
                             onChange={(e) => setFilterStatus(e.target.value)}
                             className="bg-transparent py-3 outline-none text-gray-700 font-medium cursor-pointer"
                         >
-                            <option>Hammasi</option>
-                            <option>Yangi</option>
-                            <option>Jarayonda</option>
-                            <option>Tugallandi</option>
-                            <option>Bekor qilindi</option>
+                            <option>{t('orders.allStatuses')}</option>
+                            <option>{t('orders.statusNew')}</option>
+                            <option>{t('orders.statusProcessing')}</option>
+                            <option>{t('orders.statusCompleted')}</option>
+                            <option>{t('orders.statusCancelled')}</option>
                         </select>
                     </div>
 
@@ -363,7 +367,7 @@ export default function Buyurtmalar() {
                         className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
                     >
                         {isAdding ? <X size={20} /> : <Plus size={20} />}
-                        <span className="hidden sm:inline">{isAdding ? 'Bekor' : 'Buyurtma qo\'shish'}</span>
+                        <span className="hidden sm:inline">{isAdding ? t('common.cancel') : t('orders.newOrder')}</span>
                     </button>
                 </div>
             </div>
@@ -371,12 +375,12 @@ export default function Buyurtmalar() {
             {isAdding && (
                 <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 mb-8 fade-in">
                     <h3 className="text-xl font-bold text-gray-800 mb-6">
-                        {editId ? 'Buyurtmani tahrirlash' : 'Yangi buyurtma qo\'shish'}
+                        {editId ? t('orders.editOrder') : t('orders.newOrder')}
                     </h3>
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Mijoz</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('orders.customer')}</label>
                                 <select
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                     value={form.customer_id}
@@ -391,7 +395,7 @@ export default function Buyurtmalar() {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Mahsulot</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('common.products')}</label>
                                 <select
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all disabled:bg-gray-100"
                                     value={form.product_id}
@@ -407,7 +411,7 @@ export default function Buyurtmalar() {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Miqdor</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('orders.quantity')}</label>
                                 <input
                                     type="number"
                                     value={form.quantity}
@@ -419,7 +423,7 @@ export default function Buyurtmalar() {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Jami Summa ($)</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('orders.summa')} ($)</label>
                                 <input
                                     type="number"
                                     value={form.total}
@@ -430,32 +434,32 @@ export default function Buyurtmalar() {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Status</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('orders.status')}</label>
                                 <select
                                     value={form.status}
                                     onChange={(e) => setForm({ ...form, status: e.target.value })}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                 >
-                                    <option value="new">Yangi</option>
-                                    <option value="pending">Jarayonda</option>
-                                    <option value="completed">Tugallandi</option>
-                                    <option value="cancelled">Bekor qilindi</option>
+                                    <option value="new">{t('orders.statusNew')}</option>
+                                    <option value="pending">{t('orders.statusProcessing')}</option>
+                                    <option value="completed">{t('orders.statusCompleted')}</option>
+                                    <option value="cancelled">{t('orders.statusCancelled')}</option>
                                 </select>
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Manba</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('orders.source')}</label>
                                 <select
                                     value={form.source}
                                     onChange={(e) => setForm({ ...form, source: e.target.value })}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                 >
-                                    <option value="admin">Admin Panel</option>
-                                    <option value="website">Websayt</option>
+                                    <option value="admin">{t('orders.adminPanel')}</option>
+                                    <option value="website">{t('orders.website')}</option>
                                 </select>
                             </div>
                             <div className="md:col-span-2 lg:col-span-3 space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">Eslatma (Note)</label>
+                                <label className="block text-sm font-bold text-gray-700">{t('orders.note')}</label>
                                 <textarea
                                     value={form.note}
                                     onChange={(e) => setForm({ ...form, note: e.target.value })}
@@ -470,14 +474,14 @@ export default function Buyurtmalar() {
                                 onClick={handleCancel}
                                 className="px-6 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors"
                             >
-                                Bekor qilish
+                                {t('common.cancel')}
                             </button>
                             <button
                                 type="submit"
                                 className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-600/30 font-bold transition-all"
                             >
                                 <Save size={20} />
-                                Saqlash
+                                {t('common.save')}
                             </button>
                         </div>
                     </form>
@@ -488,21 +492,21 @@ export default function Buyurtmalar() {
                 {filteredOrders.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                         <ShoppingCart size={48} className="mb-4 opacity-20" />
-                        <p className="font-medium text-lg">Buyurtmalar topilmadi</p>
+                        <p className="font-medium text-lg">{t('orders.noOrders')}</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                    <th className="px-6 py-4 rounded-tl-2xl">ID & Sana</th>
-                                    <th className="px-6 py-4">Mijoz</th>
-                                    <th className="px-6 py-4">Mahsulotlar</th>
-                                    <th className="px-6 py-4">Summa</th>
-                                    <th className="px-6 py-4">To'lov</th>
-                                    <th className="px-6 py-4">Status</th>
-                                    <th className="px-6 py-4">Manba</th>
-                                    <th className="px-6 py-4 rounded-tr-2xl text-right">Amallar</th>
+                                    <th className="px-6 py-4 rounded-tl-2xl">{t('orders.idDate')}</th>
+                                    <th className="px-6 py-4">{t('orders.customer')}</th>
+                                    <th className="px-6 py-4">{t('orders.products')}</th>
+                                    <th className="px-6 py-4">{t('orders.total')}</th>
+                                    <th className="px-6 py-4">{t('orders.payment')}</th>
+                                    <th className="px-6 py-4">{t('orders.status')}</th>
+                                    <th className="px-6 py-4">{t('orders.source')}</th>
+                                    <th className="px-6 py-4 rounded-tr-2xl text-right">{t('customers.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
@@ -510,7 +514,7 @@ export default function Buyurtmalar() {
                                     <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
                                         <td className="px-6 py-4">
                                             <div className="font-mono text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded inline-block mb-1">#{item.id.slice(0, 8)}</div>
-                                            <div className="text-sm font-medium text-gray-700">{new Date(item.created_at).toLocaleDateString()}</div>
+                                            <div className="text-sm font-medium text-gray-700">{new Date(item.created_at).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}</div>
                                         </td>
                                         <td className="px-6 py-4 font-medium text-gray-900">
                                             <div className="font-bold">{item.customer_name || item.customers?.name || 'Noma\'lum'}</div>
@@ -537,7 +541,7 @@ export default function Buyurtmalar() {
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-1 text-xs">
                                                 <span className="font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded inline-block text-center">
-                                                    {item.payment_method_detail || 'Naqd'}
+                                                    {item.payment_method_detail || t('orders.cash')}
                                                 </span>
                                                 {item.receipt_url && (
                                                     <a
@@ -562,10 +566,10 @@ export default function Buyurtmalar() {
                                                             'bg-red-100 text-red-700 hover:bg-red-200'
                                                     }`}
                                             >
-                                                <option value="new">Yangi</option>
-                                                <option value="pending">Jarayonda</option>
-                                                <option value="completed">Tugallandi</option>
-                                                <option value="cancelled">Bekor</option>
+                                                <option value="new">{t('orders.statusNew')}</option>
+                                                <option value="pending">{t('orders.statusProcessing')}</option>
+                                                <option value="completed">{t('orders.statusCompleted')}</option>
+                                                <option value="cancelled">{t('orders.statusCancelled')}</option>
                                             </select>
                                         </td>
                                         <td className="px-6 py-4">

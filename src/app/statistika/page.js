@@ -24,9 +24,11 @@ import {
     Legend
 } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function StatistikaPage() {
     const { toggleSidebar } = useLayout()
+    const { t } = useLanguage()
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState({
         orders: [],
@@ -143,6 +145,7 @@ export default function StatistikaPage() {
             <div className="p-8">
                 <div className="flex items-center justify-center h-screen">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+                    <div className="ml-4 font-bold text-blue-600">{t('statistics.loading')}</div>
                 </div>
             </div>
         )
@@ -151,7 +154,7 @@ export default function StatistikaPage() {
 
     return (
         <div className="max-w-7xl mx-auto px-6 pb-8">
-            <Header title="Statistika va Tahlillar" toggleSidebar={toggleSidebar} />
+            <Header title={t('common.statistics')} toggleSidebar={toggleSidebar} />
 
             <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center gap-3 bg-white px-5 py-2.5 rounded-xl shadow-sm border border-gray-200">
@@ -161,10 +164,10 @@ export default function StatistikaPage() {
                         onChange={(e) => setFilterRange(e.target.value)}
                         className="bg-transparent border-none focus:ring-0 text-sm font-bold text-gray-700 outline-none cursor-pointer"
                     >
-                        <option value="7">Oxirgi 7 kun</option>
-                        <option value="30">Oxirgi 30 kun</option>
-                        <option value="90">Oxirgi 3 oy</option>
-                        <option value="365">Oxirgi 1 yil</option>
+                        <option value="7">{t('statistics.last7Days')}</option>
+                        <option value="30">{t('statistics.last30Days')}</option>
+                        <option value="90">{t('statistics.last3Months')}</option>
+                        <option value="365">{t('statistics.last1Year')}</option>
                     </select>
                 </div>
                 <button
@@ -182,7 +185,7 @@ export default function StatistikaPage() {
                             <ShoppingCart size={24} className="text-white" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-blue-100">Jami Savdo (Davr)</p>
+                            <p className="text-sm font-medium text-blue-100">{t('statistics.totalSalesPeriod')}</p>
                             <p className="text-2xl font-bold mt-1">${(totalSales).toLocaleString()}</p>
                         </div>
                     </div>
@@ -193,7 +196,7 @@ export default function StatistikaPage() {
                             <TrendingUp size={24} className="text-white" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-green-100">Umumiy Kirim</p>
+                            <p className="text-sm font-medium text-green-100">{t('statistics.totalIncome')}</p>
                             <p className="text-2xl font-bold mt-1">+${(totalIncome).toLocaleString()}</p>
                         </div>
                     </div>
@@ -204,7 +207,7 @@ export default function StatistikaPage() {
                             <TrendingDown size={24} className="text-white" />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-red-100">Umumiy Chiqim</p>
+                            <p className="text-sm font-medium text-red-100">{t('statistics.totalExpense')}</p>
                             <p className="text-2xl font-bold mt-1">-${(totalExpense).toLocaleString()}</p>
                         </div>
                     </div>
@@ -215,7 +218,7 @@ export default function StatistikaPage() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-gray-800">
                         <TrendingUp size={20} className="text-blue-500" />
-                        Savdo Dinamikasi
+                        {t('statistics.salesTrend')}
                     </h3>
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
@@ -240,7 +243,7 @@ export default function StatistikaPage() {
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-6 text-gray-800">Moliya: Kirim va Chiqim</h3>
+                    <h3 className="text-lg font-bold mb-6 text-gray-800">{t('statistics.incomeExpense')}</h3>
                     <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={financeChartData} barSize={20}>
@@ -253,15 +256,15 @@ export default function StatistikaPage() {
                                     cursor={{ fill: 'transparent' }}
                                 />
                                 <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                <Bar dataKey="income" name="Kirim" fill="#10b981" radius={[4, 4, 4, 4]} />
-                                <Bar dataKey="expense" name="Chiqim" fill="#ef4444" radius={[4, 4, 4, 4]} />
+                                <Bar dataKey="income" name={t('finances.income')} fill="#10b981" radius={[4, 4, 4, 4]} />
+                                <Bar dataKey="expense" name={t('finances.expense')} fill="#ef4444" radius={[4, 4, 4, 4]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-6 text-gray-800">Kategoriyalar bo'yicha ulush</h3>
+                    <h3 className="text-lg font-bold mb-6 text-gray-800">{t('statistics.categoryShare')}</h3>
                     <div className="h-[300px] flex items-center justify-center">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
@@ -289,7 +292,7 @@ export default function StatistikaPage() {
                 </div>
 
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
-                    <h3 className="text-lg font-bold mb-6 text-gray-800">Top Sotilayotgan Mahsulotlar</h3>
+                    <h3 className="text-lg font-bold mb-6 text-gray-800">{t('statistics.topSellingProducts')}</h3>
                     <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
                         {topProducts.map((prod, idx) => (
                             <div key={idx} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-xl transition-colors group">
@@ -304,7 +307,7 @@ export default function StatistikaPage() {
                         ))}
                         {topProducts.length === 0 && (
                             <div className="text-center py-12 text-gray-400">
-                                <p>Ma'lumotlar topilmadi</p>
+                                <p>{t('statistics.noData')}</p>
                             </div>
                         )}
                     </div>

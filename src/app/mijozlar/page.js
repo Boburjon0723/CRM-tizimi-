@@ -9,9 +9,11 @@ import {
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 export default function Mijozlar() {
     const { toggleSidebar } = useLayout()
+    const { t, language } = useLanguage()
     const [customers, setCustomers] = useState([])
     const [registeredUsers, setRegisteredUsers] = useState([])
     const [loading, setLoading] = useState(true)
@@ -57,7 +59,7 @@ export default function Mijozlar() {
                 if (profilesData && profilesData.length > 0) {
                     setRegisteredUsers(profilesData.map(u => ({
                         id: u.id,
-                        name: u.display_name || 'No name',
+                        name: u.display_name || u.email?.split('@')[0] || u.phone || 'Foydalanuvchi',
                         email: u.email || '-',
                         phone: u.phone || '-',
                         totalOrders: 0,
@@ -70,9 +72,9 @@ export default function Mijozlar() {
                 // Format registered users data  
                 const formattedUsers = (registeredData || []).map(user => ({
                     id: user.id,
-                    name: user.display_name || user.email?.split('@')[0] || 'No name',
-                    email: user.email,
-                    phone: user.phone,
+                    name: user.display_name || user.email?.split('@')[0] || user.phone || 'Foydalanuvchi',
+                    email: user.email || '-',
+                    phone: user.phone || '-',
                     totalOrders: Number(user.total_orders) || 0,
                     totalSpend: Number(user.total_spend) || 0,
                     created_at: user.created_at,
@@ -117,7 +119,7 @@ export default function Mijozlar() {
     async function handleSubmit(e) {
         e.preventDefault()
         if (!form.name || !form.phone) {
-            alert('Ism va telefon raqami majburiy!')
+            alert(t('customers.requiredError'))
             return
         }
 
@@ -130,7 +132,7 @@ export default function Mijozlar() {
                     .eq('id', editId)
 
                 if (error) throw error
-                alert('Mijoz yangilandi!')
+                alert(t('customers.successUpdate'))
             } else {
                 // Add new
                 const { error } = await supabase
@@ -138,7 +140,7 @@ export default function Mijozlar() {
                     .insert([form])
 
                 if (error) throw error
-                alert('Mijoz qo\'shildi!')
+                alert(t('customers.successAdd'))
             }
 
             setIsAdding(false)
@@ -147,12 +149,12 @@ export default function Mijozlar() {
             loadData()
         } catch (error) {
             console.error('Error saving customer:', error)
-            alert('Xatolik yuz berdi!')
+            alert(t('common.saveError'))
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm('Rostdan ham o\'chirmoqchimisiz?')) return
+        if (!confirm(t('common.deleteConfirm'))) return
 
         try {
             const { error } = await supabase
@@ -162,10 +164,10 @@ export default function Mijozlar() {
 
             if (error) throw error
             loadData()
-            alert('Mijoz o\'chirildi!')
+            alert(t('customers.successDelete'))
         } catch (error) {
             console.error('Error deleting customer:', error)
-            alert('O\'chirishda xatolik!')
+            alert(t('common.deleteError'))
         }
     }
 
@@ -209,7 +211,7 @@ export default function Mijozlar() {
             <div className="flex items-center justify-center h-screen">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600">Yuklanmoqda...</p>
+                    <p className="text-gray-600">{t('common.loading')}</p>
                 </div>
             </div>
         )
@@ -217,14 +219,14 @@ export default function Mijozlar() {
 
     return (
         <div className="max-w-7xl mx-auto px-4 md:px-6">
-            <Header title="Mijozlar" toggleSidebar={toggleSidebar} />
+            <Header title={t('common.customers')} toggleSidebar={toggleSidebar} />
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-blue-100">Jami Mijozlar</p>
+                            <p className="text-sm font-medium text-blue-100">{t('customers.base')}</p>
                             <p className="text-3xl font-bold mt-2">{customers.length}</p>
                         </div>
                         <div className="p-3 bg-white/20 rounded-xl">
@@ -236,7 +238,7 @@ export default function Mijozlar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-600">Ro'yxatdan o'tganlar</p>
+                            <p className="text-sm font-medium text-gray-600">{t('customers.registered')}</p>
                             <p className="text-3xl font-bold text-green-600 mt-2">{registeredUsers.length}</p>
                         </div>
                         <div className="p-3 bg-green-50 rounded-xl">
@@ -248,7 +250,7 @@ export default function Mijozlar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-600">Buyurtmalar</p>
+                            <p className="text-sm font-medium text-gray-600">{t('customers.orders')}</p>
                             <p className="text-3xl font-bold text-purple-600 mt-2">
                                 {customers.reduce((sum, c) => sum + c.totalOrders, 0)}
                             </p>
@@ -262,7 +264,7 @@ export default function Mijozlar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-600">Jami Daromad</p>
+                            <p className="text-sm font-medium text-gray-600">{t('common.totalRevenue')}</p>
                             <p className="text-2xl font-bold text-amber-600 mt-2">
                                 {(customers.reduce((sum, c) => sum + c.totalSpend, 0) / 1000000).toFixed(1)}M
                             </p>
@@ -278,7 +280,7 @@ export default function Mijozlar() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6 md:mb-8">
                 <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
                     <BarChart3 className="text-blue-600" size={20} />
-                    Top 5 Mijozlar (Xarajat bo'yicha)
+                    {t('customers.top5')}
                 </h3>
                 <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -314,7 +316,7 @@ export default function Mijozlar() {
                         }`}
                 >
                     <Users className="inline mr-2" size={20} />
-                    Mijozlar Bazasi ({customers.length})
+                    {t('customers.base')} ({customers.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('registered')}
@@ -324,7 +326,7 @@ export default function Mijozlar() {
                         }`}
                 >
                     <UserCheck className="inline mr-2" size={20} />
-                    Ro'yxatdan O'tganlar ({registeredUsers.length})
+                    {t('customers.registered')} ({registeredUsers.length})
                 </button>
             </div>
 
@@ -334,7 +336,7 @@ export default function Mijozlar() {
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                     <input
                         type="text"
-                        placeholder="Qidirish (ism, telefon, email)..."
+                        placeholder={t('customers.searchPlaceholder')}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -346,7 +348,7 @@ export default function Mijozlar() {
                         className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 shadow-md shadow-blue-200 font-bold whitespace-nowrap"
                     >
                         <Plus size={20} />
-                        Mijoz Qo'shish
+                        {t('customers.addCustomer')}
                     </button>
                 )}
             </div>
@@ -355,11 +357,11 @@ export default function Mijozlar() {
             {isAdding && activeTab === 'customers' && (
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
                     <h3 className="text-lg font-bold text-gray-800 mb-4">
-                        {editId ? 'Mijozni Tahrirlash' : 'Yangi Mijoz Qo\'shish'}
+                        {editId ? t('customers.editCustomer') : t('customers.newCustomer')}
                     </h3>
                     <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Ism *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">{t('customers.name')} *</label>
                             <input
                                 type="text"
                                 value={form.name}
@@ -369,7 +371,7 @@ export default function Mijozlar() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Telefon *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">{t('customers.phone')} *</label>
                             <input
                                 type="tel"
                                 value={form.phone}
@@ -379,7 +381,7 @@ export default function Mijozlar() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">{t('customers.email')}</label>
                             <input
                                 type="email"
                                 value={form.email}
@@ -388,7 +390,7 @@ export default function Mijozlar() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Manzil</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">{t('customers.address')}</label>
                             <input
                                 type="text"
                                 value={form.address}
@@ -397,7 +399,7 @@ export default function Mijozlar() {
                             />
                         </div>
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">Izoh</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">{t('customers.notes')}</label>
                             <textarea
                                 value={form.notes}
                                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
@@ -412,14 +414,14 @@ export default function Mijozlar() {
                                 className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
                             >
                                 <X className="inline mr-2" size={18} />
-                                Bekor qilish
+                                {t('common.cancel')}
                             </button>
                             <button
                                 type="submit"
                                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
                             >
                                 <Save className="inline mr-2" size={18} />
-                                Saqlash
+                                {t('common.save')}
                             </button>
                         </div>
                     </form>
@@ -433,13 +435,13 @@ export default function Mijozlar() {
                         <table className="min-w-full">
                             <thead className="bg-gray-50 border-b border-gray-100">
                                 <tr>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Mijoz</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Aloqa</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Manzil</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Buyurtmalar</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Jami Xarajat</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Oxirgi Buyurtma</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Amallar</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.customer')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.contact')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.address')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.orders')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.totalSpend')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.lastOrder')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -447,7 +449,7 @@ export default function Mijozlar() {
                                     <tr>
                                         <td colSpan={7} className="py-12 text-center text-gray-500">
                                             <Users size={48} className="mx-auto mb-4 text-gray-300" />
-                                            <p className="font-medium">Mijozlar topilmadi</p>
+                                            <p className="font-medium">{t('customers.noCustomers')}</p>
                                         </td>
                                     </tr>
                                 ) : (
@@ -499,14 +501,14 @@ export default function Mijozlar() {
                                             </td>
                                             <td className="py-4 px-6">
                                                 <span className="font-bold text-green-600">
-                                                    {customer.totalSpend.toLocaleString()} so'm
+                                                    {customer.totalSpend.toLocaleString()} {language === 'uz' ? 'so\'m' : language === 'ru' ? 'сум' : 'UZS'}
                                                 </span>
                                             </td>
                                             <td className="py-4 px-6">
                                                 {customer.lastOrder ? (
                                                     <div className="flex items-center gap-2 text-sm text-gray-600">
                                                         <Calendar size={14} />
-                                                        {new Date(customer.lastOrder).toLocaleDateString('uz-UZ')}
+                                                        {new Date(customer.lastOrder).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}
                                                     </div>
                                                 ) : (
                                                     <span className="text-gray-400">Yo'q</span>
@@ -545,18 +547,18 @@ export default function Mijozlar() {
                     <div className="p-6 border-b border-gray-100">
                         <p className="text-sm text-gray-600">
                             <UserCheck className="inline mr-2" size={18} />
-                            Veb-saytda buyurtma bergan barcha foydalanuvchilar
+                            {t('customers.websiteOrders')}
                         </p>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full">
                             <thead className="bg-gray-50 border-b border-gray-100">
                                 <tr>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Foydalanuvchi</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Aloqa</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Buyurtmalar</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Jami Xarajat</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Oxirgi Faollik</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.user')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.contact')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.orders')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.totalSpend')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.lastActivity')}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -564,7 +566,7 @@ export default function Mijozlar() {
                                     <tr>
                                         <td colSpan={5} className="py-12 text-center text-gray-500">
                                             <UserCheck size={48} className="mx-auto mb-4 text-gray-300" />
-                                            <p className="font-medium">Ro'yxatdan o'tgan foydalanuvchilar topilmadi</p>
+                                            <p className="font-medium">{t('customers.noRegistered')}</p>
                                         </td>
                                     </tr>
                                 ) : (
@@ -601,13 +603,19 @@ export default function Mijozlar() {
                                             </td>
                                             <td className="py-4 px-6">
                                                 <span className="font-bold text-green-600">
-                                                    {user.totalSpend.toLocaleString()} so'm
+                                                    {user.totalSpend.toLocaleString()} {language === 'uz' ? 'so\'m' : language === 'ru' ? 'сум' : 'UZS'}
                                                 </span>
                                             </td>
                                             <td className="py-4 px-6">
                                                 <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                    <Calendar size={14} />
-                                                    {new Date(user.lastOrder).toLocaleDateString('uz-UZ')}
+                                                    {user.lastOrder && new Date(user.lastOrder).getFullYear() > 1970 ? (
+                                                        <>
+                                                            <Calendar size={14} />
+                                                            {new Date(user.lastOrder).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-gray-400 italic">Hali faol emas</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
