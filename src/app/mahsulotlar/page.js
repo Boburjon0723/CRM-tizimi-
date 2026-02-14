@@ -20,17 +20,18 @@ export default function Mahsulotlar() {
     const [uploading, setUploading] = useState(false)
     const [form, setForm] = useState({
         name: '',
-        stock: '', // miqdor
         sale_price: '', // narx
-        purchase_price: '', // tannarx
         category_id: '',
         image_url: '',
         description: '', // tavsif
-        min_stock: '10', // kam qolganda ogohlantirish
         is_active: true, // web_active
         features: [], // xususiyatlar
         images: [], // ko'p rasmlar
-        imageUrlInput: '' // temporary input
+        imageUrlInput: '', // temporary input
+        color: '',
+        size: '', // Mapping to 'Kod'
+        rating: '0',
+        reviews: '0'
     })
 
     useEffect(() => {
@@ -103,22 +104,25 @@ export default function Mahsulotlar() {
         }
 
         try {
+            const categoryName = categories.find(c => c.id === form.category_id)?.name || ''
+
             const productData = {
                 name: form.name,
-                stock: parseFloat(form.stock) || 0,
                 sale_price: parseFloat(form.sale_price) || 0,
-                purchase_price: parseFloat(form.purchase_price) || 0,
                 category_id: form.category_id || null,
-                category_id: form.category_id || null,
+                category: categoryName, // Sync name for redundancy
                 image_url: form.images?.[0] || form.image_url || '',
                 images: form.images || [],
                 description: form.description,
-                min_stock: parseInt(form.min_stock) || 0,
                 is_active: form.is_active,
+                color: form.color,
+                size: form.size, // Kod
                 features: form.features.reduce((acc, curr) => {
                     if (curr.key) acc[curr.key] = curr.value;
                     return acc;
-                }, {})
+                }, {}),
+                rating: parseFloat(form.rating) || 0,
+                reviews: parseInt(form.reviews) || 0
             }
 
             if (editId) {
@@ -135,7 +139,7 @@ export default function Mahsulotlar() {
                 if (error) throw error
             }
 
-            setForm({ name: '', stock: '', sale_price: '', purchase_price: '', category_id: '', image_url: '', description: '', min_stock: '10', is_active: true, features: [], images: [], imageUrlInput: '' })
+            setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', size: '', rating: '0', reviews: '0' })
             setIsModalOpen(false)
             loadData()
         } catch (error) {
@@ -163,17 +167,19 @@ export default function Mahsulotlar() {
 
     function handleEdit(item) {
         setForm({
-            name: item.name,
-            stock: item.stock,
-            sale_price: item.sale_price,
-            purchase_price: item.purchase_price || '',
+            name: item.name || '',
+            sale_price: item.sale_price?.toString() || '',
             category_id: item.category_id || '',
             image_url: item.image_url || '',
             images: item.images || (item.image_url ? [item.image_url] : []),
             description: item.description || '',
-            min_stock: item.min_stock || '10',
             is_active: item.is_active ?? true,
-            features: item.features ? Object.entries(item.features).map(([key, value]) => ({ key, value })) : []
+            color: item.color || '',
+            size: item.size || '',
+            features: item.features ? Object.entries(item.features).map(([key, value]) => ({ key, value })) : [],
+            imageUrlInput: '',
+            rating: item.rating?.toString() || '0',
+            reviews: item.reviews?.toString() || '0'
         })
 
         setEditId(item.id)
@@ -181,7 +187,7 @@ export default function Mahsulotlar() {
     }
 
     function handleCancel() {
-        setForm({ name: '', stock: '', sale_price: '', purchase_price: '', category_id: '', image_url: '', description: '', min_stock: '10', is_active: true, features: [], images: [], imageUrlInput: '' })
+        setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', size: '' })
         setEditId(null)
         setIsModalOpen(false)
     }
@@ -270,9 +276,7 @@ export default function Mahsulotlar() {
                             setEditId(null)
                             setForm({
                                 name: '',
-                                stock: '',
                                 sale_price: '',
-                                purchase_price: '',
                                 category_id: '',
                                 image_url: '',
                                 description: '',
@@ -280,7 +284,9 @@ export default function Mahsulotlar() {
                                 is_active: true,
                                 features: [],
                                 images: [],
-                                imageUrlInput: ''
+                                imageUrlInput: '',
+                                color: '',
+                                size: ''
                             })
                             setIsModalOpen(true)
                         }}
@@ -300,9 +306,10 @@ export default function Mahsulotlar() {
                             <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
                                 <th className="px-6 py-4 rounded-tl-2xl">{t('products.image')}</th>
                                 <th className="px-6 py-4">{t('products.name')}</th>
+                                <th className="px-6 py-4">Koddi</th>
                                 <th className="px-6 py-4">{t('products.category')}</th>
                                 <th className="px-6 py-4">{t('products.salePrice')}</th>
-                                <th className="px-6 py-4">{t('common.warehouse')}</th>
+                                <th className="px-6 py-4">Rangi</th>
                                 <th className="px-6 py-4">{t('products.status')}</th>
                                 <th className="px-6 py-4 rounded-tr-2xl text-right">{t('products.actions')}</th>
                             </tr>
@@ -322,6 +329,9 @@ export default function Mahsulotlar() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 font-bold text-gray-800">{item.name}</td>
+                                    <td className="px-6 py-4 font-mono font-medium text-gray-600">
+                                        {item.size || '-'}
+                                    </td>
                                     <td className="px-6 py-4">
                                         <span className="px-3 py-1 rounded-lg bg-gray-100 text-gray-600 text-xs font-bold">
                                             {item.categories?.name || '-'}
@@ -331,13 +341,8 @@ export default function Mahsulotlar() {
                                         {item.sale_price?.toLocaleString()} $
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`font-bold ${item.stock <= item.min_stock ? 'text-red-500' : 'text-gray-700'}`}>
-                                                {item.stock}
-                                            </span>
-                                            {item.stock <= item.min_stock && (
-                                                <AlertTriangle size={14} className="text-red-500 animate-pulse" />
-                                            )}
+                                        <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                                            {item.color || '-'}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -428,33 +433,25 @@ export default function Mahsulotlar() {
                                 </div>
 
                                 <div className="space-y-4">
-                                    <label className="block text-sm font-bold text-gray-700">Olish Narxi ($)</label>
+                                    <label className="block text-sm font-bold text-gray-700">Rangi</label>
                                     <input
-                                        type="number"
+                                        type="text"
                                         className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                                        value={form.purchase_price}
-                                        onChange={e => setForm({ ...form, purchase_price: e.target.value })}
+                                        value={form.color}
+                                        onChange={e => setForm({ ...form, color: e.target.value })}
+                                        placeholder="Masalan: Oltin rang"
                                     />
                                 </div>
 
                                 {/* Stock & Category */}
                                 <div className="space-y-4">
-                                    <label className="block text-sm font-bold text-gray-700">Ombor (Soni)</label>
+                                    <label className="block text-sm font-bold text-gray-700">Koddi</label>
                                     <input
-                                        type="number"
-                                        required
+                                        type="text"
                                         className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                                        value={form.stock}
-                                        onChange={e => setForm({ ...form, stock: e.target.value })}
-                                    />
-                                </div>
-                                <div className="space-y-4">
-                                    <label className="block text-sm font-bold text-gray-700">Min. Qoldiq</label>
-                                    <input
-                                        type="number"
-                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                                        value={form.min_stock}
-                                        onChange={e => setForm({ ...form, min_stock: e.target.value })}
+                                        value={form.size}
+                                        onChange={e => setForm({ ...form, size: e.target.value })}
+                                        placeholder="Masalan: TR-102"
                                     />
                                 </div>
                                 <div className="space-y-4">
@@ -470,6 +467,34 @@ export default function Mahsulotlar() {
                                             <option key={cat.id} value={cat.id}>{cat.name}</option>
                                         ))}
                                     </select>
+                                </div>
+                            </div>
+
+                            {/* Rating and Reviews */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-4">
+                                    <label className="block text-sm font-bold text-gray-700">Reyting (0-5)</label>
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="5"
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                                        value={form.rating}
+                                        onChange={e => setForm({ ...form, rating: e.target.value })}
+                                        placeholder="4.5"
+                                    />
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="block text-sm font-bold text-gray-700">Sharhlar soni</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                                        value={form.reviews}
+                                        onChange={e => setForm({ ...form, reviews: e.target.value })}
+                                        placeholder="10"
+                                    />
                                 </div>
                             </div>
 

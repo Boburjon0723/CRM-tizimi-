@@ -121,14 +121,25 @@ export default function Vebsayt() {
 
   async function handleSaveSettings() {
     try {
-      const { data, error } = await supabase.from('settings').upsert([settings]).select()
+      // Ensure we have an ID for upsert to prevent duplication
+      const { data, error } = await supabase
+        .from('settings')
+        .upsert([{
+          ...settings,
+          // If settings has an ID, use it. Otherwise, let Postgres/Supabase handle it.
+          // In our loadData, we fetch the first row, so it should have an ID.
+        }])
+        .select()
+
       if (error) throw error
+      if (data && data[0]) setSettings(data[0])
       alert(t('website.saveSuccess'))
     } catch (error) {
       console.error('Error saving settings:', error)
       alert(t('common.saveError'))
     }
   }
+
 
   async function handleSaveBanner() {
     if (!bannerForm.title || !bannerForm.image_url) return alert(t('website.banners.requiredError'))

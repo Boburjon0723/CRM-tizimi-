@@ -16,7 +16,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
 
   const pathname = usePathname()
   const router = useRouter()
-  const [siteName, setSiteName] = useState('TechGear')
+  const [siteName, setSiteName] = useState('Nuur Home')
 
   useEffect(() => {
     async function getSettings() {
@@ -29,7 +29,6 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
   const menuItems = [
     { href: '/', icon: Home, label: t('common.dashboard') },
     { href: '/mahsulotlar', icon: Package, label: t('common.products') },
-    { href: '/ombor', icon: Warehouse, label: t('common.warehouse') },
     { href: '/buyurtmalar', icon: ShoppingCart, label: t('common.orders') },
     { href: '/mijozlar', icon: UserCircle, label: t('common.customers') },
     { href: '/xabarlar', icon: MessageSquare, label: t('common.messages') },

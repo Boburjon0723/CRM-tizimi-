@@ -71,7 +71,7 @@ export default function Buyurtmalar() {
                     *,
                     customers (id, name, phone),
                     order_items (
-                        id, quantity, price, product_name,
+                        id, quantity, price, product_name, color, size, image_url,
                         products (id, name)
                     )
                 `)
@@ -226,6 +226,94 @@ export default function Buyurtmalar() {
         setForm({ customer_id: '', product_id: '', quantity: '1', total: '', status: 'Yangi', source: 'admin' })
         setEditId(null)
         setIsAdding(false)
+    }
+
+    function handlePrint(item) {
+        const printWindow = window.open('', '_blank');
+        const customerName = item.customer_name || item.customers?.name || 'Noma\'lum';
+        const date = new Date(item.created_at).toLocaleDateString();
+
+        const html = `
+            <html>
+                <head>
+                    <title>Buyurtma #${item.id.slice(0, 8)}</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 40px; color: #333; }
+                        .header { margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
+                        .header h1 { margin: 0; color: #1a1a1a; }
+                        .info { display: flex; justify-content: space-between; margin-bottom: 30px; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                        th { background: #f8f9fa; text-align: left; padding: 12px; border-bottom: 2px solid #dee2e6; }
+                        td { padding: 12px; border-bottom: 1px solid #eee; }
+                        .total { text-align: right; font-size: 1.2em; font-weight: bold; }
+                        .footer { margin-top: 50px; text-align: center; color: #888; font-size: 0.8em; border-top: 1px solid #eee; padding-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1>NUUR_HOME_COLLECTION</h1>
+                        <p>Buyurtma hisob-varag'i</p>
+                    </div>
+                    <div class="info">
+                        <div>
+                            <strong>Mijoz:</strong> ${customerName}<br>
+                            <strong>Tel:</strong> ${item.customer_phone || item.customers?.phone || '-'}
+                        </div>
+                        <div style="text-align: right">
+                            <strong>Sana:</strong> ${date}<br>
+                            <strong>ID:</strong> #${item.id.slice(0, 8)}
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Mahsulot nomi</th>
+                                <th>Kod (SKU)</th>
+                                <th>Rang</th>
+                                <th>Soni</th>
+                                <th>Narxi</th>
+                                <th>Jami</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${item.order_items.map((oi, index) => `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            ${oi.image_url ? `<img src="${oi.image_url}" style="width: 40px; hieght: 40px; object-fit: cover; border-radius: 4px;">` : ''}
+                                            <span>${oi.product_name || oi.products?.name}</span>
+                                        </div>
+                                    </td>
+                                    <td>${oi.size || '-'}</td>
+                                    <td>${oi.color || '-'}</td>
+                                    <td>${oi.quantity}</td>
+                                    <td>$${oi.price?.toLocaleString()}</td>
+                                    <td>$${(oi.price * oi.quantity).toLocaleString()}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="total">
+                        Umumiy summa: $${item.total?.toLocaleString()}
+                    </div>
+                    <div class="footer">
+                        Nuur_Home_Collection - Premium parda aksesuarlari<br>
+                        Xaridingiz uchun rahmat!
+                    </div>
+                    <script>
+                        window.onload = function() {
+                            window.print();
+                            window.onafterprint = function() { window.close(); };
+                        };
+                    </script>
+                </body>
+            </html>
+        `;
+
+        printWindow.document.write(html);
+        printWindow.document.close();
     }
 
     // Product selection handler to auto-calculate price
@@ -523,9 +611,26 @@ export default function Buyurtmalar() {
                                             {item.order_items && item.order_items.length > 0 ? (
                                                 <div className="space-y-1">
                                                     {item.order_items.map((oi, idx) => (
-                                                        <div key={oi.id || idx} className="text-sm flex items-center gap-2">
-                                                            <span className="font-bold text-gray-800">{oi.quantity}x</span>
-                                                            <span className="truncate max-w-[150px]">{oi.product_name || oi.products?.name}</span>
+                                                        <div key={oi.id || idx} className="text-sm border-b border-gray-100 last:border-0 pb-1 mb-1">
+                                                            <div className="flex items-center gap-2">
+                                                                {oi.image_url && (
+                                                                    <img
+                                                                        src={oi.image_url}
+                                                                        alt=""
+                                                                        className="w-8 h-8 rounded object-cover bg-gray-50"
+                                                                    />
+                                                                )}
+                                                                <div>
+                                                                    <div className="font-medium text-gray-800 line-clamp-1">{oi.product_name || oi.products?.name}</div>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span className="font-bold text-blue-600">{oi.quantity}x</span>
+                                                                        <div className="text-[9px] text-gray-400 flex gap-2">
+                                                                            {oi.size && <span>Kod: {oi.size}</span>}
+                                                                            {oi.color && <span>Rang: {oi.color}</span>}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -577,6 +682,13 @@ export default function Buyurtmalar() {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={() => handlePrint(item)}
+                                                    className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                                    title={t('orders.print')}
+                                                >
+                                                    <FileText size={18} />
+                                                </button>
                                                 <button
                                                     onClick={() => handleEdit(item)}
                                                     className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
