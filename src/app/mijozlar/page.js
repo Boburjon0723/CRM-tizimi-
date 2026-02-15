@@ -23,8 +23,8 @@ export default function Mijozlar() {
     const [activeTab, setActiveTab] = useState('customers') // 'customers' or 'registered'
     const [form, setForm] = useState({
         name: '',
-        email: '',
         phone: '',
+        country: '',
         address: '',
         notes: ''
     })
@@ -59,8 +59,7 @@ export default function Mijozlar() {
                 if (profilesData && profilesData.length > 0) {
                     setRegisteredUsers(profilesData.map(u => ({
                         id: u.id,
-                        name: u.display_name || u.email?.split('@')[0] || u.phone || 'Foydalanuvchi',
-                        email: u.email || '-',
+                        name: u.display_name || u.phone || 'Foydalanuvchi',
                         phone: u.phone || '-',
                         totalOrders: 0,
                         totalSpend: 0,
@@ -72,8 +71,7 @@ export default function Mijozlar() {
                 // Format registered users data  
                 const formattedUsers = (registeredData || []).map(user => ({
                     id: user.id,
-                    name: user.display_name || user.email?.split('@')[0] || user.phone || 'Foydalanuvchi',
-                    email: user.email || '-',
+                    name: user.display_name || user.phone || 'Foydalanuvchi',
                     phone: user.phone || '-',
                     totalOrders: Number(user.total_orders) || 0,
                     totalSpend: Number(user.total_spend) || 0,
@@ -91,7 +89,6 @@ export default function Mijozlar() {
             // Enrich customers with order stats
             const enrichedCustomers = (customersData || []).map(cust => {
                 const custOrders = (allOrders || []).filter(o =>
-                    o.customer_email === cust.email ||
                     o.customer_phone === cust.phone ||
                     o.customer_id === cust.id
                 )
@@ -145,7 +142,7 @@ export default function Mijozlar() {
 
             setIsAdding(false)
             setEditId(null)
-            setForm({ name: '', email: '', phone: '', address: '', notes: '' })
+            setForm({ name: '', phone: '', country: '', address: '', notes: '' })
             loadData()
         } catch (error) {
             console.error('Error saving customer:', error)
@@ -175,8 +172,8 @@ export default function Mijozlar() {
         setEditId(customer.id)
         setForm({
             name: customer.name,
-            email: customer.email || '',
             phone: customer.phone,
+            country: customer.country || '',
             address: customer.address || '',
             notes: customer.notes || ''
         })
@@ -186,19 +183,17 @@ export default function Mijozlar() {
     function handleCancel() {
         setIsAdding(false)
         setEditId(null)
-        setForm({ name: '', email: '', phone: '', address: '', notes: '' })
+        setForm({ name: '', phone: '', country: '', address: '', notes: '' })
     }
 
     const filteredCustomers = customers.filter(c =>
         c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.email?.toLowerCase().includes(searchTerm.toLowerCase())
+        c.phone?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     const filteredUsers = registeredUsers.filter(u =>
         u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchTerm.toLowerCase())
+        u.phone?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     // Top customers for chart
@@ -381,13 +376,61 @@ export default function Mijozlar() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">{t('customers.email')}</label>
-                            <input
-                                type="email"
-                                value={form.email}
-                                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Davlat</label>
+                            <select
+                                value={form.country}
+                                onChange={(e) => setForm({ ...form, country: e.target.value })}
                                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                            >
+                                <option value="">Tanlang</option>
+                                <option value="uzbekistan">{t('common.countries.uzbekistan')}</option>
+                                <option value="kazakhstan">{t('common.countries.kazakhstan')}</option>
+                                <option value="kyrgyzstan">{t('common.countries.kyrgyzstan')}</option>
+                                <option value="tajikistan">{t('common.countries.tajikistan')}</option>
+                                <option value="turkmenistan">{t('common.countries.turkmenistan')}</option>
+                                <option value="turkey">{t('common.countries.turkey')}</option>
+                                <option value="uae">{t('common.countries.uae')}</option>
+                                <option value="saudi_arabia">{t('common.countries.saudi_arabia')}</option>
+                                <option value="qatar">{t('common.countries.qatar')}</option>
+                                <option value="kuwait">{t('common.countries.kuwait')}</option>
+                                <option value="oman">{t('common.countries.oman')}</option>
+                                <option value="azerbaijan">{t('common.countries.azerbaijan')}</option>
+                                <option value="russia">{t('common.countries.russia')}</option>
+                                <option value="china">{t('common.countries.china')}</option>
+                                <option value="afghanistan">{t('common.countries.afghanistan')}</option>
+                                <option value="armenia">{t('common.countries.armenia')}</option>
+                                <option value="belarus">{t('common.countries.belarus')}</option>
+                                <option value="georgia">{t('common.countries.georgia')}</option>
+                                <option value="india">{t('common.countries.india')}</option>
+                                <option value="iran">{t('common.countries.iran')}</option>
+                                <option value="iraq">{t('common.countries.iraq')}</option>
+                                <option value="israel">{t('common.countries.israel')}</option>
+                                <option value="jordan">{t('common.countries.jordan')}</option>
+                                <option value="lebanon">{t('common.countries.lebanon')}</option>
+                                <option value="mongolia">{t('common.countries.mongolia')}</option>
+                                <option value="pakistan">{t('common.countries.pakistan')}</option>
+                                <option value="palestine">{t('common.countries.palestine')}</option>
+                                <option value="syria">{t('common.countries.syria')}</option>
+                                <option value="yemen">{t('common.countries.yemen')}</option>
+                                <option value="south_korea">{t('common.countries.south_korea')}</option>
+                                <option value="japan">{t('common.countries.japan')}</option>
+                                <option value="vietnam">{t('common.countries.vietnam')}</option>
+                                <option value="thailand">{t('common.countries.thailand')}</option>
+                                <option value="malaysia">{t('common.countries.malaysia')}</option>
+                                <option value="singapore">{t('common.countries.singapore')}</option>
+                                <option value="indonesia">{t('common.countries.indonesia')}</option>
+                                <option value="uk">{t('common.countries.uk')}</option>
+                                <option value="germany">{t('common.countries.germany')}</option>
+                                <option value="france">{t('common.countries.france')}</option>
+                                <option value="italy">{t('common.countries.italy')}</option>
+                                <option value="spain">{t('common.countries.spain')}</option>
+                                <option value="netherlands">{t('common.countries.netherlands')}</option>
+                                <option value="switzerland">{t('common.countries.switzerland')}</option>
+                                <option value="poland">{t('common.countries.poland')}</option>
+                                <option value="ukraine">{t('common.countries.ukraine')}</option>
+                                <option value="bangladesh">{t('common.countries.bangladesh')}</option>
+                                <option value="philippines">{t('common.countries.philippines')}</option>
+                            </select>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">{t('customers.address')}</label>
@@ -437,6 +480,7 @@ export default function Mijozlar() {
                                 <tr>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.customer')}</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.contact')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Davlat</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.address')}</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.orders')}</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.totalSpend')}</th>
@@ -476,13 +520,10 @@ export default function Mijozlar() {
                                                             <span>{customer.phone}</span>
                                                         </div>
                                                     )}
-                                                    {customer.email && (
-                                                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                            <Mail size={14} className="flex-shrink-0" />
-                                                            <span className="truncate max-w-[200px]">{customer.email}</span>
-                                                        </div>
-                                                    )}
                                                 </div>
+                                            </td>
+                                            <td className="py-4 px-6 text-sm text-gray-600 font-medium">
+                                                {customer.country ? t(`common.countries.${customer.country}`) : '-'}
                                             </td>
                                             <td className="py-4 px-6">
                                                 {customer.address ? (
@@ -586,12 +627,6 @@ export default function Mijozlar() {
                                                         <div className="flex items-center gap-2 text-sm text-gray-600">
                                                             <Phone size={14} className="flex-shrink-0" />
                                                             <span>{user.phone}</span>
-                                                        </div>
-                                                    )}
-                                                    {user.email && (
-                                                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                            <Mail size={14} className="flex-shrink-0" />
-                                                            <span className="truncate max-w-[200px]">{user.email}</span>
                                                         </div>
                                                     )}
                                                 </div>

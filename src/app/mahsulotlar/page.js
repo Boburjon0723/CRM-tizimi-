@@ -12,6 +12,7 @@ export default function Mahsulotlar() {
     const { t } = useLanguage()
     const [products, setProducts] = useState([])
     const [categories, setCategories] = useState([])
+    const [colorLibrary, setColorLibrary] = useState([])
     const [loading, setLoading] = useState(true)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editId, setEditId] = useState(null)
@@ -20,19 +21,28 @@ export default function Mahsulotlar() {
     const [uploading, setUploading] = useState(false)
     const [form, setForm] = useState({
         name: '',
+        name_uz: '',
+        name_ru: '',
+        name_en: '',
         sale_price: '', // narx
         category_id: '',
         image_url: '',
         description: '', // tavsif
+        description_uz: '',
+        description_ru: '',
+        description_en: '',
         is_active: true, // web_active
         features: [], // xususiyatlar
         images: [], // ko'p rasmlar
         imageUrlInput: '', // temporary input
-        color: '',
+        color: '', // legacy
+        colors: [], // multi-select
         size: '', // Mapping to 'Kod'
         rating: '0',
         reviews: '0'
     })
+    const [isAddingColor, setIsAddingColor] = useState(false)
+    const [newColor, setNewColor] = useState({ name: '', hex_code: '#000000' })
 
     useEffect(() => {
         loadData()
@@ -53,6 +63,10 @@ export default function Mahsulotlar() {
 
             if (error) throw error
             setProducts(data || [])
+
+            // Load Color Library
+            const { data: colorData } = await supabase.from('product_colors').select('*').order('name')
+            setColorLibrary(colorData || [])
         } catch (error) {
             console.error('Error loading data:', error)
         } finally {
@@ -107,15 +121,22 @@ export default function Mahsulotlar() {
             const categoryName = categories.find(c => c.id === form.category_id)?.name || ''
 
             const productData = {
-                name: form.name,
+                name: form.name_ru || form.name_uz || form.name_en || form.name,
+                name_uz: form.name_uz,
+                name_ru: form.name_ru,
+                name_en: form.name_en,
                 sale_price: parseFloat(form.sale_price) || 0,
                 category_id: form.category_id || null,
                 category: categoryName, // Sync name for redundancy
                 image_url: form.images?.[0] || form.image_url || '',
                 images: form.images || [],
-                description: form.description,
+                description: form.description_ru || form.description_uz || form.description_en || form.description,
+                description_uz: form.description_uz,
+                description_ru: form.description_ru,
+                description_en: form.description_en,
                 is_active: form.is_active,
-                color: form.color,
+                color: form.colors?.[0] || form.color || '', // preserve first for legacy
+                colors: form.colors || [],
                 size: form.size, // Kod
                 features: form.features.reduce((acc, curr) => {
                     if (curr.key) acc[curr.key] = curr.value;
@@ -139,7 +160,7 @@ export default function Mahsulotlar() {
                 if (error) throw error
             }
 
-            setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', size: '', rating: '0', reviews: '0' })
+            setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', colors: [], size: '', rating: '0', reviews: '0' })
             setIsModalOpen(false)
             loadData()
         } catch (error) {
@@ -168,13 +189,20 @@ export default function Mahsulotlar() {
     function handleEdit(item) {
         setForm({
             name: item.name || '',
+            name_uz: item.name_uz || '',
+            name_ru: item.name_ru || '',
+            name_en: item.name_en || '',
             sale_price: item.sale_price?.toString() || '',
             category_id: item.category_id || '',
             image_url: item.image_url || '',
             images: item.images || (item.image_url ? [item.image_url] : []),
             description: item.description || '',
+            description_uz: item.description_uz || '',
+            description_ru: item.description_ru || '',
+            description_en: item.description_en || '',
             is_active: item.is_active ?? true,
             color: item.color || '',
+            colors: item.colors || (item.color ? [item.color] : []),
             size: item.size || '',
             features: item.features ? Object.entries(item.features).map(([key, value]) => ({ key, value })) : [],
             imageUrlInput: '',
@@ -187,9 +215,37 @@ export default function Mahsulotlar() {
     }
 
     function handleCancel() {
-        setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', size: '' })
+        setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', colors: [], size: '' })
         setEditId(null)
         setIsModalOpen(false)
+    }
+
+    async function handleAddColor() {
+        if (!newColor.name || !newColor.hex_code) return
+        try {
+            const { data, error } = await supabase
+                .from('product_colors')
+                .insert([newColor])
+                .select()
+            if (error) throw error
+            setColorLibrary([...colorLibrary, data[0]])
+            setNewColor({ name: '', hex_code: '#000000' })
+            setIsAddingColor(false)
+        } catch (error) {
+            console.error('Error adding color:', error)
+            alert('Rangni saqlashda xatolik!')
+        }
+    }
+
+    function toggleColor(colorName) {
+        const currentColors = [...(form.colors || [])]
+        const index = currentColors.indexOf(colorName)
+        if (index > -1) {
+            currentColors.splice(index, 1)
+        } else {
+            currentColors.push(colorName)
+        }
+        setForm({ ...form, colors: currentColors })
     }
 
     async function toggleStatus(id, currentStatus) {
@@ -227,11 +283,26 @@ export default function Mahsulotlar() {
     }
 
     const filteredProducts = products.filter(p => {
-        const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            p.categories?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesCategory = filterCategory === 'all' || p.categories?.name === filterCategory
+        const searchTerms = searchTerm.toLowerCase().split(' ').filter(word => word.length > 0);
 
-        return matchesSearch && matchesCategory
+        if (searchTerms.length === 0) {
+            return filterCategory === 'all' || p.categories?.name === filterCategory;
+        }
+
+        const matchesSearch = searchTerms.every(term => {
+            const inName = p.name?.toLowerCase().includes(term);
+            const inNameUz = p.name_uz?.toLowerCase().includes(term);
+            const inNameRu = p.name_ru?.toLowerCase().includes(term);
+            const inNameEn = p.name_en?.toLowerCase().includes(term);
+            const inSize = p.size?.toLowerCase().includes(term);
+            const inColors = p.colors?.some(c => c.toLowerCase().includes(term));
+            const inCategory = p.categories?.name?.toLowerCase().includes(term);
+
+            return inName || inNameUz || inNameRu || inNameEn || inSize || inColors || inCategory;
+        });
+
+        const matchesCategory = filterCategory === 'all' || p.categories?.name === filterCategory;
+        return matchesSearch && matchesCategory;
     })
 
     if (loading) {
@@ -341,8 +412,16 @@ export default function Mahsulotlar() {
                                         {item.sale_price?.toLocaleString()} $
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                                            {item.color || '-'}
+                                        <div className="flex flex-wrap gap-1">
+                                            {item.colors && item.colors.length > 0 ? (
+                                                item.colors.map((c, i) => (
+                                                    <span key={i} className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100">
+                                                        {c}
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="text-gray-400">{item.color || '-'}</span>
+                                            )}
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -408,17 +487,40 @@ export default function Mahsulotlar() {
                                 if the user complains. The main request was "ko'kamroq/chiroyli" which usually targets the main view.
                             */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Basic Fields */}
-                                <div className="space-y-4">
-                                    <label className="block text-sm font-bold text-gray-700">Nomi</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                                        value={form.name}
-                                        onChange={e => setForm({ ...form, name: e.target.value })}
-                                        placeholder="Mahsulot nomi"
-                                    />
+                                {/* Basic Fields - Multilingual Names */}
+                                <div className="space-y-4 col-span-2">
+                                    <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-bold text-blue-600 uppercase tracking-wider">Nomi (UZ)</label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                                value={form.name_uz}
+                                                onChange={e => setForm({ ...form, name_uz: e.target.value })}
+                                                placeholder="Masalan: Parda"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-bold text-red-600 uppercase tracking-wider">Название (RU)</label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                                value={form.name_ru}
+                                                onChange={e => setForm({ ...form, name_ru: e.target.value })}
+                                                placeholder="Например: Шторы"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider">Name (EN)</label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                                value={form.name_en}
+                                                onChange={e => setForm({ ...form, name_en: e.target.value })}
+                                                placeholder="e.g. Curtains"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-4">
@@ -432,15 +534,72 @@ export default function Mahsulotlar() {
                                     />
                                 </div>
 
-                                <div className="space-y-4">
-                                    <label className="block text-sm font-bold text-gray-700">Rangi</label>
-                                    <input
-                                        type="text"
-                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                                        value={form.color}
-                                        onChange={e => setForm({ ...form, color: e.target.value })}
-                                        placeholder="Masalan: Oltin rang"
-                                    />
+                                <div className="space-y-4 col-span-2">
+                                    <div className="flex justify-between items-center">
+                                        <label className="block text-sm font-bold text-gray-700">Ranglar to'plami</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsAddingColor(true)}
+                                            className="text-xs text-blue-600 font-bold hover:underline"
+                                        >
+                                            + Yangi rang qo'shish
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-xl border border-gray-100 min-h-[100px]">
+                                        {colorLibrary.map(color => (
+                                            <button
+                                                key={color.id}
+                                                type="button"
+                                                onClick={() => toggleColor(color.name)}
+                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${form.colors?.includes(color.name)
+                                                    ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                                                    : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'
+                                                    }`}
+                                            >
+                                                <div
+                                                    className="w-3 h-3 rounded-full border border-black/10"
+                                                    style={{ backgroundColor: color.hex_code }}
+                                                />
+                                                <span className="text-xs font-bold">{color.name}</span>
+                                            </button>
+                                        ))}
+
+                                        {colorLibrary.length === 0 && (
+                                            <p className="text-gray-400 text-xs italic">Ranglar kutubxonasi bo'sh</p>
+                                        )}
+                                    </div>
+
+                                    {isAddingColor && (
+                                        <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-center gap-4 animate-fade-in">
+                                            <input
+                                                type="text"
+                                                placeholder="Rang nomi"
+                                                className="flex-1 px-3 py-2 bg-white border border-blue-200 rounded-lg outline-none text-sm"
+                                                value={newColor.name}
+                                                onChange={e => setNewColor({ ...newColor, name: e.target.value })}
+                                            />
+                                            <input
+                                                type="color"
+                                                className="w-10 h-10 rounded-lg cursor-pointer border-none bg-transparent"
+                                                value={newColor.hex_code}
+                                                onChange={e => setNewColor({ ...newColor, hex_code: e.target.value })}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddColor}
+                                                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md"
+                                            >
+                                                Saqlash
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAddingColor(false)}
+                                                className="text-gray-400 hover:text-gray-600"
+                                            >
+                                                <X size={20} />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Stock & Category */}
@@ -498,15 +657,38 @@ export default function Mahsulotlar() {
                                 </div>
                             </div>
 
-                            {/* Description */}
+                            {/* Description - Multilingual */}
                             <div className="space-y-4">
-                                <label className="block text-sm font-bold text-gray-700">Tavsif</label>
-                                <textarea
-                                    className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                                    rows="3"
-                                    value={form.description}
-                                    onChange={e => setForm({ ...form, description: e.target.value })}
-                                ></textarea>
+                                <h3 className="text-sm font-bold text-gray-700">Tavsif (Description)</h3>
+                                <div className="grid grid-cols-1 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-bold text-blue-600 uppercase tracking-wider">Tavsif (UZ)</label>
+                                        <textarea
+                                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                            rows="2"
+                                            value={form.description_uz}
+                                            onChange={e => setForm({ ...form, description_uz: e.target.value })}
+                                        ></textarea>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-bold text-red-600 uppercase tracking-wider">Описание (RU)</label>
+                                        <textarea
+                                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                            rows="2"
+                                            value={form.description_ru}
+                                            onChange={e => setForm({ ...form, description_ru: e.target.value })}
+                                        ></textarea>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider">Description (EN)</label>
+                                        <textarea
+                                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                            rows="2"
+                                            value={form.description_en}
+                                            onChange={e => setForm({ ...form, description_en: e.target.value })}
+                                        ></textarea>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Images */}

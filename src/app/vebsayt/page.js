@@ -15,6 +15,9 @@ export default function Vebsayt() {
     site_name: 'Mening Sexim',
     logo_url: '',
     banner_text: 'Sifatli mahsulotlar eng arzon narxlarda!',
+    banner_text_uz: '',
+    banner_text_ru: '',
+    banner_text_en: '',
     phone: '+998901234567',
     address: 'Toshkent, Chilonzor tumani',
     work_hours: 'Dushanba-Shanba: 9:00-20:00',
@@ -30,6 +33,8 @@ export default function Vebsayt() {
 
   const [categories, setCategories] = useState([])
   const [newCategory, setNewCategory] = useState('')
+  const [newCategoryRu, setNewCategoryRu] = useState('')
+  const [newCategoryEn, setNewCategoryEn] = useState('')
   const [categoryImage, setCategoryImage] = useState('')
   const [uploadingCategory, setUploadingCategory] = useState(false)
 
@@ -43,7 +48,13 @@ export default function Vebsayt() {
   const [isAddingBanner, setIsAddingBanner] = useState(false)
   const [bannerForm, setBannerForm] = useState({
     title: '',
+    title_uz: '',
+    title_ru: '',
+    title_en: '',
     subtitle: '',
+    subtitle_uz: '',
+    subtitle_ru: '',
+    subtitle_en: '',
     image_url: '',
     link: '',
     active: true
@@ -142,12 +153,17 @@ export default function Vebsayt() {
 
 
   async function handleSaveBanner() {
-    if (!bannerForm.title || !bannerForm.image_url) return alert(t('website.banners.requiredError'))
+    if (!bannerForm.title_uz && !bannerForm.title_ru && !bannerForm.title_en) return alert(t('website.banners.requiredError'))
     try {
-      const { error } = await supabase.from('banners').upsert([bannerForm])
+      const bannerData = {
+        ...bannerForm,
+        title: bannerForm.title_ru || bannerForm.title_uz || bannerForm.title_en,
+        subtitle: bannerForm.subtitle_ru || bannerForm.subtitle_uz || bannerForm.subtitle_en
+      }
+      const { error } = await supabase.from('banners').upsert([bannerData])
       if (error) throw error
       setIsAddingBanner(false)
-      setBannerForm({ title: '', subtitle: '', image_url: '', link: '', active: true })
+      setBannerForm({ title: '', title_uz: '', title_ru: '', title_en: '', subtitle: '', subtitle_uz: '', subtitle_ru: '', subtitle_en: '', image_url: '', link: '', active: true })
       loadData()
       alert(t('website.banners.saveSuccess'))
     } catch (error) {
@@ -230,14 +246,19 @@ export default function Vebsayt() {
   }
 
   async function handleSaveCategory() {
-    if (!newCategory.trim()) return
+    if (!newCategory.trim() && !newCategoryRu.trim() && !newCategoryEn.trim()) return
     try {
       const { error } = await supabase.from('categories').insert([{
-        name: newCategory,
+        name: newCategory || newCategoryRu || newCategoryEn,
+        name_uz: newCategory,
+        name_ru: newCategoryRu,
+        name_en: newCategoryEn,
         image_url: categoryImage
       }])
       if (error) throw error
       setNewCategory('')
+      setNewCategoryRu('')
+      setNewCategoryEn('')
       setCategoryImage('')
       loadData()
       alert(t('website.categories.saveSuccess'))
@@ -435,15 +456,40 @@ export default function Vebsayt() {
                 className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
               />
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-sm font-semibold text-gray-600">{t('website.settings.bannerText')}</label>
-              <input
-                type="text"
-                placeholder={t('website.settings.bannerText')}
-                value={settings.banner_text || ''}
-                onChange={(e) => setSettings({ ...settings, banner_text: e.target.value })}
-                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-              />
+            <div className="space-y-4 md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <label className="text-sm font-bold text-gray-700 block mb-2">{t('website.settings.bannerText')}</label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">UZ</span>
+                  <input
+                    type="text"
+                    placeholder="Sifatli mahsulotlar..."
+                    value={settings.banner_text_uz || ''}
+                    onChange={(e) => setSettings({ ...settings, banner_text_uz: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">RU</span>
+                  <input
+                    type="text"
+                    placeholder="Качественные товары..."
+                    value={settings.banner_text_ru || ''}
+                    onChange={(e) => setSettings({ ...settings, banner_text_ru: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">EN</span>
+                  <input
+                    type="text"
+                    placeholder="Quality products..."
+                    value={settings.banner_text_en || ''}
+                    onChange={(e) => setSettings({ ...settings, banner_text_en: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                  />
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-semibold text-gray-600">{t('website.settings.phone')}</label>
@@ -782,20 +828,79 @@ export default function Vebsayt() {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
               <h3 className="text-lg font-bold text-gray-800 mb-4">{t('website.banners.newBanner')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <input
-                  type="text"
-                  placeholder={t('website.banners.title')}
-                  value={bannerForm.title}
-                  onChange={(e) => setBannerForm({ ...bannerForm, title: e.target.value })}
-                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                />
-                <input
-                  type="text"
-                  placeholder={t('website.banners.subtitle')}
-                  value={bannerForm.subtitle}
-                  onChange={(e) => setBannerForm({ ...bannerForm, subtitle: e.target.value })}
-                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                />
+                {/* Title Inputs */}
+                <div className="space-y-4 col-span-1 md:col-span-2 bg-blue-50/30 p-4 rounded-xl border border-blue-100/50">
+                  <label className="text-sm font-bold text-blue-800 block mb-2">{t('website.banners.title')}</label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">UZ</span>
+                      <input
+                        type="text"
+                        placeholder="Premium Sifat"
+                        value={bannerForm.title_uz || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, title_uz: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">RU</span>
+                      <input
+                        type="text"
+                        placeholder="Премиум Качество"
+                        value={bannerForm.title_ru || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, title_ru: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">EN</span>
+                      <input
+                        type="text"
+                        placeholder="Premium Quality"
+                        value={bannerForm.title_en || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, title_en: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subtitle Inputs */}
+                <div className="space-y-4 col-span-1 md:col-span-2 bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50">
+                  <label className="text-sm font-bold text-indigo-800 block mb-2">{t('website.banners.subtitle')}</label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">UZ</span>
+                      <input
+                        type="text"
+                        placeholder="Yangi kolleksiya"
+                        value={bannerForm.subtitle_uz || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, subtitle_uz: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">RU</span>
+                      <input
+                        type="text"
+                        placeholder="Новая коллекция"
+                        value={bannerForm.subtitle_ru || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, subtitle_ru: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">EN</span>
+                      <input
+                        type="text"
+                        placeholder="New collection"
+                        value={bannerForm.subtitle_en || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, subtitle_en: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
                 <input
                   type="text"
                   placeholder={t('website.banners.imageUrl')}
@@ -885,13 +990,33 @@ export default function Vebsayt() {
           <h3 className="text-xl font-bold text-gray-800 mb-6">{t('website.tabs.categories')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-gray-50 p-6 rounded-2xl border border-dashed border-gray-200">
             <div className="space-y-4">
-              <label className="text-sm font-bold text-gray-600 block">{t('website.categories.name')}</label>
+              <label className="text-sm font-bold text-gray-600 block">Kategoriya nomi (UZ)</label>
               <input
                 type="text"
-                placeholder={t('website.categories.name')}
+                placeholder="Masalan: Parda aksessuarlari"
                 className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
+              />
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">Название категории (RU)</label>
+              <input
+                type="text"
+                placeholder="Например: Аксессуары для штор"
+                className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                value={newCategoryRu}
+                onChange={(e) => setNewCategoryRu(e.target.value)}
+              />
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">Category Name (EN)</label>
+              <input
+                type="text"
+                placeholder="Example: Curtain accessories"
+                className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                value={newCategoryEn}
+                onChange={(e) => setNewCategoryEn(e.target.value)}
               />
             </div>
             <div className="space-y-4">
@@ -935,7 +1060,9 @@ export default function Vebsayt() {
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-sm uppercase tracking-wider font-bold">
                   <th className="px-6 py-4 w-20">{t('common.image')}</th>
-                  <th className="px-6 py-4">{t('website.categories.name')}</th>
+                  <th className="px-6 py-4">Nomi (UZ)</th>
+                  <th className="px-6 py-4">Название (RU)</th>
+                  <th className="px-6 py-4">Name (EN)</th>
                   <th className="px-6 py-4 text-right">{t('common.actions')}</th>
                 </tr>
               </thead>
@@ -953,7 +1080,9 @@ export default function Vebsayt() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-bold text-gray-800">{cat.name}</td>
+                    <td className="px-6 py-4 font-bold text-gray-800">{cat.name_uz || cat.name}</td>
+                    <td className="px-6 py-4 text-gray-600">{cat.name_ru}</td>
+                    <td className="px-6 py-4 text-gray-600">{cat.name_en}</td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => handleDeleteCategory(cat.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
                         <Trash2 size={20} />
