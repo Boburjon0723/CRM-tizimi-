@@ -23,6 +23,7 @@ export default function Mijozlar() {
     const [activeTab, setActiveTab] = useState('customers') // 'customers' or 'registered'
     const [form, setForm] = useState({
         name: '',
+        email: '',
         phone: '',
         country: '',
         address: '',
@@ -142,7 +143,7 @@ export default function Mijozlar() {
 
             setIsAdding(false)
             setEditId(null)
-            setForm({ name: '', phone: '', country: '', address: '', notes: '' })
+            setForm({ name: '', email: '', phone: '', country: '', address: '', notes: '' })
             loadData()
         } catch (error) {
             console.error('Error saving customer:', error)
@@ -172,6 +173,7 @@ export default function Mijozlar() {
         setEditId(customer.id)
         setForm({
             name: customer.name,
+            email: customer.email || '',
             phone: customer.phone,
             country: customer.country || '',
             address: customer.address || '',
@@ -183,12 +185,13 @@ export default function Mijozlar() {
     function handleCancel() {
         setIsAdding(false)
         setEditId(null)
-        setForm({ name: '', phone: '', country: '', address: '', notes: '' })
+        setForm({ name: '', email: '', phone: '', country: '', address: '', notes: '' })
     }
 
     const filteredCustomers = customers.filter(c =>
         c.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone?.toLowerCase().includes(searchTerm.toLowerCase())
+        c.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.email?.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
     const filteredUsers = registeredUsers.filter(u =>
@@ -376,6 +379,15 @@ export default function Mijozlar() {
                             />
                         </div>
                         <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                            <input
+                                type="email"
+                                value={form.email}
+                                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">Davlat</label>
                             <select
                                 value={form.country}
@@ -518,6 +530,12 @@ export default function Mijozlar() {
                                                         <div className="flex items-center gap-2 text-sm text-gray-600">
                                                             <Phone size={14} className="flex-shrink-0" />
                                                             <span>{customer.phone}</span>
+                                                        </div>
+                                                    )}
+                                                    {customer.email && (
+                                                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                            <Mail size={14} className="flex-shrink-0" />
+                                                            <span>{customer.email}</span>
                                                         </div>
                                                     )}
                                                 </div>
