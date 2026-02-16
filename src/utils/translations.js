@@ -195,7 +195,8 @@ export const translations = {
             filterByCategory: 'Kategoriya bo\'yicha',
             successAdd: 'Mahsulot qo\'shildi!',
             successUpdate: 'Mahsulot yangilandi!',
-            successDelete: 'Mahsulot o\'chirildi!'
+            successDelete: 'Mahsulot o\'chirildi!',
+            requiredError: 'Nomi va Narxi majburiy!'
         },
         warehouse: {
             title: 'Ombor Boshqaruvi',
@@ -596,7 +597,8 @@ export const translations = {
             filterByCategory: 'По категории',
             successAdd: 'Продукт добавлен!',
             successUpdate: 'Продукт обновлен!',
-            successDelete: 'Продукт удален!'
+            successDelete: 'Продукт удален!',
+            requiredError: 'Название и Цена обязательны!'
         },
         warehouse: {
             title: 'Управление складом',
@@ -997,7 +999,8 @@ export const translations = {
             filterByCategory: 'By category',
             successAdd: 'Product added!',
             successUpdate: 'Product updated!',
-            successDelete: 'Product deleted!'
+            successDelete: 'Product deleted!',
+            requiredError: 'Name and Price are required!'
         },
         warehouse: {
             title: 'Warehouse Management',

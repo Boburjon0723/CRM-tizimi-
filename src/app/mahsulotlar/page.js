@@ -112,7 +112,8 @@ export default function Mahsulotlar() {
 
     async function handleSubmit(e) {
         e.preventDefault()
-        if (!form.name || !form.sale_price) {
+        const hasName = form.name_uz || form.name_ru || form.name_en || form.name;
+        if (!hasName || !form.sale_price) {
             alert(t('products.requiredError') || 'Nom va Narx majburiy!')
             return
         }
