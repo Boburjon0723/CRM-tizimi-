@@ -9,7 +9,7 @@ import { useLanguage } from '@/context/LanguageContext'
 
 export default function Mahsulotlar() {
     const { toggleSidebar } = useLayout()
-    const { t } = useLanguage()
+    const { t, language } = useLanguage()
     const [products, setProducts] = useState([])
     const [categories, setCategories] = useState([])
     const [colorLibrary, setColorLibrary] = useState([])
@@ -43,7 +43,8 @@ export default function Mahsulotlar() {
         model_3d_url: '' // 3D model link
     })
     const [isAddingColor, setIsAddingColor] = useState(false)
-    const [newColor, setNewColor] = useState({ name: '', hex_code: '#000000' })
+    const [newColor, setNewColor] = useState({ name_uz: '', name_ru: '', name_en: '', hex_code: '#000000' })
+    const [cleanupInProgress, setCleanupInProgress] = useState(false)
 
     useEffect(() => {
         loadData()
@@ -254,19 +255,82 @@ export default function Mahsulotlar() {
     }
 
     async function handleAddColor() {
-        if (!newColor.name || !newColor.hex_code) return
+        const name_uz = (newColor.name_uz || '').trim()
+        const name_ru = (newColor.name_ru || '').trim()
+        const name_en = (newColor.name_en || '').trim()
+        if (!name_uz && !name_ru && !name_en) {
+            alert('Kamida bitta tilda rang nomini kiriting!')
+            return
+        }
+        if (!newColor.hex_code) return
+        const name = name_uz || name_ru || name_en
         try {
             const { data, error } = await supabase
                 .from('product_colors')
-                .insert([newColor])
+                .insert([{ name, name_uz: name_uz || name, name_ru: name_ru || name, name_en: name_en || name, hex_code: newColor.hex_code }])
                 .select()
-            if (error) throw error
+            if (error) throw new Error(error.message || JSON.stringify(error))
             setColorLibrary([...colorLibrary, data[0]])
-            setNewColor({ name: '', hex_code: '#000000' })
+            setNewColor({ name_uz: '', name_ru: '', name_en: '', hex_code: '#000000' })
             setIsAddingColor(false)
         } catch (error) {
             console.error('Error adding color:', error)
-            alert('Rangni saqlashda xatolik!')
+            const msg = error?.message || error?.error_description || 'Noma\'lum xatolik'
+            alert('Rangni saqlashda xatolik: ' + msg)
+        }
+    }
+
+    async function handleDeleteColor(e, colorId, colorName) {
+        e.stopPropagation()
+        if (!confirm(`"${colorName}" rangini o'chirishni xohlaysizmi? Barcha mahsulotlardan ham olib tashlanadi.`)) return
+        try {
+            // 1. Barcha mahsulotlardan shu rangni olib tashlash
+            const { data: productsWithColor } = await supabase
+                .from('products')
+                .select('id, colors')
+                .overlaps('colors', [colorName])
+
+            if (productsWithColor?.length) {
+                for (const p of productsWithColor) {
+                    const newColors = (p.colors || []).filter(c => c !== colorName)
+                    await supabase.from('products').update({ colors: newColors }).eq('id', p.id)
+                }
+            }
+
+            // 2. Rangni product_colors dan o'chirish
+            const { error } = await supabase.from('product_colors').delete().eq('id', colorId)
+            if (error) throw error
+            setColorLibrary(colorLibrary.filter(c => c.id !== colorId))
+            setForm(f => ({ ...f, colors: (f.colors || []).filter(c => c !== colorName) }))
+            loadData()
+        } catch (error) {
+            console.error('Error deleting color:', error)
+            alert('Rangni o\'chirishda xatolik: ' + (error?.message || ''))
+        }
+    }
+
+    async function handleCleanupOrphanedColors() {
+        if (!confirm('Mahsulotlardan mavjud bo\'lmagan (o\'chirilgan) ranglarni tozalashni xohlaysizmi?')) return
+        try {
+            setCleanupInProgress(true)
+            const validNames = new Set(colorLibrary.map(c => c.name))
+            const { data: allProducts } = await supabase.from('products').select('id, colors')
+            let updated = 0
+            for (const p of allProducts || []) {
+                const arr = p.colors || []
+                const filtered = arr.filter(c => validNames.has(c))
+                if (filtered.length !== arr.length) {
+                    await supabase.from('products').update({ colors: filtered }).eq('id', p.id)
+                    updated++
+                }
+            }
+            loadData()
+            alert(updated > 0 ? `${updated} ta mahsulot tozalandi.` : 'Tozalanadigan mahsulot topilmadi.')
+        } catch (error) {
+            console.error('Error cleaning colors:', error)
+            alert('Tozalashda xatolik: ' + (error?.message || ''))
+        } finally {
+            setCleanupInProgress(false)
         }
     }
 
@@ -364,7 +428,7 @@ export default function Mahsulotlar() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <div className="flex gap-3 w-full md:w-auto">
+                <div className="flex gap-3 w-full md:w-auto flex-wrap">
                     <select
                         className="px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none cursor-pointer transition-all text-gray-700 font-medium"
                         value={filterCategory}
@@ -375,6 +439,15 @@ export default function Mahsulotlar() {
                             <option key={cat.id} value={cat.name}>{cat.name}</option>
                         ))}
                     </select>
+                    <button
+                        type="button"
+                        onClick={handleCleanupOrphanedColors}
+                        disabled={cleanupInProgress}
+                        className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                        title="Mahsulotlardan o'chirilgan ranglarni tozalash"
+                    >
+                        {cleanupInProgress ? 'Tozalanmoqda...' : 'Ranglarni tozalash'}
+                    </button>
                     <button
                         onClick={() => {
                             setEditId(null)
@@ -580,23 +653,38 @@ export default function Mahsulotlar() {
                                         </button>
                                     </div>
                                     <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-xl border border-gray-100 min-h-[100px]">
-                                        {colorLibrary.map(color => (
-                                            <button
-                                                key={color.id}
-                                                type="button"
-                                                onClick={() => toggleColor(color.name)}
-                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${form.colors?.includes(color.name)
-                                                    ? 'bg-blue-600 border-blue-600 text-white shadow-md'
-                                                    : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'
-                                                    }`}
-                                            >
+                                        {colorLibrary.map(color => {
+                                            const colorLabel = color[`name_${language}`] || color.name_uz || color.name_ru || color.name_en || color.name
+                                            return (
                                                 <div
-                                                    className="w-3 h-3 rounded-full border border-black/10"
-                                                    style={{ backgroundColor: color.hex_code }}
-                                                />
-                                                <span className="text-xs font-bold">{color.name}</span>
-                                            </button>
-                                        ))}
+                                                    key={color.id}
+                                                    className="relative group"
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleColor(color.name)}
+                                                        className={`flex items-center gap-2 pl-3 pr-8 py-1.5 rounded-lg border transition-all ${form.colors?.includes(color.name)
+                                                            ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                                                            : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'
+                                                            }`}
+                                                    >
+                                                        <div
+                                                            className="w-3 h-3 rounded-full border border-black/10 flex-shrink-0"
+                                                            style={{ backgroundColor: color.hex_code }}
+                                                        />
+                                                        <span className="text-xs font-bold">{colorLabel}</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => handleDeleteColor(e, color.id, colorLabel)}
+                                                        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-red-100 text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        title="O'chirish"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            )
+                                        })}
 
                                         {colorLibrary.length === 0 && (
                                             <p className="text-gray-400 text-xs italic">Ranglar kutubxonasi bo'sh</p>
@@ -604,34 +692,61 @@ export default function Mahsulotlar() {
                                     </div>
 
                                     {isAddingColor && (
-                                        <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-center gap-4 animate-fade-in">
-                                            <input
-                                                type="text"
-                                                placeholder="Rang nomi"
-                                                className="flex-1 px-3 py-2 bg-white border border-blue-200 rounded-lg outline-none text-sm"
-                                                value={newColor.name}
-                                                onChange={e => setNewColor({ ...newColor, name: e.target.value })}
-                                            />
-                                            <input
-                                                type="color"
-                                                className="w-10 h-10 rounded-lg cursor-pointer border-none bg-transparent"
-                                                value={newColor.hex_code}
-                                                onChange={e => setNewColor({ ...newColor, hex_code: e.target.value })}
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={handleAddColor}
-                                                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md"
-                                            >
-                                                Saqlash
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsAddingColor(false)}
-                                                className="text-gray-400 hover:text-gray-600"
-                                            >
-                                                <X size={20} />
-                                            </button>
+                                        <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-4 animate-fade-in">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs font-bold text-blue-600 uppercase">Rang nomi (UZ)</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Masalan: Qora"
+                                                        className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg outline-none text-sm"
+                                                        value={newColor.name_uz}
+                                                        onChange={e => setNewColor({ ...newColor, name_uz: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs font-bold text-red-600 uppercase">Rang nomi (RU)</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Например: Чёрный"
+                                                        className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg outline-none text-sm"
+                                                        value={newColor.name_ru}
+                                                        onChange={e => setNewColor({ ...newColor, name_ru: e.target.value })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs font-bold text-gray-600 uppercase">Rang nomi (EN)</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="e.g. Black"
+                                                        className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg outline-none text-sm"
+                                                        value={newColor.name_en}
+                                                        onChange={e => setNewColor({ ...newColor, name_en: e.target.value })}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <input
+                                                    type="color"
+                                                    className="w-10 h-10 rounded-lg cursor-pointer border border-gray-200 bg-white"
+                                                    value={newColor.hex_code}
+                                                    onChange={e => setNewColor({ ...newColor, hex_code: e.target.value })}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleAddColor}
+                                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md"
+                                                >
+                                                    Saqlash
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setIsAddingColor(false); setNewColor({ name_uz: '', name_ru: '', name_en: '', hex_code: '#000000' }) }}
+                                                    className="text-gray-400 hover:text-gray-600 p-2"
+                                                >
+                                                    <X size={20} />
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

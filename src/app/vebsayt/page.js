@@ -37,8 +37,24 @@ export default function Vebsayt() {
   const [newCategoryEn, setNewCategoryEn] = useState('')
   const [categoryImage, setCategoryImage] = useState('')
   const [uploadingCategory, setUploadingCategory] = useState(false)
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
+  const [uploadingAboutHero, setUploadingAboutHero] = useState(false)
+  const [uploadingAboutMission, setUploadingAboutMission] = useState(false)
 
   const [banners, setBanners] = useState([])
+  const [siteBenefits, setSiteBenefits] = useState([])
+  const [editingBenefit, setEditingBenefit] = useState(null)
+  const [benefitForm, setBenefitForm] = useState({
+    icon: 'truck',
+    title_uz: '',
+    title_ru: '',
+    title_en: '',
+    desc_uz: '',
+    desc_ru: '',
+    desc_en: '',
+    sort_order: 0,
+    is_active: true
+  })
   const [products, setProducts] = useState([])
   const [webOrders, setWebOrders] = useState([])
   const [reviews, setReviews] = useState([])
@@ -74,6 +90,10 @@ export default function Vebsayt() {
       // Load banners
       const { data: bannersData } = await supabase.from('banners').select('*').order('created_at', { ascending: false })
       setBanners(bannersData || [])
+
+      // Load site_benefits
+      const { data: benefitsData } = await supabase.from('site_benefits').select('*').order('sort_order', { ascending: true })
+      setSiteBenefits(benefitsData || [])
 
       // Load categories
       const { data: categoriesData } = await supabase.from('categories').select('*').order('name')
@@ -191,6 +211,45 @@ export default function Vebsayt() {
     }
   }
 
+  async function handleSaveBenefit() {
+    try {
+      const data = { ...benefitForm, updated_at: new Date().toISOString() }
+      if (editingBenefit) {
+        await supabase.from('site_benefits').update(data).eq('id', editingBenefit.id)
+      } else {
+        await supabase.from('site_benefits').insert([data])
+      }
+      setEditingBenefit(null)
+      setBenefitForm({ icon: 'truck', title_uz: '', title_ru: '', title_en: '', desc_uz: '', desc_ru: '', desc_en: '', sort_order: 0, is_active: true })
+      loadData()
+      alert(t('website.saveSuccess'))
+    } catch (err) {
+      console.error(err)
+      alert(t('common.saveError'))
+    }
+  }
+
+  async function handleDeleteBenefit(id) {
+    if (!confirm(t('common.deleteConfirm'))) return
+    try {
+      await supabase.from('site_benefits').delete().eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function handleToggleBenefit(id, active) {
+    try {
+      await supabase.from('site_benefits').update({ is_active: !active }).eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const BENEFIT_ICONS = ['truck', 'shield-check', 'credit-card', 'package', 'headphones', 'award', 'zap']
+
   async function handleToggleProduct(id, currentStatus) {
     try {
       await supabase.from('products').update({ is_active: !currentStatus }).eq('id', id)
@@ -245,25 +304,89 @@ export default function Vebsayt() {
     }
   }
 
+  async function handleAboutHeroImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      setUploadingAboutHero(true)
+      const ext = file.name.split('.').pop()
+      const path = `about/hero_${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('products').upload(path, file)
+      if (error) throw error
+      const { data } = supabase.storage.from('products').getPublicUrl(path)
+      setSettings(s => ({ ...s, about_hero_image: data.publicUrl }))
+    } catch (err) {
+      console.error(err)
+      alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
+    } finally {
+      setUploadingAboutHero(false)
+    }
+  }
+
+  async function handleAboutMissionImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      setUploadingAboutMission(true)
+      const ext = file.name.split('.').pop()
+      const path = `about/mission_${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('products').upload(path, file)
+      if (error) throw error
+      const { data } = supabase.storage.from('products').getPublicUrl(path)
+      setSettings(s => ({ ...s, about_mission_image: data.publicUrl }))
+    } catch (err) {
+      console.error(err)
+      alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
+    } finally {
+      setUploadingAboutMission(false)
+    }
+  }
+
+  function handleEditCategory(cat) {
+    setNewCategory(cat.name_uz || cat.name || '')
+    setNewCategoryRu(cat.name_ru || '')
+    setNewCategoryEn(cat.name_en || '')
+    setCategoryImage(cat.image_url || '')
+    setEditingCategoryId(cat.id)
+  }
+
+  function handleCancelEditCategory() {
+    setNewCategory('')
+    setNewCategoryRu('')
+    setNewCategoryEn('')
+    setCategoryImage('')
+    setEditingCategoryId(null)
+  }
+
   async function handleSaveCategory() {
     if (!newCategory.trim() && !newCategoryRu.trim() && !newCategoryEn.trim()) return
+    const name = newCategory || newCategoryRu || newCategoryEn
     try {
-      const { error } = await supabase.from('categories').insert([{
-        name: newCategory || newCategoryRu || newCategoryEn,
-        name_uz: newCategory,
-        name_ru: newCategoryRu,
-        name_en: newCategoryEn,
-        image_url: categoryImage
-      }])
-      if (error) throw error
-      setNewCategory('')
-      setNewCategoryRu('')
-      setNewCategoryEn('')
-      setCategoryImage('')
+      if (editingCategoryId) {
+        const { error } = await supabase.from('categories').update({
+          name,
+          name_uz: newCategory || name,
+          name_ru: newCategoryRu || name,
+          name_en: newCategoryEn || name,
+          image_url: categoryImage
+        }).eq('id', editingCategoryId)
+        if (error) throw error
+        handleCancelEditCategory()
+      } else {
+        const { error } = await supabase.from('categories').insert([{
+          name,
+          name_uz: newCategory || name,
+          name_ru: newCategoryRu || name,
+          name_en: newCategoryEn || name,
+          image_url: categoryImage
+        }])
+        if (error) throw error
+        handleCancelEditCategory()
+      }
       loadData()
       alert(t('website.categories.saveSuccess'))
     } catch (error) {
-      console.error('Error adding category:', error)
+      console.error('Error saving category:', error)
       alert(t('common.saveError'))
     }
   }
@@ -273,6 +396,7 @@ export default function Vebsayt() {
     try {
       const { error } = await supabase.from('categories').delete().eq('id', id)
       if (error) throw error
+      if (editingCategoryId === id) handleCancelEditCategory()
       loadData()
     } catch (error) {
       console.error('Error deleting category:', error)
@@ -316,6 +440,7 @@ export default function Vebsayt() {
   const tabs = [
     { id: 'sozlamalar', icon: Settings, label: t('website.tabs.settings') },
     { id: 'biz-haqimizda', icon: FileText, label: t('website.tabs.about') },
+    { id: 'foyda-kartalari', icon: Award, label: t('website.tabs.benefits') || 'Foyda kartalari' },
     { id: 'banners', icon: Image, label: t('website.tabs.banners') },
     { id: 'kategoriyalar', icon: Layout, label: t('website.tabs.categories') },
     { id: 'mahsulotlar', icon: FileText, label: t('website.tabs.products') },
@@ -674,13 +799,19 @@ export default function Vebsayt() {
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-semibold text-gray-600">{t('website.about.heroImage')}</label>
-                  <input
-                    type="text"
-                    placeholder="https://images.unsplash.com/..."
-                    value={settings.about_hero_image || ''}
-                    onChange={(e) => setSettings({ ...settings, about_hero_image: e.target.value })}
-                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                  />
+                  <div className="flex gap-4 items-center flex-wrap">
+                    <div className="w-24 h-24 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                      {settings.about_hero_image ? (
+                        <img src={settings.about_hero_image} alt="Hero" className="w-full h-full object-cover" />
+                      ) : (
+                        <Image size={32} className="text-gray-400" />
+                      )}
+                    </div>
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 text-sm font-bold transition-colors">
+                      <input type="file" className="hidden" accept="image/*" onChange={handleAboutHeroImageUpload} disabled={uploadingAboutHero} />
+                      {uploadingAboutHero ? 'Yuklanmoqda...' : 'Fayldan yuklash'}
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -755,13 +886,19 @@ export default function Vebsayt() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-gray-600">{t('website.about.missionImage')}</label>
-                  <input
-                    type="text"
-                    placeholder="https://images.unsplash.com/..."
-                    value={settings.about_mission_image || ''}
-                    onChange={(e) => setSettings({ ...settings, about_mission_image: e.target.value })}
-                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
-                  />
+                  <div className="flex gap-4 items-center flex-wrap">
+                    <div className="w-24 h-24 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                      {settings.about_mission_image ? (
+                        <img src={settings.about_mission_image} alt="Mission" className="w-full h-full object-cover" />
+                      ) : (
+                        <Image size={32} className="text-gray-400" />
+                      )}
+                    </div>
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-bold transition-colors">
+                      <input type="file" className="hidden" accept="image/*" onChange={handleAboutMissionImageUpload} disabled={uploadingAboutMission} />
+                      {uploadingAboutMission ? 'Yuklanmoqda...' : 'Fayldan yuklash'}
+                    </label>
+                  </div>
                   <p className="text-xs text-gray-400">{t('website.about.missionImageHint')}</p>
                 </div>
               </div>
@@ -808,6 +945,74 @@ export default function Vebsayt() {
                 {t('common.save')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'foyda-kartalari' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
+          <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <Award className="text-blue-600" />
+            {t('website.tabs.benefits') || 'Foyda kartalari (Tez Yetkazib Berish, Sifat Kafolati, xavfsiz To''lov)'}
+          </h3>
+          <p className="text-gray-500 text-sm mb-6">Bosh sahifadagi uchta kartani CRM orqali boshqaring.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-gray-600">Icon</label>
+              <select
+                value={benefitForm.icon}
+                onChange={(e) => setBenefitForm({ ...benefitForm, icon: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl bg-white"
+              >
+                {BENEFIT_ICONS.map(ic => (
+                  <option key={ic} value={ic}>{ic}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-gray-600">Tartib (sort_order)</label>
+              <input type="number" min="0" value={benefitForm.sort_order} onChange={(e) => setBenefitForm({ ...benefitForm, sort_order: parseInt(e.target.value) || 0 })} className="w-full border border-gray-200 p-3 rounded-xl" />
+            </div>
+            {['uz', 'ru', 'en'].map(lang => (
+              <div key={lang} className="space-y-2 md:col-span-2">
+                <label className="text-sm font-bold text-gray-600">Sarlavha ({lang.toUpperCase()})</label>
+                <input type="text" placeholder={lang === 'uz' ? 'Tez Yetkazib Berish' : ''} value={benefitForm[`title_${lang}`] || ''} onChange={(e) => setBenefitForm({ ...benefitForm, [`title_${lang}`]: e.target.value })} className="w-full border border-gray-200 p-3 rounded-xl" />
+              </div>
+            ))}
+            {['uz', 'ru', 'en'].map(lang => (
+              <div key={lang} className="space-y-2 md:col-span-2">
+                <label className="text-sm font-bold text-gray-600">Tavsif ({lang.toUpperCase()})</label>
+                <input type="text" placeholder={lang === 'uz' ? '100$ dan yuqori buyurtmalar uchun bepul' : ''} value={benefitForm[`desc_${lang}`] || ''} onChange={(e) => setBenefitForm({ ...benefitForm, [`desc_${lang}`]: e.target.value })} className="w-full border border-gray-200 p-3 rounded-xl" />
+              </div>
+            ))}
+            <div className="md:col-span-2 flex gap-3">
+              {editingBenefit && (
+                <button onClick={() => { setEditingBenefit(null); setBenefitForm({ icon: 'truck', title_uz: '', title_ru: '', title_en: '', desc_uz: '', desc_ru: '', desc_en: '', sort_order: 0, is_active: true }); }} className="px-6 py-3 border border-gray-300 rounded-xl font-bold">{t('common.cancel')}</button>
+              )}
+              <button onClick={handleSaveBenefit} className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 font-bold">
+                <Save size={20} />
+                {editingBenefit ? t('common.save') : (t('common.add') || "Qo'shish")}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {siteBenefits.map(b => (
+              <div key={b.id} className="flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-4">
+                  <span className="text-xs font-mono bg-gray-200 px-2 py-1 rounded">{b.icon}</span>
+                  <span className="font-bold text-gray-900">{b.title_uz || b.title_ru || b.title_en}</span>
+                  {!b.is_active && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Yashirin</span>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleToggleBenefit(b.id, b.is_active)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${b.is_active ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{b.is_active ? t('common.hide') : t('common.show')}</button>
+                  <button onClick={() => { setEditingBenefit(b); setBenefitForm({ icon: b.icon || 'truck', title_uz: b.title_uz || '', title_ru: b.title_ru || '', title_en: b.title_en || '', desc_uz: b.desc_uz || '', desc_ru: b.desc_ru || '', desc_en: b.desc_en || '', sort_order: b.sort_order || 0, is_active: b.is_active }); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-100 text-blue-700">{t('common.edit')}</button>
+                  <button onClick={() => handleDeleteBenefit(b.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700">{t('common.delete')}</button>
+                </div>
+              </div>
+            ))}
+            {siteBenefits.length === 0 && <p className="text-gray-400 text-center py-8">{t('common.noData')}</p>}
           </div>
         </div>
       )}
@@ -1044,13 +1249,21 @@ export default function Vebsayt() {
                 </div>
               </div>
             </div>
-            <div className="md:col-span-2 flex justify-end">
+            <div className="md:col-span-2 flex justify-end gap-3">
+              {editingCategoryId && (
+                <button
+                  onClick={handleCancelEditCategory}
+                  className="px-6 py-4 rounded-xl font-bold border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-2 transition-all"
+                >
+                  <X size={20} /> {t('common.cancel')}
+                </button>
+              )}
               <button
                 onClick={handleSaveCategory}
                 className="bg-blue-600 text-white px-10 py-4 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 flex items-center gap-2 transition-all"
                 disabled={uploadingCategory}
               >
-                <Plus size={20} /> {t('website.categories.addCategory')}
+                {editingCategoryId ? <><Settings size={20} /> {t('common.save')}</> : <><Plus size={20} /> {t('website.categories.addCategory')}</>}
               </button>
             </div>
           </div>
@@ -1084,9 +1297,14 @@ export default function Vebsayt() {
                     <td className="px-6 py-4 text-gray-600">{cat.name_ru}</td>
                     <td className="px-6 py-4 text-gray-600">{cat.name_en}</td>
                     <td className="px-6 py-4 text-right">
-                      <button onClick={() => handleDeleteCategory(cat.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
-                        <Trash2 size={20} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => handleEditCategory(cat)} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors" title={t('common.edit')}>
+                          <Settings size={20} />
+                        </button>
+                        <button onClick={() => handleDeleteCategory(cat.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title={t('common.delete')}>
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

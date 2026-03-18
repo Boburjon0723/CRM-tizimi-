@@ -1,4 +1,4 @@
-import { Bell, Search, User, Menu, X, ShoppingBag, Globe } from 'lucide-react'
+import { Bell, Search, User, Menu, X, ShoppingBag, Globe, ChevronDown } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useNotifications } from '@/context/NotificationContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -73,18 +73,21 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {/* Language Switcher */}
+                    {/* Language Switcher - til ro'yxati */}
                     <div className="relative" ref={langRef}>
                         <button
                             onClick={() => setShowLangMenu(!showLangMenu)}
-                            className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-xl text-gray-500 transition-all font-medium uppercase text-sm"
+                            className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 rounded-xl text-gray-600 transition-all font-medium text-sm min-w-[120px] justify-between"
                         >
-                            <Globe size={20} className="text-blue-600" />
-                            <span>{language}</span>
+                            <span className="flex items-center gap-2">
+                                <Globe size={20} className="text-blue-600" />
+                                {language === 'uz' ? "O'zbekcha" : language === 'ru' ? 'Русский' : 'English'}
+                            </span>
+                            <ChevronDown size={16} className={`text-gray-400 transition-transform ${showLangMenu ? 'rotate-180' : ''}`} />
                         </button>
 
                         {showLangMenu && (
-                            <div className="absolute right-0 mt-2 w-32 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-fade-in">
+                            <div className="absolute right-0 mt-2 w-40 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50 py-1">
                                 <button
                                     onClick={() => { changeLanguage('uz'); setShowLangMenu(false); }}
                                     className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 transition-colors ${language === 'uz' ? 'text-blue-600 font-bold' : 'text-gray-600'}`}
