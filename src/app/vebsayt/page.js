@@ -76,6 +76,19 @@ export default function Vebsayt() {
     active: true
   })
 
+  const [albumImages, setAlbumImages] = useState([])
+  const [editingAlbumImage, setEditingAlbumImage] = useState(null)
+  const [uploadingAlbumImage, setUploadingAlbumImage] = useState(false)
+  const [albumImageForm, setAlbumImageForm] = useState({
+    image_url: '',
+    title_uz: '',
+    title_ru: '',
+    title_en: '',
+    sort_order: 0,
+    is_active: true,
+    format: 'portrait'
+  })
+
   useEffect(() => {
     loadData()
     subscribeToOrders()
@@ -120,6 +133,10 @@ export default function Vebsayt() {
       // Load subscriptions
       const { data: subsData } = await supabase.from('newsletter_subscriptions').select('*').order('created_at', { ascending: false })
       setSubscriptions(subsData || [])
+
+      // Load album_images
+      const { data: albumData } = await supabase.from('album_images').select('*').order('sort_order', { ascending: true })
+      setAlbumImages(albumData || [])
 
     } catch (error) {
       console.error('Error loading data:', error)
@@ -248,6 +265,44 @@ export default function Vebsayt() {
     }
   }
 
+  async function handleSaveAlbumImage() {
+    try {
+      const data = { ...albumImageForm, updated_at: new Date().toISOString() }
+      if (editingAlbumImage) {
+        await supabase.from('album_images').update(data).eq('id', editingAlbumImage.id)
+      } else {
+        if (!albumImageForm.image_url?.trim()) return alert("Rasmni fayldan yuklang")
+        await supabase.from('album_images').insert([data])
+      }
+      setEditingAlbumImage(null)
+      setAlbumImageForm({ image_url: '', title_uz: '', title_ru: '', title_en: '', sort_order: 0, is_active: true, format: 'portrait' })
+      loadData()
+      alert(t('website.saveSuccess'))
+    } catch (err) {
+      console.error(err)
+      alert(t('common.saveError'))
+    }
+  }
+
+  async function handleDeleteAlbumImage(id) {
+    if (!confirm(t('common.deleteConfirm'))) return
+    try {
+      await supabase.from('album_images').delete().eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function handleToggleAlbumImage(id, active) {
+    try {
+      await supabase.from('album_images').update({ is_active: !active }).eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   const BENEFIT_ICONS = ['truck', 'shield-check', 'credit-card', 'package', 'headphones', 'award', 'zap']
 
   async function handleToggleProduct(id, currentStatus) {
@@ -340,6 +395,26 @@ export default function Vebsayt() {
     } finally {
       setUploadingAboutMission(false)
     }
+  }
+
+  async function handleAlbumImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      setUploadingAlbumImage(true)
+      const ext = file.name.split('.').pop()
+      const path = `album/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+      const { error } = await supabase.storage.from('products').upload(path, file)
+      if (error) throw error
+      const { data } = supabase.storage.from('products').getPublicUrl(path)
+      setAlbumImageForm(f => ({ ...f, image_url: data.publicUrl }))
+    } catch (err) {
+      console.error(err)
+      alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
+    } finally {
+      setUploadingAlbumImage(false)
+    }
+    e.target.value = ''
   }
 
   function handleEditCategory(cat) {
@@ -441,6 +516,7 @@ export default function Vebsayt() {
     { id: 'sozlamalar', icon: Settings, label: t('website.tabs.settings') },
     { id: 'biz-haqimizda', icon: FileText, label: t('website.tabs.about') },
     { id: 'foyda-kartalari', icon: Award, label: t('website.tabs.benefits') || 'Foyda kartalari' },
+    { id: 'albom-rasmlari', icon: Image, label: t('website.tabs.albumImages') || 'Albom rasmlari' },
     { id: 'banners', icon: Image, label: t('website.tabs.banners') },
     { id: 'kategoriyalar', icon: Layout, label: t('website.tabs.categories') },
     { id: 'mahsulotlar', icon: FileText, label: t('website.tabs.products') },
@@ -953,7 +1029,7 @@ export default function Vebsayt() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
           <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
             <Award className="text-blue-600" />
-            {t('website.tabs.benefits') || 'Foyda kartalari (Tez Yetkazib Berish, Sifat Kafolati, xavfsiz To''lov)'}
+            {t('website.tabs.benefits') || "Foyda kartalari (Tez Yetkazib Berish, Sifat Kafolati, xavfsiz To'lov)"}
           </h3>
           <p className="text-gray-500 text-sm mb-6">Bosh sahifadagi uchta kartani CRM orqali boshqaring.</p>
 
@@ -1013,6 +1089,126 @@ export default function Vebsayt() {
               </div>
             ))}
             {siteBenefits.length === 0 && <p className="text-gray-400 text-center py-8">{t('common.noData')}</p>}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'albom-rasmlari' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 md:p-8 fade-in">
+          <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <Image className="text-blue-600 w-5 h-5 sm:w-6 sm:h-6" />
+            {t('website.tabs.albumImages') || "Albom rasmlari"}
+          </h3>
+          <p className="text-gray-500 text-xs sm:text-sm mb-4 sm:mb-6">Albom sahifasida mahsulotlar bilan birga ko&apos;rinadigan qo&apos;shimcha rasmlar. Rasmni fayldan yuklang.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8 bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-xs sm:text-sm font-bold text-gray-600">Rasm * (fayldan yuklash)</label>
+              <div className="flex gap-3 items-center">
+                <div className="w-20 h-24 sm:w-24 sm:h-28 rounded-xl bg-white border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {albumImageForm.image_url ? (
+                    <img src={albumImageForm.image_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Image size={28} className="text-gray-300" />
+                  )}
+                </div>
+                <label className="cursor-pointer bg-white border border-gray-200 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm font-medium text-gray-600">
+                  <input type="file" className="hidden" accept="image/*" onChange={handleAlbumImageUpload} disabled={uploadingAlbumImage} />
+                  {uploadingAlbumImage ? (
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent animate-spin rounded-full" />
+                  ) : (
+                    <Image size={20} className="text-gray-500" />
+                  )}
+                  {uploadingAlbumImage ? 'Yuklanmoqda...' : 'Rasm tanlash'}
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-bold text-gray-600">Tartib (sort_order)</label>
+              <input
+                type="number"
+                min="0"
+                value={albumImageForm.sort_order}
+                onChange={(e) => setAlbumImageForm({ ...albumImageForm, sort_order: parseInt(e.target.value) || 0 })}
+                className="w-full border border-gray-200 p-2.5 sm:p-3 rounded-xl"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-bold text-gray-600">Rasm formati (ta&apos;sir)</label>
+              <select
+                value={albumImageForm.format || 'portrait'}
+                onChange={(e) => setAlbumImageForm({ ...albumImageForm, format: e.target.value })}
+                className="w-full border border-gray-200 p-2.5 sm:p-3 rounded-xl bg-white"
+              >
+                <option value="portrait">Portrait (4:5) — baland</option>
+                <option value="square">Square (1:1) — kvadrat</option>
+                <option value="landscape">Landscape (3:2) — keng</option>
+                <option value="large">Large — katta bento (2 ustun)</option>
+              </select>
+            </div>
+            {['uz', 'ru', 'en'].map(lang => (
+              <div key={lang} className="space-y-2 md:col-span-2">
+                <label className="text-xs sm:text-sm font-bold text-gray-600">Sarlavha ({lang.toUpperCase()})</label>
+                <input
+                  type="text"
+                  placeholder={lang === 'uz' ? 'Rasm sarlavhasi' : ''}
+                  value={albumImageForm[`title_${lang}`] || ''}
+                  onChange={(e) => setAlbumImageForm({ ...albumImageForm, [`title_${lang}`]: e.target.value })}
+                  className="w-full border border-gray-200 p-2.5 sm:p-3 rounded-xl"
+                />
+              </div>
+            ))}
+            <div className="md:col-span-2 flex flex-wrap gap-2 sm:gap-3">
+              {editingAlbumImage && (
+                <button
+                  onClick={() => {
+                    setEditingAlbumImage(null)
+                    setAlbumImageForm({ image_url: '', title_uz: '', title_ru: '', title_en: '', sort_order: 0, is_active: true, format: 'portrait' })
+                  }}
+                  className="px-4 sm:px-6 py-2.5 sm:py-3 border border-gray-300 rounded-xl font-bold text-sm sm:text-base"
+                >
+                  {t('common.cancel')}
+                </button>
+              )}
+              <button
+                onClick={handleSaveAlbumImage}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 sm:px-8 py-2.5 sm:py-3 rounded-xl hover:bg-blue-700 font-bold text-sm sm:text-base"
+              >
+                <Save size={18} />
+                {editingAlbumImage ? t('common.save') : (t('common.add') || "Qo'shish")}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {albumImages.map(img => (
+              <div
+                key={img.id}
+                className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-100"
+              >
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  {img.image_url && (
+                    <img
+                      src={img.image_url}
+                      alt={img.title_uz || img.title_ru || img.title_en || 'Album'}
+                      className="w-full sm:w-16 h-24 sm:h-16 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                      onError={(e) => { e.target.style.display = 'none' }}
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold text-gray-900 text-sm sm:text-base block truncate">{img.title_uz || img.title_ru || img.title_en || '—'}</span>
+                    <span className="text-xs text-gray-500">Tartib: {img.sort_order ?? 0} · Format: {img.format || 'portrait'}</span>
+                    {!img.is_active && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded ml-2">Yashirin</span>}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto">
+                  <button onClick={() => handleToggleAlbumImage(img.id, img.is_active)} className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex-1 sm:flex-none ${img.is_active ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{img.is_active ? t('common.hide') : t('common.show')}</button>
+                  <button onClick={() => { setEditingAlbumImage(img); setAlbumImageForm({ image_url: img.image_url || '', title_uz: img.title_uz || '', title_ru: img.title_ru || '', title_en: img.title_en || '', sort_order: img.sort_order ?? 0, is_active: img.is_active, format: img.format || 'portrait' }); }} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-100 text-blue-700 flex-1 sm:flex-none">{t('common.edit')}</button>
+                  <button onClick={() => handleDeleteAlbumImage(img.id)} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700 flex-1 sm:flex-none">{t('common.delete')}</button>
+                </div>
+              </div>
+            ))}
+            {albumImages.length === 0 && <p className="text-gray-400 text-center py-8 text-sm sm:text-base">{t('common.noData')}</p>}
           </div>
         </div>
       )}
