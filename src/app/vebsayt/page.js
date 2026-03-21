@@ -294,6 +294,22 @@ export default function Vebsayt() {
     }
   }
 
+  async function handleDeleteAllAlbumImages() {
+    if (albumImages.length === 0) return
+    if (!confirm(`Barcha ${albumImages.length} ta albom rasmini o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi.`)) return
+    try {
+      const ids = albumImages.map(i => i.id)
+      const { error } = await supabase.from('album_images').delete().in('id', ids)
+      if (error) throw error
+      setAlbumImages([])
+      loadData()
+      alert(t('website.saveSuccess'))
+    } catch (err) {
+      console.error(err)
+      alert(t('common.saveError'))
+    }
+  }
+
   async function handleToggleAlbumImage(id, active) {
     try {
       await supabase.from('album_images').update({ is_active: !active }).eq('id', id)
@@ -398,16 +414,49 @@ export default function Vebsayt() {
   }
 
   async function handleAlbumImageUpload(e) {
-    const file = e.target.files[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    const isMultiple = files.length > 1
     try {
       setUploadingAlbumImage(true)
-      const ext = file.name.split('.').pop()
-      const path = `album/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-      const { error } = await supabase.storage.from('products').upload(path, file)
-      if (error) throw error
-      const { data } = supabase.storage.from('products').getPublicUrl(path)
-      setAlbumImageForm(f => ({ ...f, image_url: data.publicUrl }))
+      if (!isMultiple) {
+        const file = files[0]
+        const ext = file.name.split('.').pop()
+        const path = `album/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+        const { error } = await supabase.storage.from('products').upload(path, file)
+        if (error) throw error
+        const { data } = supabase.storage.from('products').getPublicUrl(path)
+        setAlbumImageForm(f => ({ ...f, image_url: data.publicUrl }))
+      } else {
+        const maxSort = albumImages.length ? Math.max(...albumImages.map(i => i.sort_order ?? 0), -1) + 1 : 0
+        const format = albumImageForm.format || 'portrait'
+        let success = 0
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          const ext = file.name.split('.').pop()
+          const path = `album/${Date.now()}_${i}_${Math.random().toString(36).slice(2)}.${ext}`
+          const { error } = await supabase.storage.from('products').upload(path, file)
+          if (error) throw error
+          const { data } = supabase.storage.from('products').getPublicUrl(path)
+          const insertData = {
+            image_url: data.publicUrl,
+            title_uz: '',
+            title_ru: '',
+            title_en: '',
+            sort_order: maxSort + i,
+            is_active: true,
+            format,
+            updated_at: new Date().toISOString()
+          }
+          const { error: insertErr } = await supabase.from('album_images').insert([insertData])
+          if (!insertErr) success++
+        }
+        if (success > 0) {
+          loadData()
+          setAlbumImageForm(f => ({ ...f, image_url: '', title_uz: '', title_ru: '', title_en: '' }))
+          alert(`${success} ta rasm muvaffaqiyatli qo'shildi`)
+        }
+      }
     } catch (err) {
       console.error(err)
       alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
@@ -1099,7 +1148,7 @@ export default function Vebsayt() {
             <Image className="text-blue-600 w-5 h-5 sm:w-6 sm:h-6" />
             {t('website.tabs.albumImages') || "Albom rasmlari"}
           </h3>
-          <p className="text-gray-500 text-xs sm:text-sm mb-4 sm:mb-6">Albom sahifasida mahsulotlar bilan birga ko&apos;rinadigan qo&apos;shimcha rasmlar. Rasmni fayldan yuklang.</p>
+          <p className="text-gray-500 text-xs sm:text-sm mb-4 sm:mb-6">Albom sahifasida mahsulotlar bilan birga ko&apos;rinadigan qo&apos;shimcha rasmlar. Bir yoki ko&apos;p rasmni fayldan yuklang.</p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8 bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
             <div className="space-y-2 md:col-span-2">
@@ -1113,13 +1162,13 @@ export default function Vebsayt() {
                   )}
                 </div>
                 <label className="cursor-pointer bg-white border border-gray-200 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm font-medium text-gray-600">
-                  <input type="file" className="hidden" accept="image/*" onChange={handleAlbumImageUpload} disabled={uploadingAlbumImage} />
+                  <input type="file" className="hidden" accept="image/*" multiple onChange={handleAlbumImageUpload} disabled={uploadingAlbumImage} />
                   {uploadingAlbumImage ? (
                     <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent animate-spin rounded-full" />
                   ) : (
                     <Image size={20} className="text-gray-500" />
                   )}
-                  {uploadingAlbumImage ? 'Yuklanmoqda...' : 'Rasm tanlash'}
+                  {uploadingAlbumImage ? 'Yuklanmoqda...' : 'Rasm tanlash (bir yoki ko\'p)'}
                 </label>
               </div>
             </div>
@@ -1179,6 +1228,19 @@ export default function Vebsayt() {
               </button>
             </div>
           </div>
+
+          {albumImages.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <span className="text-sm text-gray-600">Rasmlar: {albumImages.length} ta</span>
+              <button
+                onClick={handleDeleteAllAlbumImages}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 font-bold text-sm transition-colors"
+              >
+                <Trash2 size={18} />
+                Barcha rasmlarni o&apos;chirish
+              </button>
+            </div>
+          )}
 
           <div className="space-y-4">
             {albumImages.map(img => (
