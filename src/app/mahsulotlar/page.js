@@ -7,6 +7,86 @@ import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload,
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 
+/** CRM: bitta qator — uz/ru/en nom va qiymat */
+const emptyFeatureRow = () => ({
+    name_uz: '',
+    value_uz: '',
+    name_ru: '',
+    value_ru: '',
+    name_en: '',
+    value_en: '',
+})
+
+function parseFeatureCell(item) {
+    if (item == null) return { name: '', value: '' }
+    if (typeof item === 'string') {
+        const m = item.match(/^([^:]+):\s*(.*)$/s)
+        if (m) return { name: m[1].trim(), value: m[2].trim() }
+        return { name: '', value: item.trim() }
+    }
+    return {
+        name: String(item.name ?? '').trim(),
+        value: String(item.value ?? '').trim(),
+    }
+}
+
+/** DB features → forma qatorlari */
+function featuresRowsFromProduct(item) {
+    const f = item?.features
+    if (!f || typeof f !== 'object' || Array.isArray(f)) return []
+    if ('uz' in f || 'ru' in f || 'en' in f) {
+        const uz = Array.isArray(f.uz) ? f.uz : []
+        const ru = Array.isArray(f.ru) ? f.ru : []
+        const en = Array.isArray(f.en) ? f.en : []
+        const n = Math.max(uz.length, ru.length, en.length)
+        const rows = []
+        for (let i = 0; i < n; i++) {
+            const u = parseFeatureCell(uz[i])
+            const r = parseFeatureCell(ru[i])
+            const e = parseFeatureCell(en[i])
+            rows.push({
+                name_uz: u.name,
+                value_uz: u.value,
+                name_ru: r.name,
+                value_ru: r.value,
+                name_en: e.name,
+                value_en: e.value,
+            })
+        }
+        return rows
+    }
+    return Object.entries(f).map(([key, value]) => ({
+        name_uz: key,
+        value_uz: String(value ?? ''),
+        name_ru: key,
+        value_ru: String(value ?? ''),
+        name_en: key,
+        value_en: String(value ?? ''),
+    }))
+}
+
+/** Forma → DB JSONB { uz: [...], ru: [...], en: [...] } */
+function featuresToPayload(rows) {
+    const rowHasAny = (r) =>
+        [r.name_uz, r.value_uz, r.name_ru, r.value_ru, r.name_en, r.value_en].some((x) => String(x ?? '').trim() !== '')
+    const kept = rows.filter(rowHasAny)
+    if (!kept.length) return {}
+    return {
+        uz: kept.map((r) => ({
+            name: String(r.name_uz ?? '').trim(),
+            value: String(r.value_uz ?? '').trim(),
+        })),
+        ru: kept.map((r) => ({
+            name: String(r.name_ru ?? '').trim(),
+            value: String(r.value_ru ?? '').trim(),
+        })),
+        en: kept.map((r) => ({
+            name: String(r.name_en ?? '').trim(),
+            value: String(r.value_en ?? '').trim(),
+        })),
+    }
+}
+
 export default function Mahsulotlar() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
@@ -170,10 +250,7 @@ export default function Mahsulotlar() {
                 color: form.colors?.[0] || form.color || '', // preserve first for legacy
                 colors: form.colors || [],
                 size: form.size, // Kod
-                features: form.features.reduce((acc, curr) => {
-                    if (curr.key) acc[curr.key] = curr.value;
-                    return acc;
-                }, {}),
+                features: featuresToPayload(form.features),
                 rating: parseFloat(form.rating) || 0,
                 reviews: parseInt(form.reviews) || 0,
                 model_3d_url: form.model_3d_url
@@ -193,7 +270,29 @@ export default function Mahsulotlar() {
                 if (error) throw error
             }
 
-            setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', colors: [], size: '', rating: '0', reviews: '0' })
+            setForm({
+                name: '',
+                name_uz: '',
+                name_ru: '',
+                name_en: '',
+                sale_price: '',
+                category_id: '',
+                image_url: '',
+                description: '',
+                description_uz: '',
+                description_ru: '',
+                description_en: '',
+                is_active: true,
+                features: [],
+                images: [],
+                imageUrlInput: '',
+                color: '',
+                colors: [],
+                size: '',
+                rating: '0',
+                reviews: '0',
+                model_3d_url: '',
+            })
             setIsModalOpen(false)
             loadData()
         } catch (error) {
@@ -237,7 +336,7 @@ export default function Mahsulotlar() {
             color: item.color || '',
             colors: item.colors || (item.color ? [item.color] : []),
             size: item.size || '',
-            features: item.features ? Object.entries(item.features).map(([key, value]) => ({ key, value })) : [],
+            features: featuresRowsFromProduct(item),
             imageUrlInput: '',
             rating: item.rating?.toString() || '0',
             reviews: item.reviews?.toString() || '0',
@@ -249,7 +348,29 @@ export default function Mahsulotlar() {
     }
 
     function handleCancel() {
-        setForm({ name: '', sale_price: '', category_id: '', image_url: '', description: '', is_active: true, features: [], images: [], imageUrlInput: '', color: '', colors: [], size: '', model_3d_url: '' })
+        setForm({
+            name: '',
+            name_uz: '',
+            name_ru: '',
+            name_en: '',
+            sale_price: '',
+            category_id: '',
+            image_url: '',
+            description: '',
+            description_uz: '',
+            description_ru: '',
+            description_en: '',
+            is_active: true,
+            features: [],
+            images: [],
+            imageUrlInput: '',
+            color: '',
+            colors: [],
+            size: '',
+            rating: '0',
+            reviews: '0',
+            model_3d_url: '',
+        })
         setEditId(null)
         setIsModalOpen(false)
     }
@@ -365,7 +486,7 @@ export default function Mahsulotlar() {
     }
 
     function handleAddFeature() {
-        setForm({ ...form, features: [...form.features, { key: '', value: '' }] })
+        setForm({ ...form, features: [...form.features, emptyFeatureRow()] })
     }
 
     function handleFeatureChange(index, field, value) {
@@ -453,18 +574,26 @@ export default function Mahsulotlar() {
                             setEditId(null)
                             setForm({
                                 name: '',
+                                name_uz: '',
+                                name_ru: '',
+                                name_en: '',
                                 sale_price: '',
                                 category_id: '',
                                 image_url: '',
                                 description: '',
-                                min_stock: '10',
+                                description_uz: '',
+                                description_ru: '',
+                                description_en: '',
                                 is_active: true,
                                 features: [],
                                 images: [],
                                 imageUrlInput: '',
                                 color: '',
+                                colors: [],
                                 size: '',
-                                model_3d_url: ''
+                                rating: '0',
+                                reviews: '0',
+                                model_3d_url: '',
                             })
                             setIsModalOpen(true)
                         }}
@@ -910,30 +1039,78 @@ export default function Mahsulotlar() {
                                         + Qo'shish
                                     </button>
                                 </div>
-                                <div className="space-y-3">
+                                <div className="space-y-4">
                                     {form.features.map((feature, index) => (
-                                        <div key={index} className="flex gap-4 items-start">
-                                            <input
-                                                type="text"
-                                                placeholder="Nomi (Masalan: Rangi)"
-                                                className="flex-1 px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                                value={feature.key}
-                                                onChange={e => handleFeatureChange(index, 'key', e.target.value)}
-                                            />
-                                            <input
-                                                type="text"
-                                                placeholder="Qiymati (Masalan: Qora)"
-                                                className="flex-1 px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                                value={feature.value}
-                                                onChange={e => handleFeatureChange(index, 'value', e.target.value)}
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => handleRemoveFeature(index)}
-                                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
+                                        <div
+                                            key={index}
+                                            className="rounded-xl border border-gray-200 bg-gray-50/50 p-4 space-y-3"
+                                        >
+                                            <div className="flex justify-between items-center gap-2">
+                                                <span className="text-xs font-bold text-gray-500">
+                                                    #{index + 1}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveFeature(index)}
+                                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                                                    title="O'chirish"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                                <div className="space-y-2 rounded-lg border border-blue-100 bg-white p-3">
+                                                    <div className="text-xs font-bold text-blue-700">O'zbek</div>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Nomi (masalan: Rangi)"
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={feature.name_uz ?? ''}
+                                                        onChange={(e) => handleFeatureChange(index, 'name_uz', e.target.value)}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Qiymati (masalan: Qora)"
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={feature.value_uz ?? ''}
+                                                        onChange={(e) => handleFeatureChange(index, 'value_uz', e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2 rounded-lg border border-amber-100 bg-white p-3">
+                                                    <div className="text-xs font-bold text-amber-800">Русский</div>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Название (например: Цвет)"
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={feature.name_ru ?? ''}
+                                                        onChange={(e) => handleFeatureChange(index, 'name_ru', e.target.value)}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Значение (например: Черный)"
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={feature.value_ru ?? ''}
+                                                        onChange={(e) => handleFeatureChange(index, 'value_ru', e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2 rounded-lg border border-emerald-100 bg-white p-3">
+                                                    <div className="text-xs font-bold text-emerald-800">English</div>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Name (e.g. Color)"
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={feature.name_en ?? ''}
+                                                        onChange={(e) => handleFeatureChange(index, 'name_en', e.target.value)}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Value (e.g. Black)"
+                                                        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={feature.value_en ?? ''}
+                                                        onChange={(e) => handleFeatureChange(index, 'value_en', e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
