@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload, Loader2, Package, AlertTriangle } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload, Loader2, Package, AlertTriangle, Layers } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 
@@ -125,6 +125,14 @@ export default function Mahsulotlar() {
     const [isAddingColor, setIsAddingColor] = useState(false)
     const [newColor, setNewColor] = useState({ name_uz: '', name_ru: '', name_en: '', hex_code: '#000000' })
     const [cleanupInProgress, setCleanupInProgress] = useState(false)
+
+    /** Kategoriya bo'yicha bir martalik tavsif / xususiyat (shu kategoriyadagi barcha mahsulotlarga) */
+    const [bulkCategoryId, setBulkCategoryId] = useState('')
+    const [bulkDescUz, setBulkDescUz] = useState('')
+    const [bulkDescRu, setBulkDescRu] = useState('')
+    const [bulkDescEn, setBulkDescEn] = useState('')
+    const [bulkFeatures, setBulkFeatures] = useState([])
+    const [bulkApplying, setBulkApplying] = useState(false)
 
     useEffect(() => {
         loadData()
@@ -500,6 +508,92 @@ export default function Mahsulotlar() {
         setForm({ ...form, features: newFeatures })
     }
 
+    const bulkProductCount = bulkCategoryId
+        ? products.filter((p) => p.category_id === bulkCategoryId).length
+        : 0
+
+    function bulkAddFeature() {
+        setBulkFeatures((prev) => [...prev, emptyFeatureRow()])
+    }
+
+    function bulkFeatureChange(index, field, value) {
+        setBulkFeatures((prev) => {
+            const next = [...prev]
+            next[index] = { ...next[index], [field]: value }
+            return next
+        })
+    }
+
+    function bulkRemoveFeature(index) {
+        setBulkFeatures((prev) => prev.filter((_, i) => i !== index))
+    }
+
+    /** Tanlangan kategoriyadagi birinchi mahsulotdan shablon (maydonlarni to'ldirish) */
+    function loadBulkTemplateFromCategory() {
+        if (!bulkCategoryId) {
+            alert('Avval kategoriyani tanlang.')
+            return
+        }
+        const sample = products.find((p) => p.category_id === bulkCategoryId)
+        if (!sample) {
+            alert('Bu kategoriyada mahsulot topilmadi.')
+            return
+        }
+        setBulkDescUz(sample.description_uz || '')
+        setBulkDescRu(sample.description_ru || '')
+        setBulkDescEn(sample.description_en || '')
+        setBulkFeatures(featuresRowsFromProduct(sample))
+    }
+
+    async function applyBulkCategoryContent() {
+        if (!bulkCategoryId) {
+            alert('Kategoriyani tanlang.')
+            return
+        }
+        if (bulkProductCount === 0) {
+            alert('Bu kategoriyada mahsulot yo‘q.')
+            return
+        }
+        const hasDesc = [bulkDescUz, bulkDescRu, bulkDescEn].some((s) => String(s || '').trim() !== '')
+        const hasFeat = bulkFeatures.some((r) =>
+            [r.name_uz, r.value_uz, r.name_ru, r.value_ru, r.name_en, r.value_en].some((x) => String(x || '').trim() !== '')
+        )
+        if (!hasDesc && !hasFeat) {
+            alert('Kamida bitta til uchun tavsif yoki kamida bitta xususiyat qatorini kiriting.')
+            return
+        }
+        const payload = {}
+        if (hasDesc) {
+            payload.description = bulkDescRu || bulkDescUz || bulkDescEn || ''
+            payload.description_uz = bulkDescUz
+            payload.description_ru = bulkDescRu
+            payload.description_en = bulkDescEn
+        }
+        if (hasFeat) {
+            payload.features = featuresToPayload(bulkFeatures)
+        }
+        const parts = [hasDesc ? 'tavsif' : null, hasFeat ? 'xususiyatlar' : null].filter(Boolean).join(' va ')
+        if (
+            !confirm(
+                `«${categories.find((c) => c.id === bulkCategoryId)?.name || '…'}» — ${bulkProductCount} ta mahsulot: ${parts} yangilanadi. Davom etasizmi?`
+            )
+        ) {
+            return
+        }
+        try {
+            setBulkApplying(true)
+            const { error } = await supabase.from('products').update(payload).eq('category_id', bulkCategoryId)
+            if (error) throw error
+            alert(`Muvaffaqiyatli: ${bulkProductCount} ta mahsulot yangilandi.`)
+            loadData()
+        } catch (error) {
+            console.error('Bulk update error:', error)
+            alert('Yangilashda xatolik: ' + (error.message || ''))
+        } finally {
+            setBulkApplying(false)
+        }
+    }
+
     const filteredProducts = products.filter(p => {
         const searchTerms = searchTerm.toLowerCase().split(' ').filter(word => word.length > 0);
 
@@ -602,6 +696,203 @@ export default function Mahsulotlar() {
                         <Plus size={20} />
                         <span className="hidden sm:inline">{t('common.add')}</span>
                     </button>
+                </div>
+            </div>
+
+            {/* Kategoriya bo'yicha umumiy tavsif va xususiyatlar */}
+            <div className="mb-8 bg-gradient-to-br from-slate-50 to-blue-50/40 rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-200/80 bg-white/60 flex flex-wrap items-center gap-3">
+                    <Layers className="text-blue-600 shrink-0" size={22} />
+                    <div>
+                        <h2 className="text-base font-bold text-gray-900">Kategoriya bo‘yicha tavsif va xususiyat</h2>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                            Alohida mahsulot qo‘shish o‘zgarishsiz. Bu yerda tanlangan kategoriyadagi <strong>barcha</strong> mahsulotlarga bir xil matn va xususiyatlar yoziladi.
+                        </p>
+                    </div>
+                </div>
+                <div className="p-5 space-y-5">
+                    <div className="flex flex-col sm:flex-row gap-4 flex-wrap items-start sm:items-end">
+                        <div className="w-full sm:flex-1 sm:min-w-[220px] space-y-2">
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Kategoriya</label>
+                            <select
+                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
+                                value={bulkCategoryId}
+                                onChange={(e) => setBulkCategoryId(e.target.value)}
+                            >
+                                <option value="">— Tanlang —</option>
+                                {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.id}>
+                                        {cat.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {bulkCategoryId ? (
+                                <p className="text-xs text-blue-700 font-medium">
+                                    Ta’sir: <strong>{bulkProductCount}</strong> ta mahsulot
+                                </p>
+                            ) : null}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={loadBulkTemplateFromCategory}
+                            disabled={!bulkCategoryId}
+                            className="px-4 py-3 rounded-xl text-sm font-bold border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Birinchi mahsulotdan yuklash
+                        </button>
+                    </div>
+
+                    <div className="space-y-3">
+                        <h3 className="text-sm font-bold text-gray-800">Tavsif</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-blue-600">UZ</label>
+                                <textarea
+                                    rows={3}
+                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={bulkDescUz}
+                                    onChange={(e) => setBulkDescUz(e.target.value)}
+                                    placeholder="O‘zbekcha tavsif"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-red-700">RU</label>
+                                <textarea
+                                    rows={3}
+                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={bulkDescRu}
+                                    onChange={(e) => setBulkDescRu(e.target.value)}
+                                    placeholder="Русское описание"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-gray-600">EN</label>
+                                <textarea
+                                    rows={3}
+                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={bulkDescEn}
+                                    onChange={(e) => setBulkDescEn(e.target.value)}
+                                    placeholder="English description"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div className="flex justify-between items-center gap-2">
+                            <h3 className="text-sm font-bold text-gray-800">Xususiyatlar</h3>
+                            <button
+                                type="button"
+                                onClick={bulkAddFeature}
+                                className="text-sm text-blue-600 font-bold hover:underline"
+                            >
+                                + Qator qo‘shish
+                            </button>
+                        </div>
+                        <div className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
+                            {bulkFeatures.length === 0 ? (
+                                <p className="text-xs text-gray-400 italic">
+                                    Faqat tavsifni yangilamoqchi bo‘lsangiz, xususiyat qatorlarini bo‘sh qoldiring — mavjud xususiyatlar o‘zgarmaydi.
+                                </p>
+                            ) : null}
+                            {bulkFeatures.map((feature, index) => (
+                                <div
+                                    key={index}
+                                    className="rounded-xl border border-gray-200 bg-white/80 p-4 space-y-3"
+                                >
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs font-bold text-gray-400">#{index + 1}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => bulkRemoveFeature(index)}
+                                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                                            title="O‘chirish"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                                        <div className="space-y-2 rounded-lg border border-blue-100 bg-white p-3">
+                                            <div className="text-xs font-bold text-blue-700">O‘zbek</div>
+                                            <input
+                                                type="text"
+                                                placeholder="Nomi"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                                value={feature.name_uz ?? ''}
+                                                onChange={(e) => bulkFeatureChange(index, 'name_uz', e.target.value)}
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="Qiymati"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                                value={feature.value_uz ?? ''}
+                                                onChange={(e) => bulkFeatureChange(index, 'value_uz', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2 rounded-lg border border-amber-100 bg-white p-3">
+                                            <div className="text-xs font-bold text-amber-800">Русский</div>
+                                            <input
+                                                type="text"
+                                                placeholder="Название"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                                value={feature.name_ru ?? ''}
+                                                onChange={(e) => bulkFeatureChange(index, 'name_ru', e.target.value)}
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="Значение"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                                value={feature.value_ru ?? ''}
+                                                onChange={(e) => bulkFeatureChange(index, 'value_ru', e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-2 rounded-lg border border-emerald-100 bg-white p-3">
+                                            <div className="text-xs font-bold text-emerald-800">English</div>
+                                            <input
+                                                type="text"
+                                                placeholder="Name"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                                value={feature.name_en ?? ''}
+                                                onChange={(e) => bulkFeatureChange(index, 'name_en', e.target.value)}
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="Value"
+                                                className="w-full px-3 py-2 border rounded-lg text-sm"
+                                                value={feature.value_en ?? ''}
+                                                onChange={(e) => bulkFeatureChange(index, 'value_en', e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap justify-end gap-3 pt-2 border-t border-slate-200/80">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setBulkCategoryId('')
+                                setBulkDescUz('')
+                                setBulkDescRu('')
+                                setBulkDescEn('')
+                                setBulkFeatures([])
+                            }}
+                            className="px-5 py-2.5 rounded-xl font-bold text-gray-600 hover:bg-white/80 border border-transparent hover:border-gray-200"
+                        >
+                            Tozalash
+                        </button>
+                        <button
+                            type="button"
+                            disabled={bulkApplying || !bulkCategoryId}
+                            onClick={applyBulkCategoryContent}
+                            className="px-6 py-2.5 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {bulkApplying ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                            Kategoriyadagilarga qo‘llash
+                        </button>
+                    </div>
                 </div>
             </div>
 
