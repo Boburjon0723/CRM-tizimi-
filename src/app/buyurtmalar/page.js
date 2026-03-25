@@ -101,6 +101,23 @@ function normalizeColorsArray(p) {
     })
 }
 
+/**
+ * `product_colors` qatori bo‘yicha joriy tilda rang nomi (Mahsulotlar bilan bir xil mantiq).
+ * `canonicalName` — mahsulotda saqlangan kalit (odatda `product_colors.name`).
+ */
+function labelColorCanonical(canonicalName, productColors, language) {
+    if (canonicalName == null || String(canonicalName).trim() === '') return ''
+    const s = String(canonicalName).trim()
+    if (!productColors?.length) return s
+    const low = normalizeModelKey(s)
+    const row = productColors.find((x) => normalizeModelKey(String(x.name ?? '')) === low)
+    if (row) {
+        const loc = language === 'ru' ? 'name_ru' : language === 'en' ? 'name_en' : 'name_uz'
+        return row[loc] || row.name_uz || row.name_ru || row.name_en || row.name || s
+    }
+    return s
+}
+
 /** Bir qatordan buyurtma pozitsiyalari: ko‘p rangda har bir rang + miqdor alohida qator */
 function expandOrderLineForSubmit(line) {
     if (!line?.product_id) return []
@@ -217,9 +234,10 @@ function groupOrderItemsForPrint(orderItems) {
 }
 
 /** Rang va son — ikki ustunda vertikal ro‘yxat (har bir qatorda rang | soni) */
-function buildColorQtyStacksHtml(colorPairs) {
+function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
+    const label = typeof labelColorFn === 'function' ? labelColorFn : (c) => c
     const colorsHtml = colorPairs
-        .map(([c]) => `<div class="stack-line">${escapeHtml(c)}</div>`)
+        .map(([c]) => `<div class="stack-line">${escapeHtml(label(c))}</div>`)
         .join('')
     const qtysHtml = colorPairs
         .map(([, q]) => `<div class="stack-line">${escapeHtml(String(q))}</div>`)
@@ -227,7 +245,7 @@ function buildColorQtyStacksHtml(colorPairs) {
     return { colorsHtml, qtysHtml }
 }
 
-function buildOrderBlockHtml(item, showPrices) {
+function buildOrderBlockHtml(item, showPrices, labelColorFn) {
     const customerName = escapeHtml(item.customer_name || item.customers?.name || 'Noma\'lum')
     const phone = escapeHtml(item.customer_phone || item.customers?.phone || '-')
     const date = escapeHtml(new Date(item.created_at).toLocaleDateString())
@@ -243,7 +261,7 @@ function buildOrderBlockHtml(item, showPrices) {
             const imgHtml = g.image_url
                 ? `<img class="prod-thumb" src="${escapeHtml(g.image_url)}" alt="">`
                 : ''
-            const { colorsHtml, qtysHtml } = buildColorQtyStacksHtml(g.colorPairs)
+            const { colorsHtml, qtysHtml } = buildColorQtyStacksHtml(g.colorPairs, labelColorFn)
             const priceCells = showPrices
                 ? `<td class="mono">$${escapeHtml(formatUsd(g.unitPrice))}</td><td class="mono">$${escapeHtml(formatUsd(g.lineMonetary))}</td>`
                 : ''
@@ -283,8 +301,10 @@ function buildOrderBlockHtml(item, showPrices) {
     </div>`
 }
 
-function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices }) {
-    const blocks = orders.map((o) => buildOrderBlockHtml(o, showPrices)).join('<div class="page-break"></div>')
+function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn }) {
+    const blocks = orders
+        .map((o) => buildOrderBlockHtml(o, showPrices, labelColorFn))
+        .join('<div class="page-break"></div>')
     const listBanner = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title>
     <style>
@@ -409,6 +429,8 @@ export default function Buyurtmalar() {
     const [orders, setOrders] = useState([])
     const [customers, setCustomers] = useState([])
     const [products, setProducts] = useState([])
+    /** Ranglar lug‘ati — `product_colors` (name_uz / name_ru / name_en) */
+    const [productColors, setProductColors] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
     const [editId, setEditId] = useState(null)
@@ -499,9 +521,16 @@ export default function Buyurtmalar() {
                 .select('*')
                 .order('name')
 
+            const { data: colorLibData, error: colorLibError } = await supabase
+                .from('product_colors')
+                .select('*')
+                .order('name')
+            if (colorLibError) console.warn('product_colors:', colorLibError)
+
             setOrders(ordersData || [])
             setCustomers(customersData || [])
             setProducts(productsData || [])
+            setProductColors(colorLibData || [])
         } catch (error) {
             console.error('Error loading data:', error)
         } finally {
@@ -1018,11 +1047,13 @@ export default function Buyurtmalar() {
     }
 
     function handlePrintOrder(item, showPrices) {
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
         const html = buildPrintDocumentHtml({
             documentTitle: `Buyurtma-${String(item.id).slice(0, 8)}`,
             listTitle: '',
             orders: [item],
-            showPrices
+            showPrices,
+            labelColorFn
         })
         if (!openPrintTab(html)) {
             alert(t('orders.printPopupBlocked') || 'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.')
@@ -1034,11 +1065,13 @@ export default function Buyurtmalar() {
             alert(t('orders.listPrintEmpty'))
             return
         }
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
         const html = buildPrintDocumentHtml({
             documentTitle: showPrices ? t('orders.listPrintTitleWithPrices') : t('orders.listPrintTitleNoPrices'),
             listTitle: `${t('orders.listPrintCount')}: ${list.length}`,
             orders: list,
-            showPrices
+            showPrices,
+            labelColorFn
         })
         if (!openPrintTab(html)) {
             alert(t('orders.printPopupBlocked') || 'Popup bloklangan.')
@@ -1472,7 +1505,14 @@ export default function Buyurtmalar() {
                                                                                 </option>
                                                                                 {line.variants.map((p) => (
                                                                                     <option key={String(p.id)} value={String(p.id)}>
-                                                                                        {p.color || displayProductName(p) || String(p.id).slice(0, 8)}
+                                                                                        {(p.color &&
+                                                                                            labelColorCanonical(
+                                                                                                p.color,
+                                                                                                productColors,
+                                                                                                language
+                                                                                            )) ||
+                                                                                            displayProductName(p) ||
+                                                                                            String(p.id).slice(0, 8)}
                                                                                     </option>
                                                                                 ))}
                                                                             </select>
@@ -1488,7 +1528,11 @@ export default function Buyurtmalar() {
                                                                                             className="flex items-center gap-2 justify-between"
                                                                                         >
                                                                                             <span className="truncate max-w-[100px] font-medium text-gray-800">
-                                                                                                {c}
+                                                                                                {labelColorCanonical(
+                                                                                                    c,
+                                                                                                    productColors,
+                                                                                                    language
+                                                                                                )}
                                                                                             </span>
                                                                                             <input
                                                                                                 type="number"
@@ -1508,7 +1552,15 @@ export default function Buyurtmalar() {
                                                                                 </p>
                                                                             </div>
                                                                         ) : (
-                                                                            <span>{line.color || '—'}</span>
+                                                                            <span>
+                                                                                {line.color
+                                                                                    ? labelColorCanonical(
+                                                                                          line.color,
+                                                                                          productColors,
+                                                                                          language
+                                                                                      )
+                                                                                    : '—'}
+                                                                            </span>
                                                                         )}
                                                                     </td>
                                                                     <td className="px-3 py-2 align-top text-xs">
@@ -1818,7 +1870,16 @@ export default function Buyurtmalar() {
                                                                                 <span className="font-bold text-blue-600">{oi.quantity}x</span>
                                                                                 <div className="text-[9px] text-gray-400 flex flex-wrap gap-x-2 gap-y-0">
                                                                                     {oi.size && <span>Kod: {oi.size}</span>}
-                                                                                    {oi.color && <span>Rang: {oi.color}</span>}
+                                                                                    {oi.color && (
+                                                                                        <span>
+                                                                                            {t('orders.lineColor')}:{' '}
+                                                                                            {labelColorCanonical(
+                                                                                                oi.color,
+                                                                                                productColors,
+                                                                                                language
+                                                                                            )}
+                                                                                        </span>
+                                                                                    )}
                                                                                 </div>
                                                                             </div>
                                                                         </div>
