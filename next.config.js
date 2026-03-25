@@ -1,7 +1,11 @@
 const withPWA = require("@ducanh2912/next-pwa").default({
   dest: "public",
-  cacheOnFrontEndNav: true,
-  aggressiveFrontEndNavCaching: true,
+  /**
+   * Deploydan keyin eski sahifa ko‘rinmasin: navigatsiyani agressiv keshlamaslik.
+   * (Aks holda service worker eski HTML/JS ni uzoq saqlab qoladi.)
+   */
+  cacheOnFrontEndNav: false,
+  aggressiveFrontEndNavCaching: false,
   reloadOnOnline: true,
   swcMinify: true,
   /** Dev rejimda PWA o‘chiq — server tezroq ishga tushadi, port muammosi kamayadi */
