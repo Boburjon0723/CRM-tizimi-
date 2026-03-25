@@ -1,5 +1,22 @@
 # CRM ni Vercel ga deploy qilish
 
+## Git: alohida CRM reposi
+
+CRM kodining asosiy manzili: **[github.com/Boburjon0723/CRM-tizimi-](https://github.com/Boburjon0723/CRM-tizimi-)**
+
+Monorepo (`realEcomersPardaAksesuar`) ichida ishlaganda, CRM o‘zgarishlarini shu repoga ham yuborish:
+
+```bash
+# techgear-ecommerce (yoki monorepo) ildizidan:
+git subtree push --prefix=CRM-tizimi--master/CRM-tizimi--master crm master
+```
+
+Remote `crm` allaqachon `https://github.com/Boburjon0723/CRM-tizimi-.git` ga qo‘yilgan bo‘lishi kerak:
+
+```bash
+git remote add crm https://github.com/Boburjon0723/CRM-tizimi-.git
+```
+
 ## 1. Loyiha ildizi (eng muhim)
 
 Bu repoda **ildizda** boshqa loyiha bor (`react-scripts` / `vercel.json` → `build`).
