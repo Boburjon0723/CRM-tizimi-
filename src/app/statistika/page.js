@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import {
@@ -25,6 +25,9 @@ import {
 } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+
+const STAT_FILTER_RANGE_KEY = 'crm_stat_filter_days'
+const VALID_FILTER_RANGES = ['7', '30', '90', '365']
 
 export default function StatistikaPage() {
     const { toggleSidebar } = useLayout()
@@ -161,7 +164,7 @@ export default function StatistikaPage() {
                     <Calendar size={20} className="text-gray-500" />
                     <select
                         value={filterRange}
-                        onChange={(e) => setFilterRange(e.target.value)}
+                        onChange={(e) => onFilterRangeChange(e.target.value)}
                         className="bg-transparent border-none focus:ring-0 text-sm font-bold text-gray-700 outline-none cursor-pointer"
                     >
                         <option value="7">{t('statistics.last7Days')}</option>

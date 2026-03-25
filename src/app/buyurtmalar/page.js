@@ -158,6 +158,48 @@ function expandOrderLineForSubmit(line) {
 }
 
 const LS_LAST_ORDER = 'crm_last_order_v1'
+/** Yangi buyurtma formasi — boshqa bo‘limga o‘tganda yo‘qolmasin */
+const SESSION_NEW_ORDER_DRAFT = 'crm_new_order_draft_v1'
+
+function saveNewOrderDraft(form, orderLines) {
+    try {
+        if (typeof window === 'undefined') return
+        sessionStorage.setItem(
+            SESSION_NEW_ORDER_DRAFT,
+            JSON.stringify({ form, orderLines, savedAt: Date.now() })
+        )
+    } catch (e) {
+        console.warn('saveNewOrderDraft', e)
+    }
+}
+
+function loadNewOrderDraft() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_NEW_ORDER_DRAFT)
+        if (!raw) return null
+        return JSON.parse(raw)
+    } catch {
+        return null
+    }
+}
+
+function clearNewOrderDraft() {
+    try {
+        sessionStorage.removeItem(SESSION_NEW_ORDER_DRAFT)
+    } catch (e) {
+        /* ignore */
+    }
+}
+
+function draftHasMeaningfulContent(d) {
+    if (!d?.orderLines?.length) return false
+    const anyLine = d.orderLines.some((l) => (l.codeInput && l.codeInput.trim()) || l.product_id)
+    const formBusy =
+        (d.form?.customer_name || '').trim() ||
+        (d.form?.customer_phone || '').trim() ||
+        (d.form?.note || '').trim()
+    return anyLine || !!formBusy
+}
 
 function generateDisplayOrderNumber() {
     const d = new Date()
@@ -295,8 +337,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
       </div>
       <table class="items-table">
         <thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${theadPrice}</tr></thead>
-        <tbody>${rowHtml}</tbody>
-        <tfoot>${footerRow}</tfoot>
+        <tbody>${rowHtml}${footerRow}</tbody>
       </table>
     </div>`
 }
@@ -328,10 +369,12 @@ function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, 
       table.items-table tbody tr:nth-child(even) td.qty-stack{background:#eef7f0}
       table.items-table tbody tr:nth-child(odd) td.colors-stack{background:#fffdf0}
       table.items-table tbody tr:nth-child(odd) td.qty-stack{background:#f7fdf5}
-      table.items-table tfoot tr.totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}
-      table.items-table tfoot .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}
-      table.items-table tfoot .totals-td{text-align:right;vertical-align:middle}
-      table.items-table tfoot .totals-empty{color:#999;font-weight:400}
+      /* Jami qatori tbody oxirida — <tfoot> emas, chunki chop etishda tfoot har sahifada takrorlanadi */
+      table.items-table tbody tr.totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}
+      table.items-table tbody tr.totals-row .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}
+      table.items-table tbody tr.totals-row .totals-td{text-align:right;vertical-align:middle}
+      table.items-table tbody tr.totals-row .totals-empty{color:#999;font-weight:400}
+      table.items-table tbody tr.totals-row{page-break-inside:avoid}
       .mono{font-variant-numeric:tabular-nums}
       .colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.68rem;line-height:1.25}
       .qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.68rem;line-height:1.25}
@@ -454,6 +497,55 @@ export default function Buyurtmalar() {
     })
 
     const firstModelCodeRef = useRef(null)
+    const formRef = useRef(form)
+    const orderLinesRef = useRef(orderLines)
+    const isAddingRef = useRef(isAdding)
+    const editIdRef = useRef(editId)
+    /** Sahifaga qaytishda qoralama — «Davom ettirish» paneli */
+    const [draftBanner, setDraftBanner] = useState(false)
+
+    useEffect(() => {
+        formRef.current = form
+    }, [form])
+    useEffect(() => {
+        orderLinesRef.current = orderLines
+    }, [orderLines])
+    useEffect(() => {
+        isAddingRef.current = isAdding
+    }, [isAdding])
+    useEffect(() => {
+        editIdRef.current = editId
+    }, [editId])
+
+    useEffect(() => {
+        const d = loadNewOrderDraft()
+        if (d && draftHasMeaningfulContent(d) && !isAddingRef.current) {
+            setDraftBanner(true)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (!isAdding || editId) return
+        const tid = setTimeout(() => {
+            saveNewOrderDraft(formRef.current, orderLinesRef.current)
+        }, 600)
+        return () => {
+            clearTimeout(tid)
+            if (isAddingRef.current && !editIdRef.current) {
+                saveNewOrderDraft(formRef.current, orderLinesRef.current)
+            }
+        }
+    }, [form, orderLines, isAdding, editId])
+
+    useEffect(() => {
+        const onVis = () => {
+            if (document.visibilityState === 'hidden' && isAddingRef.current && !editIdRef.current) {
+                saveNewOrderDraft(formRef.current, orderLinesRef.current)
+            }
+        }
+        document.addEventListener('visibilitychange', onVis)
+        return () => document.removeEventListener('visibilitychange', onVis)
+    }, [])
 
     useEffect(() => {
         if (isAdding && !editId) {
@@ -879,6 +971,7 @@ export default function Buyurtmalar() {
                 } catch (tgErr) {
                     console.warn('Telegram:', tgErr)
                 }
+                clearNewOrderDraft()
             } else {
                 const orderPayload = {
                     customer_id: form.customer_id || null,
@@ -981,6 +1074,8 @@ export default function Buyurtmalar() {
     }
 
     function handleCancel() {
+        clearNewOrderDraft()
+        setDraftBanner(false)
         setForm({
             customer_id: '',
             customer_name: '',
@@ -995,6 +1090,44 @@ export default function Buyurtmalar() {
         setEditId(null)
         setIsAdding(false)
         setOrderLines([createEmptyOrderLine()])
+    }
+
+    function restoreNewOrderDraft() {
+        const d = loadNewOrderDraft()
+        if (!d) {
+            setDraftBanner(false)
+            return
+        }
+        setForm(
+            d.form || {
+                customer_id: '',
+                customer_name: '',
+                customer_phone: '',
+                total: '',
+                status: 'new',
+                note: '',
+                source: 'dokon',
+                discount_percent: '',
+                coupon_code: ''
+            }
+        )
+        const lines =
+            Array.isArray(d.orderLines) && d.orderLines.length
+                ? d.orderLines.map((ln, i) => ({
+                      ...createEmptyOrderLine(),
+                      ...ln,
+                      id: ln.id || `line_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 9)}`
+                  }))
+                : [createEmptyOrderLine()]
+        setOrderLines(lines)
+        setEditId(null)
+        setIsAdding(true)
+        setDraftBanner(false)
+    }
+
+    function dismissNewOrderDraftBanner() {
+        clearNewOrderDraft()
+        setDraftBanner(false)
     }
 
     function repeatLastOrder() {
@@ -1208,6 +1341,28 @@ export default function Buyurtmalar() {
                 </div>
             </div>
 
+            {draftBanner && !isAdding ? (
+                <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+                    <p className="font-medium">{t('orders.draftRestorePrompt')}</p>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={restoreNewOrderDraft}
+                            className="rounded-xl bg-amber-600 px-4 py-2 font-bold text-white hover:bg-amber-700"
+                        >
+                            {t('orders.draftContinue')}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={dismissNewOrderDraftBanner}
+                            className="rounded-xl border border-amber-300 bg-white px-4 py-2 font-semibold text-amber-900 hover:bg-amber-100"
+                        >
+                            {t('orders.draftDiscard')}
+                        </button>
+                    </div>
+                </div>
+            ) : null}
+
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                 <div className="relative w-full md:w-96">
                     <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
@@ -1289,6 +1444,8 @@ export default function Buyurtmalar() {
                             if (isAdding) {
                                 handleCancel()
                             } else {
+                                clearNewOrderDraft()
+                                setDraftBanner(false)
                                 setEditId(null)
                                 setOrderLines([createEmptyOrderLine()])
                                 setForm({

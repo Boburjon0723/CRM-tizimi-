@@ -241,7 +241,10 @@ export const translations = {
             exportPdfHint: 'PDF: chop etish oynasida «Saqlash» → PDF',
             orderListExpand: 'Barchasini ko\'rish',
             orderListCollapse: 'Yig\'ish',
-            orderListHiddenCount: 'Yana {n} ta'
+            orderListHiddenCount: 'Yana {n} ta',
+            draftRestorePrompt: 'Yangi buyurtma qoralamasi topildi — davom ettirasizmi?',
+            draftContinue: 'Davom ettirish',
+            draftDiscard: 'Bekor qilish'
         },
         products: {
             title: 'Mahsulotlar',
@@ -713,7 +716,10 @@ export const translations = {
             exportPdfHint: 'PDF: в печати «Сохранить как» → PDF',
             orderListExpand: 'Показать все',
             orderListCollapse: 'Свернуть',
-            orderListHiddenCount: 'Ещё {n} шт.'
+            orderListHiddenCount: 'Ещё {n} шт.',
+            draftRestorePrompt: 'Найден черновик нового заказа — продолжить?',
+            draftContinue: 'Продолжить',
+            draftDiscard: 'Отменить'
         },
         products: {
             title: 'Продукты',
@@ -1185,7 +1191,10 @@ export const translations = {
             exportPdfHint: 'PDF: in print dialog choose Save as PDF',
             orderListExpand: 'Show all',
             orderListCollapse: 'Collapse',
-            orderListHiddenCount: '{n} more'
+            orderListHiddenCount: '{n} more',
+            draftRestorePrompt: 'A draft new order was found — continue?',
+            draftContinue: 'Continue',
+            draftDiscard: 'Discard'
         },
         products: {
             title: 'Products',
