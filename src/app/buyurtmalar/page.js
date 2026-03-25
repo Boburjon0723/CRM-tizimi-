@@ -1511,8 +1511,67 @@ export default function Buyurtmalar() {
                                                                             <span>{line.color || '—'}</span>
                                                                         )}
                                                                     </td>
-                                                                    <td className="px-3 py-2 align-top font-mono text-xs">
-                                                                        {line.product_id ? `$${Number(line.product_price).toLocaleString()}` : '—'}
+                                                                    <td className="px-3 py-2 align-top text-xs">
+                                                                        {line.product_id ? (
+                                                                            <div className="space-y-1">
+                                                                                <div className="flex items-center gap-0.5">
+                                                                                    <span className="text-gray-500 font-mono shrink-0">$</span>
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        min="0"
+                                                                                        step="0.01"
+                                                                                        className="w-24 px-2 py-1 border rounded-lg font-mono text-xs"
+                                                                                        value={
+                                                                                            Number.isFinite(Number(line.product_price))
+                                                                                                ? line.product_price
+                                                                                                : 0
+                                                                                        }
+                                                                                        onChange={(e) => {
+                                                                                            const raw = e.target.value
+                                                                                            const n =
+                                                                                                raw === ''
+                                                                                                    ? 0
+                                                                                                    : parseFloat(
+                                                                                                          String(raw).replace(',', '.')
+                                                                                                      )
+                                                                                            updateOrderLine(line.id, {
+                                                                                                product_price: Number.isFinite(n)
+                                                                                                    ? Math.round(n * 100) / 100
+                                                                                                    : 0
+                                                                                            })
+                                                                                        }}
+                                                                                    />
+                                                                                </div>
+                                                                                {prodRow ? (
+                                                                                    <p className="text-[10px] text-gray-500 leading-tight">
+                                                                                        {t('orders.catalogPriceRef')}: $
+                                                                                        {formatUsd(Number(prodRow.sale_price) || 0)}
+                                                                                        {Math.abs(
+                                                                                            (Number(line.product_price) || 0) -
+                                                                                                (Number(prodRow.sale_price) || 0)
+                                                                                        ) > 0.005 ? (
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                className="ml-2 text-blue-600 font-semibold hover:underline"
+                                                                                                onClick={() =>
+                                                                                                    updateOrderLine(line.id, {
+                                                                                                        product_price:
+                                                                                                            Math.round(
+                                                                                                                (Number(prodRow.sale_price) ||
+                                                                                                                    0) * 100
+                                                                                                            ) / 100
+                                                                                                    })
+                                                                                                }
+                                                                                            >
+                                                                                                {t('orders.resetCatalogPrice')}
+                                                                                            </button>
+                                                                                        ) : null}
+                                                                                    </p>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <span className="font-mono text-gray-400">—</span>
+                                                                        )}
                                                                     </td>
                                                                     <td className="px-3 py-2 align-top">
                                                                         {line.product_id && isMatrix ? (
