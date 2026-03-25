@@ -329,6 +329,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
         ${footerPriceCells}
       </tr>`
     const theadPrice = showPrices ? '<th class="th-narrow">1 par</th><th class="th-narrow">Qator</th>' : ''
+    /* Jami alohida jadvalda: asosiy jadval sahifalanganda brauzer tbody oxiridagi qatorni 1-sahifaga "yopishtirmasligi" uchun */
     return `
     <div class="order-block">
       <div class="info">
@@ -337,7 +338,10 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
       </div>
       <table class="items-table">
         <thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${theadPrice}</tr></thead>
-        <tbody>${rowHtml}${footerRow}</tbody>
+        <tbody>${rowHtml}</tbody>
+      </table>
+      <table class="items-table order-totals-table">
+        <tbody>${footerRow}</tbody>
       </table>
     </div>`
 }
@@ -356,6 +360,7 @@ function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, 
       .order-block{margin-bottom:24px}
       .info{display:flex;justify-content:space-between;margin-bottom:20px}
       table.items-table{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #8c8c8c;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+      .order-block table.items-table:not(.order-totals-table){margin-bottom:0}
       table.items-table thead{display:table-header-group}
       table.items-table th{background:#ffeb9c;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #c9a227;font-size:0.82rem;font-weight:700}
       table.items-table th.th-narrow{white-space:nowrap}
@@ -369,12 +374,12 @@ function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, 
       table.items-table tbody tr:nth-child(even) td.qty-stack{background:#eef7f0}
       table.items-table tbody tr:nth-child(odd) td.colors-stack{background:#fffdf0}
       table.items-table tbody tr:nth-child(odd) td.qty-stack{background:#f7fdf5}
-      /* Jami qatori tbody oxirida — <tfoot> emas, chunki chop etishda tfoot har sahifada takrorlanadi */
-      table.items-table tbody tr.totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}
-      table.items-table tbody tr.totals-row .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}
-      table.items-table tbody tr.totals-row .totals-td{text-align:right;vertical-align:middle}
-      table.items-table tbody tr.totals-row .totals-empty{color:#999;font-weight:400}
-      table.items-table tbody tr.totals-row{page-break-inside:avoid}
+      /* Jami alohida jadvalda — chop etishda umumiy summa barcha qatorlardan keyin (oxirgi sahifada) */
+      table.order-totals-table{width:100%;margin-top:-1px;margin-bottom:16px;page-break-inside:avoid}
+      table.order-totals-table .totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}
+      table.order-totals-table .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}
+      table.order-totals-table .totals-td{text-align:right;vertical-align:middle}
+      table.order-totals-table .totals-empty{color:#999;font-weight:400}
       .mono{font-variant-numeric:tabular-nums}
       .colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.68rem;line-height:1.25}
       .qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.68rem;line-height:1.25}
