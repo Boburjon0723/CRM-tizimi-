@@ -418,9 +418,14 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
         })
         .join('')
     const totalPar = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.totalPieces) || 0), 0)
+    /** Qatorlar bo‘yicha hisob-kitob (bazadagi subtotal/price*qty); `orders.total` bilan farq bo‘lishi mumkin */
     const totalMoney = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.lineMonetary) || 0), 0)
+    const savedTotalRaw = item.total != null && item.total !== '' ? Number(item.total) : NaN
+    const savedTotal = Number.isFinite(savedTotalRaw) ? savedTotalRaw : null
+    /** Chop etishda mijoz ko‘radigan yig‘indi: avvalo saqlangan buyurtma summasi */
+    const grandTotal = savedTotal != null ? savedTotal : totalMoney
     const footerPriceCells = showPrices
-        ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(totalMoney))}</td>`
+        ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(grandTotal))}</td>`
         : ''
     const footerRow = `<tr class="totals-row">
         <td class="totals-label" colspan="5">Jami</td>
@@ -445,10 +450,12 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
       ${
           showPrices
               ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4">
-        <strong>Qatorlar yig‘indisi:</strong> $${escapeHtml(formatUsd(totalMoney))}
+        <strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}
         ${
-            item.total != null && item.total !== '' && Number.isFinite(Number(item.total))
-                ? ` · <strong>Buyurtma jami (saqlangan):</strong> $${escapeHtml(formatUsd(Number(item.total)))}`
+            savedTotal != null && Math.abs(totalMoney - savedTotal) > 0.01
+                ? `<span style="display:block;margin-top:6px;color:#666;font-size:0.78rem;font-weight:normal">
+        Qatorlar bo‘yicha yig‘indi (hisob-kitob): $${escapeHtml(formatUsd(totalMoney))} — qatorlar va saqlangan umumiy summa farq qilishi mumkin.
+      </span>`
                 : ''
         }
       </p>`
