@@ -23,7 +23,8 @@ import {
     ScanLine,
     AlertTriangle,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Info
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -385,9 +386,11 @@ function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, 
       .qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.68rem;line-height:1.25}
       .colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.25;min-height:1.2em;font-size:0.68rem}
       .qty-stack .stack-line{font-weight:600}
-      .prod-img-cell{width:62px;max-width:62px;min-width:58px;text-align:center;vertical-align:middle;padding:4px!important;overflow:hidden}
-      .prod-thumb-wrap{max-width:100%;max-height:58px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden}
-      .prod-thumb{max-width:58px;max-height:58px;width:auto;height:auto;object-fit:contain;vertical-align:middle;border-radius:4px;display:block}
+      /* Rasm: zebra fonini kesmasin — oq maydon; biroz kattaroq */
+      /* Rasm ustuni qat’iy kenglik — jadval “yoyilib” ketmasin */
+      .prod-img-cell{width:96px;max-width:96px;min-width:96px;text-align:center;vertical-align:middle;padding:4px!important;overflow:hidden;background:#fff!important}
+      .prod-thumb-wrap{max-width:100%;max-height:92px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
+      .prod-thumb{max-width:88px;max-height:88px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}
       .prod-no-img{color:#999;font-size:0.85rem}
       .page-break{page-break-after:always;border:none;margin:24px 0;padding:0;height:0;overflow:hidden}
       .footer{margin-top:32px;text-align:center;color:#666;font-size:0.8em;border-top:1px solid #eee;padding-top:16px}
@@ -469,6 +472,31 @@ function createEmptyOrderLine() {
         /** Ko‘p rang: har bir rang uchun miqdor (0 = shu rangdan yo‘q) */
         colorQtyByColor: {}
     }
+}
+
+/** Bazadagi `order_items` → forma `orderLines` (tahrirlash rejimi) */
+function orderItemsToOrderLines(orderItems, productsList) {
+    if (!orderItems?.length) return [createEmptyOrderLine()]
+    return orderItems.map((oi, idx) => {
+        const prod = productsList.find((p) => String(p.id) === String(oi.product_id))
+        const q = Math.max(1, parseInt(String(oi.quantity ?? 1), 10) || 1)
+        const code = String(oi.size ?? prod?.size ?? '').trim()
+        return {
+            ...createEmptyOrderLine(),
+            id: `line_edit_${oi.id ?? idx}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            codeInput: code,
+            quantity: String(q),
+            product_id: oi.product_id || null,
+            product_name: (oi.product_name || prod?.name || '').trim(),
+            product_price: Number(oi.price) || 0,
+            color: oi.color || '',
+            image_url: oi.image_url || prod?.image_url || '',
+            resolveError: '',
+            variants: [],
+            colorChoices: [],
+            colorQtyByColor: {}
+        }
+    })
 }
 
 export default function Buyurtmalar() {
@@ -601,7 +629,7 @@ export default function Buyurtmalar() {
                     *,
                     customers (id, name, phone),
                     order_items (
-                        id, quantity, price, product_name, color, size, image_url,
+                        id, product_id, quantity, price, product_name, color, size, image_url,
                         products (id, name)
                     )
                 `)
@@ -673,6 +701,26 @@ export default function Buyurtmalar() {
         if (byNamePartial.length === 1) return { list: byNamePartial, reason: null }
         if (byNamePartial.length > 1) return { list: [], reason: 'ambiguous' }
         return { list: [], reason: 'notfound' }
+    }
+
+    /** Tahrirlashda yuklangan qatorlarga variant ro‘yxati (bir kod — bir nechta mahsulot) */
+    function enrichOrderLinesFromDb(lines) {
+        return lines.map((line) => {
+            let next = { ...line }
+            if (!String(next.codeInput || '').trim() && next.product_id) {
+                const prod = products.find((p) => String(p.id) === String(next.product_id))
+                if (prod?.size != null && String(prod.size).trim()) {
+                    next.codeInput = String(prod.size).trim()
+                }
+            }
+            const code = String(next.codeInput || '').trim()
+            if (!code) return next
+            const { list } = getProductsByModelCode(code)
+            if (list?.length >= 2) {
+                next.variants = list
+            }
+            return next
+        })
     }
 
     function applyVariantToLine(lineId, productIdStr) {
@@ -978,11 +1026,87 @@ export default function Buyurtmalar() {
                 }
                 clearNewOrderDraft()
             } else {
+                const unresolvedFetch = orderLines.filter((l) => (l.codeInput || '').trim() && !l.product_id)
+                if (unresolvedFetch.length) {
+                    alert(t('orders.orderLinesUnresolved'))
+                    return
+                }
+                const expandedRows = orderLines.flatMap(expandOrderLineForSubmit)
+                if (expandedRows.length === 0) {
+                    alert(t('orders.orderLinesEmpty'))
+                    return
+                }
+                const rawTotal = expandedRows.reduce(
+                    (s, row) => s + (Number(row.product_price) || 0) * (parseInt(row.quantity, 10) || 0),
+                    0
+                )
+                const disc = Math.min(
+                    100,
+                    Math.max(0, parseFloat(String(form.discount_percent || '').replace(',', '.')) || 0)
+                )
+                const totalSum = Math.round(rawTotal * (1 - disc / 100) * 100) / 100
+
+                const qtyByProductId = new Map()
+                for (const row of expandedRows) {
+                    const pid = String(row.product_id)
+                    const q = parseInt(row.quantity, 10) || 0
+                    qtyByProductId.set(pid, (qtyByProductId.get(pid) || 0) + q)
+                }
+                const stockIssues = []
+                for (const [pid, qty] of qtyByProductId) {
+                    const prod = products.find((p) => String(p.id) === pid)
+                    if (!prod) continue
+                    const st = prod.stock
+                    if (st != null && st !== '' && Number.isFinite(Number(st)) && Number(st) >= 0 && qty > Number(st)) {
+                        stockIssues.push(
+                            `${prod.name || displayProductName(prod)}: ${t('orders.stockLabel')} ${st}, ${t('orders.qtyLabel')} ${qty}`
+                        )
+                    }
+                }
+                if (stockIssues.length) {
+                    const ok = window.confirm(`${t('orders.stockWarningTitle')}\n\n${stockIssues.join('\n')}\n\n${t('orders.stockWarningConfirm')}`)
+                    if (!ok) return
+                }
+
+                const noteParts = []
+                if (disc > 0) noteParts.push(`${t('orders.discountNote')} ${disc}%`)
+                const coup = (form.coupon_code || '').trim()
+                if (coup) noteParts.push(`${t('orders.couponNote')} ${coup}`)
+                if (form.note?.trim()) noteParts.push(form.note.trim())
+                const noteCombined = noteParts.join('\n')
+
+                const { error: delErr } = await supabase.from('order_items').delete().eq('order_id', editId)
+                if (delErr) throw delErr
+
+                const itemPayloads = expandedRows.map((line) => {
+                    const prod = products.find((p) => String(p.id) === String(line.product_id))
+                    const qty = Math.max(1, parseInt(line.quantity, 10) || 1)
+                    const rawPrice = Number(line.product_price)
+                    const pr = Number.isFinite(rawPrice) ? Math.round(rawPrice * 100) / 100 : 0
+                    const subtotal = Math.round(pr * qty * 100) / 100
+                    const colorVal = line.color ?? prod?.color
+                    const imgVal = line.image_url ?? prod?.image_url
+                    return {
+                        order_id: editId,
+                        product_id: line.product_id,
+                        product_name: (line.product_name || displayProductName(prod) || '').trim() || 'Mahsulot',
+                        quantity: qty,
+                        price: pr,
+                        subtotal,
+                        size: prod?.size != null ? String(prod.size) : null,
+                        color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
+                        image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null
+                    }
+                })
+
+                const { error: itemError } = await supabase.from('order_items').insert(itemPayloads)
+                if (itemError) throw itemError
+
                 const orderPayload = {
                     customer_id: form.customer_id || null,
                     customer_name: resolvedCustomerName,
                     customer_phone: resolvedPhone,
-                    total: parseFloat(form.total),
+                    total: totalSum,
                     status:
                         form.status === 'new' || form.status === 'Yangi'
                             ? 'new'
@@ -993,12 +1117,11 @@ export default function Buyurtmalar() {
                                 : form.status === 'cancelled' || form.status === 'Bekor qilindi'
                                   ? 'cancelled'
                                   : form.status,
-                    note: form.note,
+                    note: noteCombined,
                     source: normalizeSourceForDb(form.source)
                 }
 
                 const { error } = await supabase.from('orders').update(orderPayload).eq('id', editId)
-
                 if (error) throw error
             }
 
@@ -1074,6 +1197,8 @@ export default function Buyurtmalar() {
             discount_percent: '',
             coupon_code: ''
         })
+        const raw = orderItemsToOrderLines(item.order_items, products)
+        setOrderLines(enrichOrderLinesFromDb(raw))
         setEditId(item.id)
         setIsAdding(true)
     }
@@ -1240,15 +1365,6 @@ export default function Buyurtmalar() {
     const orderLinesTotal = useMemo(() => {
         return Math.round(orderLinesSubtotal * (1 - discountPct / 100) * 100) / 100
     }, [orderLinesSubtotal, discountPct])
-
-    const editOrderItemsSummary = useMemo(() => {
-        if (!editId) return ''
-        const ord = orders.find((o) => o.id === editId)
-        if (!ord?.order_items?.length) return '—'
-        return ord.order_items
-            .map((oi) => `${oi.product_name || oi.products?.name || '-'} ×${oi.quantity}`)
-            .join(' · ')
-    }, [editId, orders])
 
     const filteredOrders = orders.filter((b) => {
         const customerName = b.customer_name || b.customers?.name || t('common.unknown') || 'Noma\'lum'
@@ -1548,11 +1664,12 @@ export default function Buyurtmalar() {
                             <div className="space-y-3 md:col-span-2 lg:col-span-3">
                                 <label className="block text-sm font-bold text-gray-700">{t('common.products')}</label>
                                 {editId ? (
-                                    <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-800 text-sm leading-relaxed">
-                                        {editOrderItemsSummary}
+                                    <div className="flex gap-2 rounded-xl border border-blue-100 bg-blue-50/80 px-3 py-2.5 text-xs text-blue-900 leading-snug">
+                                        <Info className="shrink-0 w-4 h-4 mt-0.5 text-blue-600" aria-hidden />
+                                        <span>{t('orders.editOrderLinesHint')}</span>
                                     </div>
-                                ) : (
-                                    <>
+                                ) : null}
+                                <>
                                         <div className="space-y-1">
                                             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                                                 <span>{t('orders.orderLinesIntro')}</span>
@@ -1845,12 +1962,10 @@ export default function Buyurtmalar() {
                                             <Plus size={18} />
                                             {t('orders.addOrderLine')}
                                         </button>
-                                    </>
-                                )}
+                                </>
                             </div>
 
-                            {!editId && (
-                                <div className="space-y-2 md:col-span-2 lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2 md:col-span-2 lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-1">
                                         <label className="block text-sm font-bold text-gray-700">
                                             {t('orders.discountPercent')}
@@ -1879,30 +1994,19 @@ export default function Buyurtmalar() {
                                         />
                                     </div>
                                 </div>
-                            )}
 
                             <div className="space-y-2">
                                 <label className="block text-sm font-bold text-gray-700">{t('orders.summa')} ($)</label>
-                                {editId ? (
-                                    <input
-                                        type="number"
-                                        value={form.total}
-                                        onChange={(e) => setForm({ ...form, total: e.target.value })}
-                                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                        required
-                                    />
-                                ) : (
-                                    <div className="space-y-1">
-                                        {discountPct > 0 && (
-                                            <p className="text-xs text-gray-500">
-                                                {t('orders.subtotalBeforeDiscount')}: ${formatUsd(orderLinesSubtotal)}
-                                            </p>
-                                        )}
-                                        <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-bold text-gray-900">
-                                            ${formatUsd(orderLinesTotal)}
-                                        </div>
+                                <div className="space-y-1">
+                                    {discountPct > 0 && (
+                                        <p className="text-xs text-gray-500">
+                                            {t('orders.subtotalBeforeDiscount')}: ${formatUsd(orderLinesSubtotal)}
+                                        </p>
+                                    )}
+                                    <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-bold text-gray-900">
+                                        ${formatUsd(orderLinesTotal)}
                                     </div>
-                                )}
+                                </div>
                             </div>
 
                             <div className="space-y-2">
@@ -1999,7 +2103,7 @@ export default function Buyurtmalar() {
                                             <div className="text-xs text-gray-500 font-mono mt-0.5">{item.customer_phone || item.customers?.phone}</div>
                                             {item.note && <div className="text-xs text-amber-600 italic mt-1 bg-amber-50 px-2 py-0.5 rounded inline-block">{item.note}</div>}
                                         </td>
-                                        <td className="px-6 py-4 text-gray-600 max-w-[280px]">
+                                        <td className="px-6 py-4 text-gray-600 max-w-[300px]">
                                             {item.order_items && item.order_items.length > 0 ? (
                                                 (() => {
                                                     const ois = item.order_items
@@ -2014,15 +2118,17 @@ export default function Buyurtmalar() {
                                                                     key={oi.id || idx}
                                                                     className="text-sm border-b border-gray-100 last:border-0 pb-1 mb-1 last:mb-0"
                                                                 >
-                                                                    <div className="flex items-start gap-2.5">
+                                                                    <div className="flex items-start gap-2.5 min-w-0">
                                                                         {oi.image_url ? (
-                                                                            <img
-                                                                                src={oi.image_url}
-                                                                                alt=""
-                                                                                className="w-12 h-12 shrink-0 rounded-md object-cover bg-gray-50 border border-gray-100"
-                                                                            />
+                                                                            <div className="shrink-0 w-20 h-20 min-w-[5rem] max-w-[5rem] min-h-[5rem] max-h-[5rem] rounded-lg bg-white flex items-center justify-center overflow-hidden ring-1 ring-gray-200/60">
+                                                                                <img
+                                                                                    src={oi.image_url}
+                                                                                    alt=""
+                                                                                    className="max-h-full max-w-full object-contain object-center mix-blend-multiply"
+                                                                                />
+                                                                            </div>
                                                                         ) : (
-                                                                            <div className="w-12 h-12 shrink-0 rounded-md bg-gray-100 border border-gray-100" />
+                                                                            <div className="shrink-0 w-20 h-20 min-w-[5rem] max-w-[5rem] min-h-[5rem] max-h-[5rem] rounded-lg border border-dashed border-gray-200/90 bg-white" />
                                                                         )}
                                                                         <div className="min-w-0 flex-1">
                                                                             <div className="font-medium text-gray-800 line-clamp-1">

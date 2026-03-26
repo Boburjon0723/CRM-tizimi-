@@ -143,6 +143,8 @@ export const translations = {
             title: 'Buyurtmalar',
             newOrder: 'Yangi Buyurtma',
             editOrder: 'Buyurtmani Tahrirlash',
+            editOrderLinesHint:
+                'Quyidagi jadvalda mahsulot qatorlarini o‘zgartirasiz: kod, «Olish», rang, narx, miqdor. «Saqlash» bosilganda bazadagi pozitsiyalar yangilanadi.',
             orderNumber: 'Buyurtma #',
             customer: 'Mijoz',
             contact: 'Aloqa',
@@ -618,6 +620,8 @@ export const translations = {
             title: 'Заказы',
             newOrder: 'Новый заказ',
             editOrder: 'Редактировать заказ',
+            editOrderLinesHint:
+                'В таблице ниже меняйте позиции: код, «Загрузить», цвет, цену, количество. По «Сохранить» позиции в базе обновятся.',
             orderNumber: 'Заказ #',
             customer: 'Клиент',
             contact: 'Контакт',
@@ -1093,6 +1097,8 @@ export const translations = {
             title: 'Orders',
             newOrder: 'New Order',
             editOrder: 'Edit Order',
+            editOrderLinesHint:
+                'Edit line items below: code, Load, color, unit price, quantity. Save updates positions in the database.',
             orderNumber: 'Order #',
             customer: 'Customer',
             contact: 'Contact',
