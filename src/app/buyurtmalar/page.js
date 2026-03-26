@@ -6,7 +6,6 @@ import { sendTelegramNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
 import {
     Plus,
-    Edit,
     Trash2,
     Save,
     X,
@@ -24,7 +23,7 @@ import {
     AlertTriangle,
     ChevronDown,
     ChevronUp,
-    Info
+    Edit,
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -42,6 +41,18 @@ function formatUsd(amount) {
     const n = Number(amount)
     if (!Number.isFinite(n)) return '0'
     return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+}
+
+/** Buyurtma qatoridagi miqdor/narx — chop etish va yig‘indilarda satr qo‘shilishini oldini olish uchun */
+function parseOrderItemQty(v) {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n < 0) return 0
+    return Math.floor(n)
+}
+
+function parseOrderItemPrice(v) {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : 0
 }
 
 /** Model kodi solishtirish: probel, tire, katta/kichik harf */
@@ -126,24 +137,35 @@ function expandOrderLineForSubmit(line) {
     const img = line.image_url || ''
     const name = line.product_name || ''
     if (line.colorChoices?.length > 1) {
-        const rows = []
+        /** Bir xil rang kaliti (takrorlangan `colorChoices` yoki yozuv farqi) bitta DB qatorida yig‘iladi */
+        const byNorm = new Map()
         for (const c of line.colorChoices) {
-            const q = parseInt(line.colorQtyByColor?.[c] ?? '0', 10) || 0
-            if (q > 0) {
-                rows.push({
-                    codeInput: line.codeInput,
-                    product_id: line.product_id,
-                    product_name: name,
-                    product_price: pr,
-                    color: c,
-                    quantity: String(q),
-                    image_url: img
-                })
+            const q = parseInt(String(line.colorQtyByColor?.[c] ?? '0'), 10) || 0
+            if (q <= 0) continue
+            const nk = normalizeModelKey(String(c))
+            const prev = byNorm.get(nk)
+            if (prev) {
+                prev.qty += q
+            } else {
+                byNorm.set(nk, { label: String(c), qty: q })
             }
+        }
+        const rows = []
+        for (const { label, qty } of byNorm.values()) {
+            if (qty <= 0) continue
+            rows.push({
+                codeInput: line.codeInput,
+                product_id: line.product_id,
+                product_name: name,
+                product_price: pr,
+                color: label,
+                quantity: String(qty),
+                image_url: img
+            })
         }
         return rows
     }
-    const q = parseInt(line.quantity, 10) || 0
+    const q = parseInt(String(line.quantity ?? '0'), 10) || 0
     if (q <= 0) return []
     return [
         {
@@ -237,52 +259,129 @@ function exportOrdersToCsv(rows, filename) {
     URL.revokeObjectURL(a.href)
 }
 
-/** Chop etish: bir xil model (product_id) — bitta qator, ranglar bitta katakda yig‘iladi */
+/** Chop etish: bir SKU — bitta kalit (product_id + model kodi). */
+function skuBucketKeyForOrderItem(oi) {
+    const pid = oi.product_id != null && oi.product_id !== '' ? String(oi.product_id) : ''
+    const sizeRaw = (oi.size != null ? String(oi.size) : '').trim()
+    const sizeKey = normalizeModelKey(sizeRaw)
+    if (pid) {
+        /** `size` bo‘sh bo‘lsa har bir `order_items.id` uchun alohida kalit — bir xil mahsulotning ranglari turli guruhlarga tushib, keyingi tahrirda miqdor 2x bo‘lib qolardi. */
+        return sizeKey ? `pid:${pid}:sz:${sizeKey}` : `pid:${pid}:nosz`
+    }
+    if (oi.id != null && oi.id !== '') return `noid:${String(oi.id)}`
+    return `row:${Math.random().toString(36).slice(2, 11)}`
+}
+
+/**
+ * Bir xil (product_id + size + rang) uchun bazada 2 ta qator bo‘lsa (takrorlanish xatosi),
+ * eng yangi qatorni qoldiramiz — aks holda tahrir qayta ochilganda eski (birinchi) qator ko‘rinadi.
+ * `created_at` bo‘lmasa `id` bo‘yicha teskari tartib (UUID uchun taxminiy).
+ */
+function dedupeOrderItemsKeepNewest(rows) {
+    if (!rows?.length) return []
+    const ts = (r) => {
+        const t = r.created_at ?? r.updated_at
+        if (t == null || t === '') return NaN
+        const ms = new Date(t).getTime()
+        return Number.isNaN(ms) ? NaN : ms
+    }
+    const sorted = [...rows].sort((a, b) => {
+        const ta = ts(a)
+        const tb = ts(b)
+        if (!Number.isNaN(ta) && !Number.isNaN(tb) && tb !== ta) return tb - ta
+        if (!Number.isNaN(tb) && Number.isNaN(ta)) return 1
+        if (Number.isNaN(tb) && !Number.isNaN(ta)) return -1
+        return String(b.id || '').localeCompare(String(a.id || ''))
+    })
+    const seen = new Set()
+    const out = []
+    for (const oi of sorted) {
+        const pid = String(oi.product_id ?? '')
+        const sz = normalizeModelKey(oi.size != null ? String(oi.size) : '')
+        const col = normalizeModelKey(oi.color != null ? String(oi.color) : '')
+        const key = `${pid}|${sz}|${col}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push(oi)
+    }
+    return out
+}
+
+/** Saqlashdan oldin: bitta rang uchun takrorlangan yig‘ilgan qatorlarni bitta qilib qo‘shadi */
+function mergeExpandedRowsForSubmit(rows) {
+    if (!rows?.length) return []
+    const map = new Map()
+    for (const r of rows) {
+        const pid = String(r.product_id ?? '')
+        const col = normalizeModelKey(r.color != null ? String(r.color) : '')
+        const code = normalizeModelKey(r.codeInput != null ? String(r.codeInput) : '')
+        const key = `${pid}|${col}|${code}`
+        const q = parseOrderItemQty(r.quantity)
+        const prev = map.get(key)
+        if (!prev) {
+            map.set(key, { ...r, quantity: String(q) })
+            continue
+        }
+        const pq = parseOrderItemQty(prev.quantity)
+        map.set(key, { ...prev, quantity: String(pq + q) })
+    }
+    return Array.from(map.values())
+}
+
+/** Chop etish: bir SKU (product_id + model kodi/size) — bitta qator; rang/miqdor faqat shu qopqichdagi qatorlardan.
+ *  Har bir `order_item` faqat bitta kalitga tushadi — boshqa mahsulotlarning ranglari takrorlanmaydi. */
 function groupOrderItemsForPrint(orderItems) {
     if (!orderItems?.length) return []
-    const groups = []
-    const keyToIndex = new Map()
-    for (const oi of orderItems) {
-        const pid = oi.product_id != null && oi.product_id !== '' ? String(oi.product_id) : ''
-        const size = (oi.size != null ? String(oi.size) : '').trim()
-        const pname = (oi.product_name || oi.products?.name || '').trim()
-        const key = pid ? `pid:${pid}` : `fb:${normalizeModelKey(size)}|${normalizeModelKey(pname)}`
-        let idx = keyToIndex.get(key)
-        if (idx === undefined) {
-            idx = groups.length
-            keyToIndex.set(key, idx)
-            groups.push({
-                product_name: oi.product_name || oi.products?.name || '-',
-                size: oi.size,
-                image_url: oi.image_url,
-                lines: []
-            })
-        }
-        groups[idx].lines.push(oi)
+    const items = normalizeOrderItemsForList(orderItems)
+    const buckets = new Map()
+    for (const oi of items) {
+        const key = skuBucketKeyForOrderItem(oi)
+        if (!buckets.has(key)) buckets.set(key, [])
+        buckets.get(key).push(oi)
     }
-    return groups.map((g) => {
+    return Array.from(buckets.values()).map((lines) => {
+        const first = lines[0]
         const colorMap = new Map()
         let lineMonetary = 0
-        for (const oi of g.lines) {
+        /** Har bir `order_items` qatori bo‘yicha aniq yig‘indi (bazadagi subtotal emas — noto‘g‘ri bo‘lmasin) */
+        let sumQtyFromLines = 0
+        for (const oi of lines) {
             const c = (oi.color || '').trim() || '—'
-            const q = Number(oi.quantity) || 0
-            colorMap.set(c, (colorMap.get(c) || 0) + q)
-            lineMonetary += (Number(oi.price) || 0) * q
+            const q = parseOrderItemQty(oi.quantity)
+            sumQtyFromLines += q
+            const prev = parseOrderItemQty(colorMap.get(c))
+            colorMap.set(c, prev + q)
+            const pr = parseOrderItemPrice(oi.price)
+            lineMonetary += pr * q
         }
-        const colorPairs = Array.from(colorMap.entries())
-        const totalPieces = colorPairs.reduce((s, [, q]) => s + q, 0)
-        const unitPrice = g.lines.length ? Number(g.lines[0].price) || 0 : 0
-        return { ...g, colorPairs, totalPieces, lineMonetary, unitPrice }
+        const colorPairs = Array.from(colorMap.entries()).map(([col, qq]) => [col, parseOrderItemQty(qq)])
+        const totalPiecesFromColors = colorPairs.reduce((s, [, qq]) => s + qq, 0)
+        const totalPieces = totalPiecesFromColors === sumQtyFromLines ? totalPiecesFromColors : sumQtyFromLines
+        lineMonetary = Math.round(lineMonetary * 100) / 100
+        const lineMonetaryFinal = lineMonetary
+        const unitPrice =
+            totalPieces > 0 ? Math.round((lineMonetaryFinal / totalPieces) * 100) / 100 : parseOrderItemPrice(first.price)
+        return {
+            product_name: first.product_name || first.products?.name || '-',
+            size: first.size,
+            image_url: first.image_url,
+            lines,
+            colorPairs,
+            totalPieces,
+            lineMonetary: lineMonetaryFinal,
+            unitPrice
+        }
     })
 }
 
 /** Rang va son — ikki ustunda vertikal ro‘yxat (har bir qatorda rang | soni) */
 function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
     const label = typeof labelColorFn === 'function' ? labelColorFn : (c) => c
-    const colorsHtml = colorPairs
+    const pairs = Array.isArray(colorPairs) ? colorPairs.map(([c, q]) => [c, q]) : []
+    const colorsHtml = pairs
         .map(([c]) => `<div class="stack-line">${escapeHtml(label(c))}</div>`)
         .join('')
-    const qtysHtml = colorPairs
+    const qtysHtml = pairs
         .map(([, q]) => `<div class="stack-line">${escapeHtml(String(q))}</div>`)
         .join('')
     return { colorsHtml, qtysHtml }
@@ -296,8 +395,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
     const orderNumHtml = item.order_number
         ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>`
         : ''
-    const items = item.order_items || []
-    const grouped = groupOrderItemsForPrint(items)
+    const grouped = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || []))
     const rowHtml = grouped
         .map((g, index) => {
             const sku = escapeHtml(g.size != null && g.size !== '' ? String(g.size) : '—')
@@ -319,8 +417,8 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
             </tr>`
         })
         .join('')
-    const totalPar = grouped.reduce((s, g) => s + (Number(g.totalPieces) || 0), 0)
-    const totalMoney = grouped.reduce((s, g) => s + (Number(g.lineMonetary) || 0), 0)
+    const totalPar = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.totalPieces) || 0), 0)
+    const totalMoney = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.lineMonetary) || 0), 0)
     const footerPriceCells = showPrices
         ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(totalMoney))}</td>`
         : ''
@@ -344,6 +442,18 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
       <table class="items-table order-totals-table">
         <tbody>${footerRow}</tbody>
       </table>
+      ${
+          showPrices
+              ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4">
+        <strong>Qatorlar yig‘indisi:</strong> $${escapeHtml(formatUsd(totalMoney))}
+        ${
+            item.total != null && item.total !== '' && Number.isFinite(Number(item.total))
+                ? ` · <strong>Buyurtma jami (saqlangan):</strong> $${escapeHtml(formatUsd(Number(item.total)))}`
+                : ''
+        }
+      </p>`
+              : ''
+      }
     </div>`
 }
 
@@ -474,29 +584,219 @@ function createEmptyOrderLine() {
     }
 }
 
-/** Bazadagi `order_items` → forma `orderLines` (tahrirlash rejimi) */
-function orderItemsToOrderLines(orderItems, productsList) {
-    if (!orderItems?.length) return [createEmptyOrderLine()]
-    return orderItems.map((oi, idx) => {
-        const prod = productsList.find((p) => String(p.id) === String(oi.product_id))
-        const q = Math.max(1, parseInt(String(oi.quantity ?? 1), 10) || 1)
-        const code = String(oi.size ?? prod?.size ?? '').trim()
-        return {
+/** Bir xil `id` bilan kelgan qatorlarni bitta qilib oladi (API/join dublikatlari) */
+function dedupeOrderItemsById(orderItems) {
+    if (!orderItems?.length) return []
+    const seen = new Set()
+    const out = []
+    for (const oi of orderItems) {
+        const id = oi?.id
+        if (id != null && id !== '') {
+            const key = String(id)
+            if (seen.has(key)) continue
+            seen.add(key)
+        }
+        out.push(oi)
+    }
+    return out
+}
+
+/** Ro‘yxat / chop etish: faqat bir xil `id` takrorlarini oladi — miqdorni qo‘shmaydi (bazadagi qiymat). */
+function normalizeOrderItemsForList(orderItems) {
+    return dedupeOrderItemsById(orderItems || [])
+}
+
+/** Forma qatorlari yig‘indisi */
+function computeOrderLinesSubtotal(orderLines) {
+    if (!orderLines?.length) return 0
+    return orderLines.reduce((s, line) => {
+        const acc = Number(s) || 0
+        if (!line.product_id) return acc
+        const pr = Number(line.product_price) || 0
+        if (line.colorChoices?.length > 1) {
+            let rowSum = 0
+            for (const c of line.colorChoices) {
+                const q = parseInt(String(line.colorQtyByColor?.[c] ?? '0'), 10) || 0
+                rowSum += pr * q
+            }
+            return acc + rowSum
+        }
+        const q = parseInt(String(line.quantity ?? '0'), 10) || 0
+        return acc + pr * q
+    }, 0)
+}
+
+/**
+ * Ko‘p rangli matritsa: DB yoki forma ma’lumotini `colorChoices` kalitlariga joylaydi.
+ * Resolve qayta bosilganda ham mavjud miqdorlar saqlanadi; bir xil rang — turli yozuv bitta ustunda.
+ */
+function seedColorQtyForMatrix(line, colorOpts) {
+    const out = {}
+    const existing =
+        line.colorQtyByColor && typeof line.colorQtyByColor === 'object' ? line.colorQtyByColor : {}
+    const qtyMain = parseInt(String(line.quantity ?? '0'), 10) || 0
+    const lineColor = (line.color || '').trim()
+    const lineColorNorm = normalizeModelKey(lineColor)
+    for (const c of colorOpts) {
+        const cn = normalizeModelKey(c)
+        if (existing[c] != null && String(existing[c]).trim() !== '') {
+            out[c] = String(existing[c])
+            continue
+        }
+        let fromExisting = null
+        for (const [k, v] of Object.entries(existing)) {
+            if (normalizeModelKey(String(k)) === cn) {
+                fromExisting = v
+                break
+            }
+        }
+        if (fromExisting != null && String(fromExisting).trim() !== '') {
+            out[c] = String(fromExisting)
+            continue
+        }
+        if (lineColorNorm && cn === lineColorNorm) {
+            out[c] = String(qtyMain)
+            continue
+        }
+        out[c] = '0'
+    }
+    return out
+}
+
+/** Bitta `order_items` qatorini forma strukturasiga */
+function orderItemToFormLine(oi, productsList) {
+    const prod = oi?.product_id ? productsList.find((p) => String(p.id) === String(oi.product_id)) : null
+    const savedPrice = oi.price != null ? Number(oi.price) : NaN
+    const catalogPrice = prod ? Number(prod.sale_price) || 0 : 0
+    const product_price = Number.isFinite(savedPrice) ? Math.round(savedPrice * 100) / 100 : catalogPrice
+    const sizeStr =
+        oi.size != null && String(oi.size).trim() !== ''
+            ? String(oi.size).trim()
+            : prod?.size != null
+              ? String(prod.size)
+              : ''
+    const qtyOne = parseOrderItemQty(oi.quantity) || 1
+    const colorOpts = prod ? normalizeColorsArray(prod) : []
+
+    if (colorOpts.length > 1) {
+        const base = {
             ...createEmptyOrderLine(),
-            id: `line_edit_${oi.id ?? idx}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            codeInput: code,
-            quantity: String(q),
+            id: `line_db_${oi.id}`,
+            codeInput: sizeStr,
+            quantity: '1',
             product_id: oi.product_id || null,
-            product_name: (oi.product_name || prod?.name || '').trim(),
-            product_price: Number(oi.price) || 0,
-            color: oi.color || '',
+            product_name: (oi.product_name || displayProductName(prod) || '').trim() || 'Mahsulot',
+            product_price,
+            color: '',
             image_url: oi.image_url || prod?.image_url || '',
             resolveError: '',
             variants: [],
-            colorChoices: [],
-            colorQtyByColor: {}
+            colorChoices: colorOpts,
+            colorQtyByColor: seedColorQtyForMatrix(
+                {
+                    color: (oi.color || '').trim() || (prod?.color ? String(prod.color) : ''),
+                    quantity: String(qtyOne),
+                    colorQtyByColor: {}
+                },
+                colorOpts
+            )
         }
-    })
+        return base
+    }
+
+    return {
+        ...createEmptyOrderLine(),
+        id: `line_db_${oi.id}`,
+        codeInput: sizeStr,
+        quantity: String(qtyOne),
+        product_id: oi.product_id || null,
+        product_name: (oi.product_name || displayProductName(prod) || '').trim() || 'Mahsulot',
+        product_price,
+        color: (oi.color || '').trim() || (prod?.color ? String(prod.color) : ''),
+        image_url: oi.image_url || prod?.image_url || '',
+        resolveError: '',
+        variants: [],
+        colorChoices: [],
+        colorQtyByColor: {}
+    }
+}
+
+/** Bazadagi `order_items` → forma qatorlari (bir SKU — bir qator; bir nechta rang — matritsa) */
+function orderItemsToOrderLines(orderItems, productsList) {
+    const items = normalizeOrderItemsForList(orderItems || [])
+    if (!items.length) return [createEmptyOrderLine()]
+
+    const buckets = new Map()
+    for (const oi of items) {
+        const key = skuBucketKeyForOrderItem(oi)
+        if (!buckets.has(key)) buckets.set(key, [])
+        buckets.get(key).push(oi)
+    }
+
+    const out = []
+    for (const group of buckets.values()) {
+        group.sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')))
+        const first = group[0]
+        const prod = first.product_id ? productsList.find((p) => String(p.id) === String(first.product_id)) : null
+
+        if (group.length === 1) {
+            out.push(orderItemToFormLine(first, productsList))
+            continue
+        }
+
+        const savedPrice = first.price != null ? Number(first.price) : NaN
+        const catalogPrice = prod ? Number(prod.sale_price) || 0 : 0
+        const product_price = Number.isFinite(savedPrice) ? Math.round(savedPrice * 100) / 100 : catalogPrice
+        const sizeStr =
+            first.size != null && String(first.size).trim() !== ''
+                ? String(first.size).trim()
+                : prod?.size != null
+                  ? String(prod.size)
+                  : ''
+
+        /** Bir xil rang (turli yozuv) bitta kalitda — miqdorlar qo‘shiladi, takroriy ustunlar bo‘lmaydi */
+        const byColorNorm = new Map()
+        for (const oi of group) {
+            const raw = (oi.color || '').trim() || '—'
+            const nk = normalizeModelKey(raw)
+            const q = parseOrderItemQty(oi.quantity)
+            const prev = byColorNorm.get(nk)
+            if (prev) {
+                prev.qty += q
+            } else {
+                byColorNorm.set(nk, { label: raw, qty: q })
+            }
+        }
+        const colorOpts = []
+        const colorQtyByColor = {}
+        let totalPiecesMerged = 0
+        for (const { label, qty } of byColorNorm.values()) {
+            colorOpts.push(label)
+            colorQtyByColor[label] = String(qty)
+            totalPiecesMerged += qty
+        }
+        /** Bitta rang (colorChoices.length === 1) bo‘lsa ham `isMatrix` false — yig‘indi faqat `quantity` maydonida; avvaldoim `1` qolib ketardi. */
+        const qtyForSingleRow =
+            colorOpts.length === 1 ? String(Math.max(0, totalPiecesMerged)) : '1'
+        const singleColorDisplay = colorOpts.length === 1 ? colorOpts[0] : ''
+
+        out.push({
+            ...createEmptyOrderLine(),
+            id: `line_db_${first.id}`,
+            codeInput: sizeStr,
+            quantity: qtyForSingleRow,
+            product_id: first.product_id || null,
+            product_name: (first.product_name || displayProductName(prod) || '').trim() || 'Mahsulot',
+            product_price,
+            color: singleColorDisplay,
+            image_url: first.image_url || prod?.image_url || '',
+            resolveError: '',
+            variants: [],
+            colorChoices: colorOpts,
+            colorQtyByColor
+        })
+    }
+    return out.length ? out : [createEmptyOrderLine()]
 }
 
 export default function Buyurtmalar() {
@@ -509,7 +809,6 @@ export default function Buyurtmalar() {
     const [productColors, setProductColors] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
-    const [editId, setEditId] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
     /** `all` bo‘lishi shart — `Hammasi` bilan hech qachon `matchesStatus` true bo‘lmaydi */
     const [filterStatus, setFilterStatus] = useState('all')
@@ -524,18 +823,25 @@ export default function Buyurtmalar() {
         total: '',
         status: 'new',
         note: '',
-        source: 'dokon',
-        discount_percent: '',
-        coupon_code: ''
+        source: 'dokon'
     })
 
     const firstModelCodeRef = useRef(null)
+    /** Tahrir/yangi buyurtma paneli — jadvaldan keyin ochilganda ko‘rinish uchun scroll */
+    const orderFormPanelRef = useRef(null)
     const formRef = useRef(form)
     const orderLinesRef = useRef(orderLines)
     const isAddingRef = useRef(isAdding)
-    const editIdRef = useRef(editId)
+    /** Saqlash ikki marta ketma-ket ishlamasin */
+    const savingOrderRef = useRef(false)
+    const [isSavingOrder, setIsSavingOrder] = useState(false)
     /** Sahifaga qaytishda qoralama — «Davom ettirish» paneli */
     const [draftBanner, setDraftBanner] = useState(false)
+    /** Tahrirlanayotgan buyurtma id (yangi buyurtmada `null`) */
+    const [editId, setEditId] = useState(null)
+    const editIdRef = useRef(null)
+    /** `handleEdit` ketma-ket chaqiruvlarida eski fetch formani buzmasin */
+    const editLoadSeqRef = useRef(0)
 
     useEffect(() => {
         formRef.current = form
@@ -587,6 +893,15 @@ export default function Buyurtmalar() {
         }
     }, [isAdding, editId])
 
+    /** Jadvaldan «Tahrirlash» bosilganda forma yuqorida — foydalanuvchi ko‘rishi uchun */
+    useEffect(() => {
+        if (!isAdding) return
+        const tid = setTimeout(() => {
+            orderFormPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 80)
+        return () => clearTimeout(tid)
+    }, [isAdding, editId])
+
     useEffect(() => {
         loadData()
 
@@ -629,7 +944,7 @@ export default function Buyurtmalar() {
                     *,
                     customers (id, name, phone),
                     order_items (
-                        id, product_id, quantity, price, product_name, color, size, image_url,
+                        id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
                         products (id, name)
                     )
                 `)
@@ -703,23 +1018,79 @@ export default function Buyurtmalar() {
         return { list: [], reason: 'notfound' }
     }
 
-    /** Tahrirlashda yuklangan qatorlarga variant ro‘yxati (bir kod — bir nechta mahsulot) */
+    /** Tahrir / import: bazadan kelgan qatorlarni mahsulot bilan boyitish (`line_db_*` — o‘zgartirilmasin) */
     function enrichOrderLinesFromDb(lines) {
         return lines.map((line) => {
-            let next = { ...line }
-            if (!String(next.codeInput || '').trim() && next.product_id) {
-                const prod = products.find((p) => String(p.id) === String(next.product_id))
-                if (prod?.size != null && String(prod.size).trim()) {
-                    next.codeInput = String(prod.size).trim()
+            if (String(line.id || '').startsWith('line_db_')) {
+                return { ...line }
+            }
+            let ln = { ...line }
+            if (!(ln.codeInput || '').trim() && ln.product_id) {
+                const prod = products.find((p) => String(p.id) === String(ln.product_id))
+                if (prod?.size != null && String(prod.size).trim() !== '') {
+                    ln = { ...ln, codeInput: String(prod.size) }
                 }
             }
-            const code = String(next.codeInput || '').trim()
-            if (!code) return next
-            const { list } = getProductsByModelCode(code)
-            if (list?.length >= 2) {
-                next.variants = list
+            const { list, reason } = getProductsByModelCode(ln.codeInput)
+            if (!list.length) {
+                let msg = t('orders.codeNotFound')
+                if (reason === 'ambiguous') msg = t('orders.codeAmbiguous')
+                if (reason === 'empty') msg = t('orders.codeEmpty')
+                return {
+                    ...ln,
+                    variants: [],
+                    colorChoices: [],
+                    colorQtyByColor: {},
+                    product_id: null,
+                    product_name: '',
+                    product_price: 0,
+                    color: '',
+                    image_url: '',
+                    resolveError: msg
+                }
             }
-            return next
+            if (list.length === 1) {
+                const product = list[0]
+                const colorOpts = normalizeColorsArray(product)
+                if (colorOpts.length > 1) {
+                    return {
+                        ...ln,
+                        variants: [],
+                        colorChoices: colorOpts,
+                        colorQtyByColor: seedColorQtyForMatrix(ln, colorOpts),
+                        product_id: product.id,
+                        product_name: displayProductName(product),
+                        product_price: Number(product.sale_price) || 0,
+                        color: '',
+                        image_url: product.image_url || '',
+                        resolveError: ''
+                    }
+                }
+                return {
+                    ...ln,
+                    variants: [],
+                    colorChoices: [],
+                    colorQtyByColor: {},
+                    product_id: product.id,
+                    product_name: displayProductName(product),
+                    product_price: Number(product.sale_price) || 0,
+                    color: colorOpts[0] || product.color || '',
+                    image_url: product.image_url || '',
+                    resolveError: ''
+                }
+            }
+            return {
+                ...ln,
+                variants: list,
+                colorChoices: [],
+                colorQtyByColor: {},
+                product_id: null,
+                product_name: displayProductName(list[0]) || '',
+                product_price: 0,
+                color: '',
+                image_url: '',
+                resolveError: t('orders.pickColorVariant')
+            }
         })
     }
 
@@ -788,7 +1159,7 @@ export default function Buyurtmalar() {
                             ...line,
                             variants: [],
                             colorChoices: colorOpts,
-                            colorQtyByColor: Object.fromEntries(colorOpts.map((c) => [c, '0'])),
+                            colorQtyByColor: seedColorQtyForMatrix(line, colorOpts),
                             product_id: product.id,
                             product_name: displayProductName(product),
                             product_price: Number(product.sale_price) || 0,
@@ -861,6 +1232,9 @@ export default function Buyurtmalar() {
             alert(t('orders.customerNameRequired'))
             return
         }
+        if (savingOrderRef.current) return
+        savingOrderRef.current = true
+        setIsSavingOrder(true)
 
         try {
             const customer = form.customer_id ? customers.find((c) => c.id === form.customer_id) : null
@@ -868,32 +1242,29 @@ export default function Buyurtmalar() {
                 nameTrim || customer?.name || ''
             const resolvedPhone = (form.customer_phone || '').trim() || customer?.phone || ''
 
-            if (!editId) {
-                const unresolvedFetch = orderLines.filter((l) => (l.codeInput || '').trim() && !l.product_id)
+            const unresolvedFetch = orderLines.filter((l) => (l.codeInput || '').trim() && !l.product_id)
                 if (unresolvedFetch.length) {
                     alert(t('orders.orderLinesUnresolved'))
                     return
                 }
-                const expandedRows = orderLines.flatMap(expandOrderLineForSubmit)
+                const expandedRows = mergeExpandedRowsForSubmit(orderLines.flatMap(expandOrderLineForSubmit))
                 if (expandedRows.length === 0) {
                     alert(t('orders.orderLinesEmpty'))
                     return
                 }
-                const rawTotal = expandedRows.reduce(
-                    (s, row) => s + (Number(row.product_price) || 0) * (parseInt(row.quantity, 10) || 0),
-                    0
-                )
-                const disc = Math.min(
-                    100,
-                    Math.max(0, parseFloat(String(form.discount_percent || '').replace(',', '.')) || 0)
-                )
-                const totalSum = Math.round(rawTotal * (1 - disc / 100) * 100) / 100
+                const rawTotal = expandedRows.reduce((s, row) => {
+                    const acc = Number(s) || 0
+                    const pr = Number(row.product_price) || 0
+                    const q = parseInt(String(row.quantity ?? '0'), 10) || 0
+                    return acc + pr * q
+                }, 0)
+                const totalSum = Math.round(rawTotal * 100) / 100
 
                 const qtyByProductId = new Map()
                 for (const row of expandedRows) {
                     const pid = String(row.product_id)
-                    const q = parseInt(row.quantity, 10) || 0
-                    qtyByProductId.set(pid, (qtyByProductId.get(pid) || 0) + q)
+                    const q = parseInt(String(row.quantity ?? '0'), 10) || 0
+                    qtyByProductId.set(pid, (Number(qtyByProductId.get(pid)) || 0) + q)
                 }
                 const stockIssues = []
                 for (const [pid, qty] of qtyByProductId) {
@@ -911,12 +1282,7 @@ export default function Buyurtmalar() {
                     if (!ok) return
                 }
 
-                const noteParts = []
-                if (disc > 0) noteParts.push(`${t('orders.discountNote')} ${disc}%`)
-                const coup = (form.coupon_code || '').trim()
-                if (coup) noteParts.push(`${t('orders.couponNote')} ${coup}`)
-                if (form.note?.trim()) noteParts.push(form.note.trim())
-                const noteCombined = noteParts.join('\n')
+                const noteCombined = (form.note || '').trim()
 
                 const displayOrderNo = generateDisplayOrderNumber()
                 const baseOrderPayload = {
@@ -936,6 +1302,62 @@ export default function Buyurtmalar() {
                                   : form.status,
                     note: noteCombined,
                     source: normalizeSourceForDb(form.source)
+                }
+
+                const makeItemPayloads = (orderId) =>
+                    expandedRows.map((line) => {
+                        const prod = products.find((p) => String(p.id) === String(line.product_id))
+                        const qtyRaw = parseOrderItemQty(line.quantity)
+                        const qty = qtyRaw > 0 ? qtyRaw : 1
+                        const rawPrice = Number(line.product_price)
+                        const pr = Number.isFinite(rawPrice) ? Math.round(rawPrice * 100) / 100 : 0
+                        const subtotal = Math.round(pr * qty * 100) / 100
+                        const colorVal = line.color ?? prod?.color
+                        const imgVal =
+                            line.image_url != null && String(line.image_url).trim() !== ''
+                                ? String(line.image_url).trim()
+                                : prod?.image_url != null && String(prod.image_url).trim() !== ''
+                                  ? String(prod.image_url).trim()
+                                  : null
+                        return {
+                            order_id: orderId,
+                            product_id: line.product_id,
+                            product_name: (line.product_name || displayProductName(prod) || '').trim() || 'Mahsulot',
+                            quantity: qty,
+                            price: pr,
+                            subtotal,
+                            size: prod?.size != null ? String(prod.size) : null,
+                            color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
+                            image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null
+                        }
+                    })
+
+                if (editId) {
+                    const orderIdStr = String(editId)
+                    const { error: delErr } = await supabase.from('order_items').delete().eq('order_id', orderIdStr)
+                    if (delErr) throw delErr
+
+                    const itemPayloadsEdit = makeItemPayloads(orderIdStr)
+                    const { error: itemErrorEdit } = await supabase.from('order_items').insert(itemPayloadsEdit)
+                    if (itemErrorEdit) throw itemErrorEdit
+
+                    const { error: updErr } = await supabase.from('orders').update(baseOrderPayload).eq('id', orderIdStr)
+                    if (updErr) throw updErr
+
+                    setForm({
+                        customer_id: '',
+                        customer_name: '',
+                        customer_phone: '',
+                        total: '',
+                        status: 'new',
+                        note: '',
+                        source: 'dokon'
+                    })
+                    setOrderLines([createEmptyOrderLine()])
+                    setEditId(null)
+                    setIsAdding(false)
+                    loadData()
+                    return
                 }
 
                 let newOrder = null
@@ -989,26 +1411,7 @@ export default function Buyurtmalar() {
 
                 const orderId = newOrder.id
 
-                const itemPayloads = expandedRows.map((line) => {
-                    const prod = products.find((p) => String(p.id) === String(line.product_id))
-                    const qty = Math.max(1, parseInt(line.quantity, 10) || 1)
-                    const rawPrice = Number(line.product_price)
-                    const pr = Number.isFinite(rawPrice) ? Math.round(rawPrice * 100) / 100 : 0
-                    const subtotal = Math.round(pr * qty * 100) / 100
-                    const colorVal = line.color ?? prod?.color
-                    const imgVal = line.image_url ?? prod?.image_url
-                    return {
-                        order_id: orderId,
-                        product_id: line.product_id,
-                        product_name: (line.product_name || displayProductName(prod) || '').trim() || 'Mahsulot',
-                        quantity: qty,
-                        price: pr,
-                        subtotal,
-                        size: prod?.size != null ? String(prod.size) : null,
-                        color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
-                        image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null
-                    }
-                })
+                const itemPayloads = makeItemPayloads(orderId)
 
                 const { error: itemError } = await supabase.from('order_items').insert(itemPayloads)
 
@@ -1025,121 +1428,19 @@ export default function Buyurtmalar() {
                     console.warn('Telegram:', tgErr)
                 }
                 clearNewOrderDraft()
-            } else {
-                const unresolvedFetch = orderLines.filter((l) => (l.codeInput || '').trim() && !l.product_id)
-                if (unresolvedFetch.length) {
-                    alert(t('orders.orderLinesUnresolved'))
-                    return
-                }
-                const expandedRows = orderLines.flatMap(expandOrderLineForSubmit)
-                if (expandedRows.length === 0) {
-                    alert(t('orders.orderLinesEmpty'))
-                    return
-                }
-                const rawTotal = expandedRows.reduce(
-                    (s, row) => s + (Number(row.product_price) || 0) * (parseInt(row.quantity, 10) || 0),
-                    0
-                )
-                const disc = Math.min(
-                    100,
-                    Math.max(0, parseFloat(String(form.discount_percent || '').replace(',', '.')) || 0)
-                )
-                const totalSum = Math.round(rawTotal * (1 - disc / 100) * 100) / 100
 
-                const qtyByProductId = new Map()
-                for (const row of expandedRows) {
-                    const pid = String(row.product_id)
-                    const q = parseInt(row.quantity, 10) || 0
-                    qtyByProductId.set(pid, (qtyByProductId.get(pid) || 0) + q)
-                }
-                const stockIssues = []
-                for (const [pid, qty] of qtyByProductId) {
-                    const prod = products.find((p) => String(p.id) === pid)
-                    if (!prod) continue
-                    const st = prod.stock
-                    if (st != null && st !== '' && Number.isFinite(Number(st)) && Number(st) >= 0 && qty > Number(st)) {
-                        stockIssues.push(
-                            `${prod.name || displayProductName(prod)}: ${t('orders.stockLabel')} ${st}, ${t('orders.qtyLabel')} ${qty}`
-                        )
-                    }
-                }
-                if (stockIssues.length) {
-                    const ok = window.confirm(`${t('orders.stockWarningTitle')}\n\n${stockIssues.join('\n')}\n\n${t('orders.stockWarningConfirm')}`)
-                    if (!ok) return
-                }
-
-                const noteParts = []
-                if (disc > 0) noteParts.push(`${t('orders.discountNote')} ${disc}%`)
-                const coup = (form.coupon_code || '').trim()
-                if (coup) noteParts.push(`${t('orders.couponNote')} ${coup}`)
-                if (form.note?.trim()) noteParts.push(form.note.trim())
-                const noteCombined = noteParts.join('\n')
-
-                const { error: delErr } = await supabase.from('order_items').delete().eq('order_id', editId)
-                if (delErr) throw delErr
-
-                const itemPayloads = expandedRows.map((line) => {
-                    const prod = products.find((p) => String(p.id) === String(line.product_id))
-                    const qty = Math.max(1, parseInt(line.quantity, 10) || 1)
-                    const rawPrice = Number(line.product_price)
-                    const pr = Number.isFinite(rawPrice) ? Math.round(rawPrice * 100) / 100 : 0
-                    const subtotal = Math.round(pr * qty * 100) / 100
-                    const colorVal = line.color ?? prod?.color
-                    const imgVal = line.image_url ?? prod?.image_url
-                    return {
-                        order_id: editId,
-                        product_id: line.product_id,
-                        product_name: (line.product_name || displayProductName(prod) || '').trim() || 'Mahsulot',
-                        quantity: qty,
-                        price: pr,
-                        subtotal,
-                        size: prod?.size != null ? String(prod.size) : null,
-                        color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
-                        image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null
-                    }
+                setForm({
+                    customer_id: '',
+                    customer_name: '',
+                    customer_phone: '',
+                    total: '',
+                    status: 'new',
+                    note: '',
+                    source: 'dokon'
                 })
-
-                const { error: itemError } = await supabase.from('order_items').insert(itemPayloads)
-                if (itemError) throw itemError
-
-                const orderPayload = {
-                    customer_id: form.customer_id || null,
-                    customer_name: resolvedCustomerName,
-                    customer_phone: resolvedPhone,
-                    total: totalSum,
-                    status:
-                        form.status === 'new' || form.status === 'Yangi'
-                            ? 'new'
-                            : form.status === 'pending' || form.status === 'Jarayonda'
-                              ? 'pending'
-                              : form.status === 'completed' || form.status === 'Tugallandi'
-                                ? 'completed'
-                                : form.status === 'cancelled' || form.status === 'Bekor qilindi'
-                                  ? 'cancelled'
-                                  : form.status,
-                    note: noteCombined,
-                    source: normalizeSourceForDb(form.source)
-                }
-
-                const { error } = await supabase.from('orders').update(orderPayload).eq('id', editId)
-                if (error) throw error
-            }
-
-            setForm({
-                customer_id: '',
-                customer_name: '',
-                customer_phone: '',
-                total: '',
-                status: 'new',
-                note: '',
-                source: 'dokon',
-                discount_percent: '',
-                coupon_code: ''
-            })
-            setOrderLines([createEmptyOrderLine()])
-            setIsAdding(false)
-            setEditId(null)
-            loadData()
+                setOrderLines([createEmptyOrderLine()])
+                setIsAdding(false)
+                loadData()
         } catch (error) {
             console.error('Error saving order:', error)
             const msg =
@@ -1149,6 +1450,9 @@ export default function Buyurtmalar() {
             const hint = error?.hint ? `\n${error.hint}` : ''
             const details = error?.details ? `\n${error.details}` : ''
             alert(`${t('common.saveError')}\n\n${msg}${details}${hint}`)
+        } finally {
+            savingOrderRef.current = false
+            setIsSavingOrder(false)
         }
     }
 
@@ -1169,6 +1473,44 @@ export default function Buyurtmalar() {
         }
     }
 
+    async function handleEdit(item) {
+        editLoadSeqRef.current += 1
+        const seq = editLoadSeqRef.current
+        const orderId = item.id
+
+        const { data: rows, error } = await supabase
+            .from('order_items')
+            .select(
+                `id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
+                 products (id, name)`
+            )
+            .eq('order_id', orderId)
+            .order('created_at', { ascending: false })
+
+        if (error) {
+            console.error('handleEdit order_items:', error)
+            alert(t('common.saveError'))
+            return
+        }
+        if (seq !== editLoadSeqRef.current) return
+
+        const linesRaw = orderItemsToOrderLines(dedupeOrderItemsKeepNewest(rows || []), products)
+        const lines = enrichOrderLinesFromDb(linesRaw)
+
+        setForm({
+            customer_id: item.customer_id || '',
+            customer_name: item.customer_name || item.customers?.name || '',
+            customer_phone: item.customer_phone || item.customers?.phone || '',
+            total: item.total != null ? String(item.total) : '',
+            status: normalizeStatusForSelect(item.status),
+            note: item.note || '',
+            source: normalizeSourceForForm(item.source)
+        })
+        setOrderLines(lines)
+        setEditId(orderId)
+        setIsAdding(true)
+    }
+
     async function handleStatusChange(id, newStatus) {
         try {
             const { error } = await supabase
@@ -1185,27 +1527,10 @@ export default function Buyurtmalar() {
         }
     }
 
-    function handleEdit(item) {
-        setForm({
-            customer_id: item.customer_id || '',
-            customer_name: item.customer_name || item.customers?.name || '',
-            customer_phone: item.customer_phone || item.customers?.phone || '',
-            total: item.total,
-            status: item.status,
-            note: item.note || '',
-            source: normalizeSourceForForm(item.source),
-            discount_percent: '',
-            coupon_code: ''
-        })
-        const raw = orderItemsToOrderLines(item.order_items, products)
-        setOrderLines(enrichOrderLinesFromDb(raw))
-        setEditId(item.id)
-        setIsAdding(true)
-    }
-
     function handleCancel() {
         clearNewOrderDraft()
         setDraftBanner(false)
+        setEditId(null)
         setForm({
             customer_id: '',
             customer_name: '',
@@ -1213,11 +1538,8 @@ export default function Buyurtmalar() {
             total: '',
             status: 'new',
             note: '',
-            source: 'dokon',
-            discount_percent: '',
-            coupon_code: ''
+            source: 'dokon'
         })
-        setEditId(null)
         setIsAdding(false)
         setOrderLines([createEmptyOrderLine()])
     }
@@ -1236,9 +1558,7 @@ export default function Buyurtmalar() {
                 total: '',
                 status: 'new',
                 note: '',
-                source: 'dokon',
-                discount_percent: '',
-                coupon_code: ''
+                source: 'dokon'
             }
         )
         const lines =
@@ -1268,6 +1588,7 @@ export default function Buyurtmalar() {
                 return
             }
             const d = JSON.parse(raw)
+            setEditId(null)
             setForm((f) => ({
                 ...f,
                 customer_name: d.customer_name || '',
@@ -1301,7 +1622,6 @@ export default function Buyurtmalar() {
                 })
                 setOrderLines(lines)
             }
-            setEditId(null)
             setIsAdding(true)
         } catch (e) {
             console.error(e)
@@ -1309,12 +1629,37 @@ export default function Buyurtmalar() {
         }
     }
 
-    function handlePrintOrder(item, showPrices) {
+    async function handlePrintOrder(item, showPrices) {
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        let orderForPrint = item
+        try {
+            const { data: rows, error: oiErr } = await supabase
+                .from('order_items')
+                .select(
+                    `id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
+                     products (id, name)`
+                )
+                .eq('order_id', item.id)
+            if (oiErr) throw oiErr
+            const { data: orderRow, error: ordErr } = await supabase
+                .from('orders')
+                .select(`*, customers (id, name, phone)`)
+                .eq('id', item.id)
+                .single()
+            if (ordErr) throw ordErr
+            orderForPrint = {
+                ...item,
+                ...orderRow,
+                order_items: dedupeOrderItemsKeepNewest(rows || [])
+            }
+        } catch (e) {
+            console.error('handlePrintOrder refetch:', e)
+            orderForPrint = { ...item, order_items: dedupeOrderItemsKeepNewest(item.order_items || []) }
+        }
         const html = buildPrintDocumentHtml({
             documentTitle: `Buyurtma-${String(item.id).slice(0, 8)}`,
             listTitle: '',
-            orders: [item],
+            orders: [orderForPrint],
             showPrices,
             labelColorFn
         })
@@ -1323,16 +1668,44 @@ export default function Buyurtmalar() {
         }
     }
 
-    function handlePrintOrderList(list, showPrices) {
+    async function handlePrintOrderList(list, showPrices) {
         if (!list?.length) {
             alert(t('orders.listPrintEmpty'))
             return
         }
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const ids = list.map((o) => o.id).filter(Boolean)
+        let ordersForPrint = list
+        try {
+            const { data: allRows, error } = await supabase
+                .from('order_items')
+                .select(
+                    `order_id, id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
+                     products (id, name)`
+                )
+                .in('order_id', ids)
+            if (error) throw error
+            const byOrder = new Map()
+            for (const oi of allRows || []) {
+                const oid = oi.order_id
+                if (!byOrder.has(oid)) byOrder.set(oid, [])
+                byOrder.get(oid).push(oi)
+            }
+            ordersForPrint = list.map((o) => ({
+                ...o,
+                order_items: dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [])
+            }))
+        } catch (e) {
+            console.error('handlePrintOrderList refetch:', e)
+            ordersForPrint = list.map((o) => ({
+                ...o,
+                order_items: dedupeOrderItemsKeepNewest(o.order_items || [])
+            }))
+        }
         const html = buildPrintDocumentHtml({
             documentTitle: showPrices ? t('orders.listPrintTitleWithPrices') : t('orders.listPrintTitleNoPrices'),
             listTitle: `${t('orders.listPrintCount')}: ${list.length}`,
-            orders: list,
+            orders: ordersForPrint,
             showPrices,
             labelColorFn
         })
@@ -1341,30 +1714,7 @@ export default function Buyurtmalar() {
         }
     }
 
-    const orderLinesSubtotal = useMemo(() => {
-        return orderLines.reduce((s, line) => {
-            if (!line.product_id) return s
-            const pr = Number(line.product_price) || 0
-            if (line.colorChoices?.length > 1) {
-                let rowSum = 0
-                for (const c of line.colorChoices) {
-                    const q = parseInt(line.colorQtyByColor?.[c] ?? '0', 10) || 0
-                    rowSum += pr * q
-                }
-                return s + rowSum
-            }
-            return s + pr * (parseInt(line.quantity, 10) || 0)
-        }, 0)
-    }, [orderLines])
-
-    const discountPct = Math.min(
-        100,
-        Math.max(0, parseFloat(String(form.discount_percent || '').replace(',', '.')) || 0)
-    )
-
-    const orderLinesTotal = useMemo(() => {
-        return Math.round(orderLinesSubtotal * (1 - discountPct / 100) * 100) / 100
-    }, [orderLinesSubtotal, discountPct])
+    const orderLinesSubtotal = useMemo(() => computeOrderLinesSubtotal(orderLines), [orderLines])
 
     const filteredOrders = orders.filter((b) => {
         const customerName = b.customer_name || b.customers?.name || t('common.unknown') || 'Noma\'lum'
@@ -1414,6 +1764,10 @@ export default function Buyurtmalar() {
     return (
         <div className="max-w-7xl mx-auto px-6">
             <Header title={t('common.orders')} toggleSidebar={toggleSidebar} />
+
+            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950 shadow-sm">
+                <p className="font-semibold text-blue-900">{t('orders.tableEditHint')}</p>
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
@@ -1576,9 +1930,7 @@ export default function Buyurtmalar() {
                                     total: '',
                                     status: 'new',
                                     note: '',
-                                    source: 'dokon',
-                                    discount_percent: '',
-                                    coupon_code: ''
+                                    source: 'dokon'
                                 })
                                 setIsAdding(true)
                             }
@@ -1592,10 +1944,22 @@ export default function Buyurtmalar() {
             </div>
 
             {isAdding && (
-                <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 mb-8 fade-in">
-                    <h3 className="text-xl font-bold text-gray-800 mb-6">
+                <div
+                    ref={orderFormPanelRef}
+                    className={`bg-white p-6 rounded-2xl shadow-md mb-8 fade-in scroll-mt-4 ${
+                        editId
+                            ? 'border-2 border-blue-500 ring-2 ring-blue-200 shadow-lg shadow-blue-500/10'
+                            : 'border border-gray-100'
+                    }`}
+                >
+                    <h3 className="text-xl font-bold text-gray-800 mb-2">
                         {editId ? t('orders.editOrder') : t('orders.newOrder')}
                     </h3>
+                    {editId ? (
+                        <p className="text-sm text-gray-600 mb-6 leading-relaxed border-l-4 border-blue-500 pl-3 py-1 bg-blue-50/30 rounded-r">
+                            {t('orders.editOrderLinesHint')}
+                        </p>
+                    ) : null}
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
                             <div className="space-y-2 md:col-span-2 lg:col-span-3">
@@ -1663,12 +2027,6 @@ export default function Buyurtmalar() {
 
                             <div className="space-y-3 md:col-span-2 lg:col-span-3">
                                 <label className="block text-sm font-bold text-gray-700">{t('common.products')}</label>
-                                {editId ? (
-                                    <div className="flex gap-2 rounded-xl border border-blue-100 bg-blue-50/80 px-3 py-2.5 text-xs text-blue-900 leading-snug">
-                                        <Info className="shrink-0 w-4 h-4 mt-0.5 text-blue-600" aria-hidden />
-                                        <span>{t('orders.editOrderLinesHint')}</span>
-                                    </div>
-                                ) : null}
                                 <>
                                         <div className="space-y-1">
                                             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
@@ -1917,7 +2275,8 @@ export default function Buyurtmalar() {
                                                                         ) : (
                                                                             <input
                                                                                 type="number"
-                                                                                min="1"
+                                                                                min="0"
+                                                                                step="1"
                                                                                 className="w-16 px-2 py-1 border rounded-lg"
                                                                                 value={line.quantity}
                                                                                 onChange={(e) =>
@@ -1965,47 +2324,10 @@ export default function Buyurtmalar() {
                                 </>
                             </div>
 
-                            <div className="space-y-2 md:col-span-2 lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <label className="block text-sm font-bold text-gray-700">
-                                            {t('orders.discountPercent')}
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            step="0.5"
-                                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                            value={form.discount_percent}
-                                            onChange={(e) => setForm({ ...form, discount_percent: e.target.value })}
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="block text-sm font-bold text-gray-700">
-                                            {t('orders.couponCode')}
-                                        </label>
-                                        <input
-                                            type="text"
-                                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                                            value={form.coupon_code}
-                                            onChange={(e) => setForm({ ...form, coupon_code: e.target.value })}
-                                            placeholder={t('orders.couponPlaceholder')}
-                                        />
-                                    </div>
-                                </div>
-
                             <div className="space-y-2">
                                 <label className="block text-sm font-bold text-gray-700">{t('orders.summa')} ($)</label>
-                                <div className="space-y-1">
-                                    {discountPct > 0 && (
-                                        <p className="text-xs text-gray-500">
-                                            {t('orders.subtotalBeforeDiscount')}: ${formatUsd(orderLinesSubtotal)}
-                                        </p>
-                                    )}
-                                    <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-bold text-gray-900">
-                                        ${formatUsd(orderLinesTotal)}
-                                    </div>
+                                <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-bold text-gray-900">
+                                    ${formatUsd(orderLinesSubtotal)}
                                 </div>
                             </div>
 
@@ -2055,10 +2377,13 @@ export default function Buyurtmalar() {
                             </button>
                             <button
                                 type="submit"
-                                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-600/30 font-bold transition-all"
+                                disabled={isSavingOrder}
+                                className={`flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl shadow-lg shadow-blue-600/30 font-bold transition-all ${
+                                    isSavingOrder ? 'opacity-70 cursor-not-allowed pointer-events-none' : 'hover:bg-blue-700'
+                                }`}
                             >
                                 <Save size={20} />
-                                {t('common.save')}
+                                {isSavingOrder ? t('common.loading') : t('common.save')}
                             </button>
                         </div>
                     </form>
@@ -2088,7 +2413,7 @@ export default function Buyurtmalar() {
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {filteredOrders.map((item) => (
-                                    <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
+                                    <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
                                         <td className="px-6 py-4">
                                             {item.order_number ? (
                                                 <div className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded inline-block mb-1">
@@ -2106,7 +2431,9 @@ export default function Buyurtmalar() {
                                         <td className="px-6 py-4 text-gray-600 max-w-[300px]">
                                             {item.order_items && item.order_items.length > 0 ? (
                                                 (() => {
-                                                    const ois = item.order_items
+                                                    const ois = normalizeOrderItemsForList(
+                                                        dedupeOrderItemsKeepNewest(item.order_items || [])
+                                                    )
                                                     const expanded = !!orderListExpandedById[item.id]
                                                     const hasMore = ois.length > ORDER_LIST_ITEMS_PREVIEW
                                                     const visible = expanded ? ois : ois.slice(0, ORDER_LIST_ITEMS_PREVIEW)
@@ -2248,7 +2575,7 @@ export default function Buyurtmalar() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap justify-end">
+                                            <div className="flex items-center justify-end gap-1 flex-wrap justify-end">
                                                 <button
                                                     type="button"
                                                     onClick={() => handlePrintOrder(item, true)}
@@ -2266,10 +2593,13 @@ export default function Buyurtmalar() {
                                                     <List size={18} />
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={() => handleEdit(item)}
-                                                    className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-600/25 transition-colors hover:bg-blue-700"
+                                                    title={t('orders.editOrder')}
                                                 >
-                                                    <Edit size={18} />
+                                                    <Edit size={16} className="shrink-0" />
+                                                    <span>{t('common.edit')}</span>
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(item.id)}

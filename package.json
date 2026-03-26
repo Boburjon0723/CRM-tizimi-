@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env PORT=4000 next dev --hostname 127.0.0.1",
+    "dev": "next dev -p 3000 -H 127.0.0.1",
+    "dev:clean": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch(e){}\"",
+    "dev:fresh": "npm run dev:clean && next dev -p 3000 -H 127.0.0.1",
+    "dev:4000": "next dev -p 4000 -H 127.0.0.1",
     "build": "next build",
-    "start": "cross-env PORT=4000 next start --hostname 127.0.0.1",
+    "start": "next start -p 4000 -H 127.0.0.1",
     "lint": "next lint"
   },
   "dependencies": {

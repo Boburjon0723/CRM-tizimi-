@@ -144,7 +144,9 @@ export const translations = {
             newOrder: 'Yangi Buyurtma',
             editOrder: 'Buyurtmani Tahrirlash',
             editOrderLinesHint:
-                'Quyidagi jadvalda mahsulot qatorlarini o‘zgartirasiz: kod, «Olish», rang, narx, miqdor. «Saqlash» bosilganda bazadagi pozitsiyalar yangilanadi.',
+                'Har bir qator bazadagi bitta pozitsiyaga mos. Kod, «Olish», rang, narx, miqdorni o‘zgartirasiz. «Saqlash» barcha pozitsiyalarni yangilaydi.',
+            tableEditHint:
+                'Pastdagi jadvalda buyurtmani tahrirlash uchun o‘ngdagi ko‘k «Tahrir» tugmasini bosing. Server: http://127.0.0.1:3000/buyurtmalar (port 4000 band bo‘lsa: npm run dev:4000). Yangilanish ko‘rinmasa: npm run dev:fresh yoki Ctrl+Shift+R.',
             orderNumber: 'Buyurtma #',
             customer: 'Mijoz',
             contact: 'Aloqa',
@@ -621,7 +623,9 @@ export const translations = {
             newOrder: 'Новый заказ',
             editOrder: 'Редактировать заказ',
             editOrderLinesHint:
-                'В таблице ниже меняйте позиции: код, «Загрузить», цвет, цену, количество. По «Сохранить» позиции в базе обновятся.',
+                'Каждая строка — одна позиция в базе. Меняйте код, «Загрузить», цвет, цену, количество. «Сохранить» обновит все позиции.',
+            tableEditHint:
+                'В таблице ниже нажмите синюю кнопку «Редактировать» справа. Если изменений не видно: npm run dev:fresh в терминале или Ctrl+Shift+R в браузере.',
             orderNumber: 'Заказ #',
             customer: 'Клиент',
             contact: 'Контакт',
@@ -1098,7 +1102,9 @@ export const translations = {
             newOrder: 'New Order',
             editOrder: 'Edit Order',
             editOrderLinesHint:
-                'Edit line items below: code, Load, color, unit price, quantity. Save updates positions in the database.',
+                'Each row is one line item in the database. Edit code, Load, color, unit price, quantity. Save updates all positions.',
+            tableEditHint:
+                'In the table below, click the blue Edit button on the right. If updates do not appear: run npm run dev:fresh or hard-refresh (Ctrl+Shift+R).',
             orderNumber: 'Order #',
             customer: 'Customer',
             contact: 'Contact',
