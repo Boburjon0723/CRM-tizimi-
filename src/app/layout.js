@@ -2,6 +2,7 @@ import { Inter } from 'next/font/google'
 import { LanguageProvider } from '@/context/LanguageContext'
 import { LayoutProvider } from '@/context/LayoutContext'
 import { NotificationProvider } from '@/context/NotificationContext'
+import { DialogProvider } from '@/context/DialogContext'
 import AuthWrapper from '@/components/AuthWrapper'
 import './globals.css'
 
@@ -25,9 +26,11 @@ export default function RootLayout({ children }) {
         <LanguageProvider>
           <LayoutProvider>
             <NotificationProvider>
-              <AuthWrapper>
-                {children}
-              </AuthWrapper>
+              <DialogProvider>
+                <AuthWrapper>
+                  {children}
+                </AuthWrapper>
+              </DialogProvider>
             </NotificationProvider>
           </LayoutProvider>
         </LanguageProvider>

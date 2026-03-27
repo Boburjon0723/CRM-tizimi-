@@ -8,6 +8,20 @@ import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type, Setting
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 
+function getMissionImagesArrayFromSettings(s) {
+  if (!s) return []
+  try {
+    if (s.about_mission_images != null && s.about_mission_images !== '') {
+      const arr = typeof s.about_mission_images === 'string' ? JSON.parse(s.about_mission_images) : s.about_mission_images
+      if (Array.isArray(arr) && arr.length) return arr.filter(Boolean)
+    }
+  } catch {
+    /* ignore */
+  }
+  if (s.about_mission_image) return [s.about_mission_image]
+  return []
+}
+
 export default function Vebsayt() {
   const { toggleSidebar } = useLayout()
   const { t } = useLanguage()
@@ -395,22 +409,47 @@ export default function Vebsayt() {
   }
 
   async function handleAboutMissionImageUpload(e) {
-    const file = e.target.files[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
     try {
       setUploadingAboutMission(true)
-      const ext = file.name.split('.').pop()
-      const path = `about/mission_${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('products').upload(path, file)
-      if (error) throw error
-      const { data } = supabase.storage.from('products').getPublicUrl(path)
-      setSettings(s => ({ ...s, about_mission_image: data.publicUrl }))
+      const newUrls = []
+      for (const file of files) {
+        const ext = file.name.split('.').pop()
+        const path = `about/mission_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`
+        const { error } = await supabase.storage.from('products').upload(path, file)
+        if (error) throw error
+        const { data } = supabase.storage.from('products').getPublicUrl(path)
+        newUrls.push(data.publicUrl)
+      }
+      setSettings((s) => {
+        const prev = getMissionImagesArrayFromSettings(s)
+        const next = [...prev, ...newUrls]
+        return {
+          ...s,
+          about_mission_images: JSON.stringify(next),
+          about_mission_image: next[0] || s.about_mission_image || ''
+        }
+      })
     } catch (err) {
       console.error(err)
       alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
     } finally {
       setUploadingAboutMission(false)
     }
+    e.target.value = ''
+  }
+
+  function removeMissionImageAt(idx) {
+    setSettings((s) => {
+      const prev = getMissionImagesArrayFromSettings(s)
+      const next = prev.filter((_, i) => i !== idx)
+      return {
+        ...s,
+        about_mission_images: next.length ? JSON.stringify(next) : null,
+        about_mission_image: next[0] || ''
+      }
+    })
   }
 
   async function handleAlbumImageUpload(e) {
@@ -1011,17 +1050,40 @@ export default function Vebsayt() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-gray-600">{t('website.about.missionImage')}</label>
-                  <div className="flex gap-4 items-center flex-wrap">
-                    <div className="w-24 h-24 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                      {settings.about_mission_image ? (
-                        <img src={settings.about_mission_image} alt="Mission" className="w-full h-full object-cover" />
-                      ) : (
-                        <Image size={32} className="text-gray-400" />
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap gap-3">
+                      {getMissionImagesArrayFromSettings(settings).map((url, idx) => (
+                        <div
+                          key={`${url}-${idx}`}
+                          className="relative w-24 h-24 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0"
+                        >
+                          <img src={url} alt="" className="w-full h-full object-contain" />
+                          <button
+                            type="button"
+                            onClick={() => removeMissionImageAt(idx)}
+                            className="absolute top-0.5 right-0.5 p-1 rounded-md bg-red-600 text-white shadow-md hover:bg-red-700"
+                            title="O‘chirish"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {getMissionImagesArrayFromSettings(settings).length === 0 && (
+                        <div className="w-24 h-24 rounded-xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
+                          <Image size={32} className="text-gray-400" />
+                        </div>
                       )}
                     </div>
-                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-bold transition-colors">
-                      <input type="file" className="hidden" accept="image/*" onChange={handleAboutMissionImageUpload} disabled={uploadingAboutMission} />
-                      {uploadingAboutMission ? 'Yuklanmoqda...' : 'Fayldan yuklash'}
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-bold transition-colors w-fit">
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        multiple
+                        onChange={handleAboutMissionImageUpload}
+                        disabled={uploadingAboutMission}
+                      />
+                      {uploadingAboutMission ? 'Yuklanmoqda...' : "Rasm qo'shish (bir nechta tanlash mumkin)"}
                     </label>
                   </div>
                   <p className="text-xs text-gray-400">{t('website.about.missionImageHint')}</p>

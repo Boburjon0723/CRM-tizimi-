@@ -6,10 +6,12 @@ import Header from '@/components/Header'
 import { Plus, Edit, Trash2, Save, X, Search, Filter, AlertTriangle, TrendingUp, Package, RefreshCcw, Minus } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 
 export default function Ombor() {
     const { toggleSidebar } = useLayout()
     const { t } = useLanguage()
+    const { showAlert } = useDialog()
     const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
@@ -49,7 +51,7 @@ export default function Ombor() {
             setProducts(prev => prev.map(m => m.id === id ? { ...m, stock: newStock } : m))
         } catch (error) {
             console.error('Error updating stock:', error)
-            alert(t('common.saveError'))
+            void showAlert(t('common.saveError'), { variant: 'error' })
         }
     }
 

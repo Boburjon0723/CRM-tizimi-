@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { withTimeout } from '@/lib/withTimeout'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload, Loader2, Package, AlertTriangle, Layers } from 'lucide-react'
+import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload, Loader2, Package, AlertTriangle, Layers, Palette } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 
 /** CRM: bitta qator — uz/ru/en nom va qiymat */
 const emptyFeatureRow = () => ({
@@ -87,13 +89,77 @@ function featuresToPayload(rows) {
     }
 }
 
+/** Jamoaviy rang: mahsulot qatoridan colors[] (bo'sh bo'lsa legacy color) */
+function resolvedColorListForProduct(p) {
+    let colors = Array.isArray(p.colors)
+        ? p.colors.map((c) => String(c ?? '').trim()).filter(Boolean)
+        : []
+    const leg = (p.color && String(p.color).trim()) || ''
+    if (colors.length === 0 && leg) colors = [leg]
+    return colors
+}
+
+function dedupeColorsKeepOrder(colors) {
+    const seen = new Set()
+    const out = []
+    for (const c of colors) {
+        if (seen.has(c)) continue
+        seen.add(c)
+        out.push(c)
+    }
+    return out
+}
+
+function computeBulkColorReplaceUpdate(p, oldStr, newStr) {
+    let colors = resolvedColorListForProduct(p)
+    const legacyRaw = (p.color && String(p.color).trim()) || ''
+
+    let changed = false
+    colors = colors.map((c) => {
+        if (c === oldStr) {
+            changed = true
+            return newStr
+        }
+        return c
+    })
+    colors = dedupeColorsKeepOrder(colors)
+
+    if (legacyRaw === oldStr) changed = true
+
+    if (!changed) return null
+    return { colors, color: colors[0] || '' }
+}
+
+function computeBulkColorAddUpdate(p, namesToAdd) {
+    let colors = resolvedColorListForProduct(p)
+    let changed = false
+    for (const n of namesToAdd) {
+        if (!colors.includes(n)) {
+            colors.push(n)
+            changed = true
+        }
+    }
+    if (!changed) return null
+    return { colors, color: colors[0] || '' }
+}
+
+function computeBulkColorRemoveUpdate(p, rem) {
+    let colors = resolvedColorListForProduct(p)
+    const legacyRaw = (p.color && String(p.color).trim()) || ''
+    const next = colors.filter((c) => c !== rem)
+    if (next.length === colors.length && legacyRaw !== rem) return null
+    return { colors: next, color: next[0] || '' }
+}
+
 export default function Mahsulotlar() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
+    const { showAlert, showConfirm } = useDialog()
     const [products, setProducts] = useState([])
     const [categories, setCategories] = useState([])
     const [colorLibrary, setColorLibrary] = useState([])
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editId, setEditId] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
@@ -134,31 +200,51 @@ export default function Mahsulotlar() {
     const [bulkFeatures, setBulkFeatures] = useState([])
     const [bulkApplying, setBulkApplying] = useState(false)
 
+    /** Kategoriya bo'yicha jamoaviy ranglar */
+    const [bulkColorTab, setBulkColorTab] = useState('replace') // 'replace' | 'add' | 'remove'
+    const [bulkColorReplaceFrom, setBulkColorReplaceFrom] = useState('')
+    const [bulkColorReplaceTo, setBulkColorReplaceTo] = useState('')
+    const [bulkColorAddNames, setBulkColorAddNames] = useState([])
+    const [bulkColorRemoveName, setBulkColorRemoveName] = useState('')
+    const [bulkColorApplying, setBulkColorApplying] = useState(false)
+
     useEffect(() => {
         loadData()
     }, [])
 
     async function loadData() {
         try {
+            setLoadError(null)
             setLoading(true)
-            // Load Categories
-            const { data: catData } = await supabase.from('categories').select('*').order('name')
-            setCategories(catData || [])
+            await withTimeout(
+                (async () => {
+                    const { data: catData, error: eCat } = await supabase
+                        .from('categories')
+                        .select('*')
+                        .order('name')
+                    if (eCat) throw eCat
+                    setCategories(catData || [])
 
-            // Load Products
-            const { data, error } = await supabase
-                .from('products')
-                .select('*, categories(name)')
-                .order('created_at', { ascending: false })
+                    const { data, error: eProd } = await supabase
+                        .from('products')
+                        .select('*, categories(name)')
+                        .order('created_at', { ascending: false })
+                    if (eProd) throw eProd
+                    setProducts(data || [])
 
-            if (error) throw error
-            setProducts(data || [])
-
-            // Load Color Library
-            const { data: colorData } = await supabase.from('product_colors').select('*').order('name')
-            setColorLibrary(colorData || [])
+                    const { data: colorData, error: eCol } = await supabase
+                        .from('product_colors')
+                        .select('*')
+                        .order('name')
+                    if (eCol) throw eCol
+                    setColorLibrary(colorData || [])
+                })(),
+                55000,
+                'Mahsulotlar 55 soniya ichida yuklanmadi — internet yoki Supabase ulanishini tekshiring, keyin «Qayta urinish» bosing.'
+            )
         } catch (error) {
             console.error('Error loading data:', error)
+            setLoadError(error?.message || "Ma'lumot yuklanmadi.")
         } finally {
             setLoading(false)
         }
@@ -594,6 +680,175 @@ export default function Mahsulotlar() {
         }
     }
 
+    const bulkCategoryUniqueColorNames = useMemo(() => {
+        if (!bulkCategoryId) return []
+        const set = new Set()
+        for (const p of products) {
+            if (p.category_id !== bulkCategoryId) continue
+            for (const c of resolvedColorListForProduct(p)) {
+                if (c) set.add(c)
+            }
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    }, [products, bulkCategoryId])
+
+    function colorLibLabel(c) {
+        return c[`name_${language}`] || c.name_uz || c.name_ru || c.name_en || c.name
+    }
+
+    function toggleBulkColorAddName(name) {
+        setBulkColorAddNames((prev) =>
+            prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+        )
+    }
+
+    async function applyBulkColorReplace() {
+        if (!bulkCategoryId) {
+            await showAlert('Kategoriyani tanlang.')
+            return
+        }
+        const oldStr = bulkColorReplaceFrom.trim()
+        const newStr = bulkColorReplaceTo.trim()
+        if (!oldStr) {
+            await showAlert('Almashtiriladigan (eski) rang qiymatini kiriting yoki ro‘yxatdan tanlang.')
+            return
+        }
+        if (!newStr) {
+            await showAlert('Yangi rangni kutubxonadan tanlang.')
+            return
+        }
+        if (oldStr === newStr) {
+            await showAlert('Eski va yangi rang bir xil — hech narsa o‘zgarmaydi.')
+            return
+        }
+        if (!colorLibrary.some((c) => c.name === newStr)) {
+            await showAlert('Yangi rang faqat «Ranglar to‘plami» kutubxonasidagi qiymat bo‘lishi kerak.')
+            return
+        }
+        const targets = products.filter((p) => p.category_id === bulkCategoryId)
+        if (targets.length === 0) {
+            await showAlert('Bu kategoriyada mahsulot yo‘q.')
+            return
+        }
+        const catName = categories.find((c) => c.id === bulkCategoryId)?.name || '…'
+        const ok = await showConfirm(
+            `«${catName}» — ${targets.length} ta mahsulot: «${oldStr}» nomli rang «${newStr}» bilan almashtirilsinmi?\n\n(Mahsulotlarning colors massividagi to‘liq mos keluvchi qiymat almashtiriladi.)`,
+            { variant: 'warning' }
+        )
+        if (!ok) return
+        try {
+            setBulkColorApplying(true)
+            let updated = 0
+            for (const p of targets) {
+                const patch = computeBulkColorReplaceUpdate(p, oldStr, newStr)
+                if (!patch) continue
+                const { error } = await supabase.from('products').update(patch).eq('id', p.id)
+                if (error) throw error
+                updated++
+            }
+            await showAlert(
+                updated > 0
+                    ? `${updated} ta mahsulot yangilandi.`
+                    : "Hech bir mahsulotda bunday rang qiymati topilmadi (colors yoki legacy color).",
+                { variant: updated > 0 ? 'success' : 'info' }
+            )
+            loadData()
+        } catch (error) {
+            console.error('Bulk color replace error:', error)
+            await showAlert('Yangilashda xatolik: ' + (error.message || ''), { variant: 'error' })
+        } finally {
+            setBulkColorApplying(false)
+        }
+    }
+
+    async function applyBulkColorAdd() {
+        if (!bulkCategoryId) {
+            await showAlert('Kategoriyani tanlang.')
+            return
+        }
+        const names = bulkColorAddNames.filter((n) => colorLibrary.some((c) => c.name === n))
+        if (names.length === 0) {
+            await showAlert('Kamida bitta rangni kutubxonadan belgilang.')
+            return
+        }
+        const targets = products.filter((p) => p.category_id === bulkCategoryId)
+        if (targets.length === 0) {
+            await showAlert('Bu kategoriyada mahsulot yo‘q.')
+            return
+        }
+        const catName = categories.find((c) => c.id === bulkCategoryId)?.name || '…'
+        const ok = await showConfirm(
+            `«${catName}» — ${targets.length} ta mahsulotga ${names.length} ta rang qo‘shilsinmi? (Mavjud ranglar takrorlanmaydi.)`,
+            { variant: 'warning' }
+        )
+        if (!ok) return
+        try {
+            setBulkColorApplying(true)
+            let updated = 0
+            for (const p of targets) {
+                const patch = computeBulkColorAddUpdate(p, names)
+                if (!patch) continue
+                const { error } = await supabase.from('products').update(patch).eq('id', p.id)
+                if (error) throw error
+                updated++
+            }
+            await showAlert(
+                updated > 0 ? `${updated} ta mahsulotga yangi rang qo‘shildi.` : `Tanlangan ranglar bu ${targets.length} ta mahsulotda allaqachon bor edi.`,
+                { variant: updated > 0 ? 'success' : 'info' }
+            )
+            loadData()
+        } catch (error) {
+            console.error('Bulk color add error:', error)
+            await showAlert('Yangilashda xatolik: ' + (error.message || ''), { variant: 'error' })
+        } finally {
+            setBulkColorApplying(false)
+        }
+    }
+
+    async function applyBulkColorRemove() {
+        if (!bulkCategoryId) {
+            await showAlert('Kategoriyani tanlang.')
+            return
+        }
+        const rem = bulkColorRemoveName.trim()
+        if (!rem) {
+            await showAlert('Olib tashlanadigan rangni tanlang yoki kiriting.')
+            return
+        }
+        const targets = products.filter((p) => p.category_id === bulkCategoryId)
+        if (targets.length === 0) {
+            await showAlert('Bu kategoriyada mahsulot yo‘q.')
+            return
+        }
+        const catName = categories.find((c) => c.id === bulkCategoryId)?.name || '…'
+        const ok = await showConfirm(
+            `«${catName}» — ${targets.length} ta mahsulotdan «${rem}» rangi olib tashlansinmi?`,
+            { variant: 'warning' }
+        )
+        if (!ok) return
+        try {
+            setBulkColorApplying(true)
+            let updated = 0
+            for (const p of targets) {
+                const patch = computeBulkColorRemoveUpdate(p, rem)
+                if (!patch) continue
+                const { error } = await supabase.from('products').update(patch).eq('id', p.id)
+                if (error) throw error
+                updated++
+            }
+            await showAlert(
+                updated > 0 ? `${updated} ta mahsulotdan rang olib tashlandi.` : 'Hech bir mahsulotda bu rang yo‘q.',
+                { variant: updated > 0 ? 'success' : 'info' }
+            )
+            loadData()
+        } catch (error) {
+            console.error('Bulk color remove error:', error)
+            await showAlert('Yangilashda xatolik: ' + (error.message || ''), { variant: 'error' })
+        } finally {
+            setBulkColorApplying(false)
+        }
+    }
+
     const filteredProducts = products.filter(p => {
         const searchTerms = searchTerm.toLowerCase().split(' ').filter(word => word.length > 0);
 
@@ -620,8 +875,32 @@ export default function Mahsulotlar() {
     if (loading) {
         return (
             <div className="p-8">
-                <div className="flex items-center justify-center h-screen">
-                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+                <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+                    <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600" />
+                    <p className="text-sm text-gray-500 text-center max-w-md leading-relaxed">
+                        Ma&apos;lumotlar yuklanmoqda. Ko&apos;p mahsulot yoki sekin tarmoqda 1 dan bir necha
+                        daqiqagacha cho&apos;zilishi mumkin — sabab bo&apos;lmasa, brauzer konsolini ochib
+                        (F12) xatolarni ko&apos;ring.
+                    </p>
+                </div>
+            </div>
+        )
+    }
+
+    if (loadError) {
+        return (
+            <div className="max-w-7xl mx-auto px-6">
+                <Header title={t('common.products')} toggleSidebar={toggleSidebar} />
+                <div className="mt-8 flex flex-col items-center justify-center gap-4 rounded-2xl border border-red-200 bg-red-50/90 p-8 text-center">
+                    <AlertTriangle className="text-red-600 shrink-0" size={40} strokeWidth={1.75} />
+                    <p className="text-red-900 font-medium max-w-lg leading-relaxed">{loadError}</p>
+                    <button
+                        type="button"
+                        onClick={() => loadData()}
+                        className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow hover:bg-blue-700"
+                    >
+                        Qayta urinish
+                    </button>
                 </div>
             </div>
         )
@@ -878,6 +1157,11 @@ export default function Mahsulotlar() {
                                 setBulkDescRu('')
                                 setBulkDescEn('')
                                 setBulkFeatures([])
+                                setBulkColorTab('replace')
+                                setBulkColorReplaceFrom('')
+                                setBulkColorReplaceTo('')
+                                setBulkColorAddNames([])
+                                setBulkColorRemoveName('')
                             }}
                             className="px-5 py-2.5 rounded-xl font-bold text-gray-600 hover:bg-white/80 border border-transparent hover:border-gray-200"
                         >
@@ -893,6 +1177,213 @@ export default function Mahsulotlar() {
                             Kategoriyadagilarga qo‘llash
                         </button>
                     </div>
+                </div>
+            </div>
+
+            {/* Kategoriya bo'yicha jamoaviy ranglar */}
+            <div className="mb-8 bg-gradient-to-br from-violet-50/80 to-slate-50 rounded-2xl border border-violet-200/60 shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-violet-200/50 bg-white/70 flex flex-wrap items-center gap-3">
+                    <Palette className="text-violet-600 shrink-0" size={22} />
+                    <div>
+                        <h2 className="text-base font-bold text-gray-900">Kategoriya bo‘yicha ranglar (jamoa)</h2>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                            Noto‘g‘ri rangni bir vaqtda almashtirish, ko‘plab mahsulotga rang qo‘shish yoki kategoriyadan bir rangni olib tashlash. Qiymatlar mahsulotdagi{' '}
+                            <code className="text-[11px] bg-violet-100/80 px-1 rounded">colors</code> massivi bilan bir xil (kutubxonaning ichki nomi).
+                        </p>
+                    </div>
+                </div>
+                <div className="p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row gap-4 flex-wrap items-start sm:items-end">
+                        <div className="w-full sm:flex-1 sm:min-w-[220px] space-y-2">
+                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Kategoriya</label>
+                            <select
+                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-gray-800"
+                                value={bulkCategoryId}
+                                onChange={(e) => setBulkCategoryId(e.target.value)}
+                            >
+                                <option value="">— Tanlang —</option>
+                                {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.id}>
+                                        {cat.name}
+                                    </option>
+                                ))}
+                            </select>
+                            {bulkCategoryId ? (
+                                <p className="text-xs text-violet-800 font-medium">
+                                    Ta’sir: <strong>{bulkProductCount}</strong> ta mahsulot · Ushbu kategoriyadagi ranglar:{' '}
+                                    <strong>{bulkCategoryUniqueColorNames.length}</strong> ta noyob qiymat
+                                </p>
+                            ) : null}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        {[
+                            { id: 'replace', label: 'Almashtirish' },
+                            { id: 'add', label: 'Qo‘shish' },
+                            { id: 'remove', label: 'Olib tashlash' },
+                        ].map((tab) => (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setBulkColorTab(tab.id)}
+                                className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
+                                    bulkColorTab === tab.id
+                                        ? 'bg-violet-600 text-white shadow-md'
+                                        : 'bg-white border border-violet-200 text-violet-800 hover:bg-violet-50'
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {bulkColorTab === 'replace' ? (
+                        <div className="space-y-4 rounded-xl border border-violet-100 bg-white/80 p-4">
+                            <p className="text-xs text-gray-600">
+                                Masalan, noto‘g‘ri tanlangan rang nomi 100 ta mahsulotda — eski nomni yangi kutubxona nomiga bir marta almashtirasiz.
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Eski rang (qiymat)</label>
+                                    <input
+                                        type="text"
+                                        list="bulk-cat-color-datalist"
+                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                                        placeholder="colors massividagi aniq matn"
+                                        value={bulkColorReplaceFrom}
+                                        onChange={(e) => setBulkColorReplaceFrom(e.target.value)}
+                                        disabled={!bulkCategoryId}
+                                    />
+                                    <datalist id="bulk-cat-color-datalist">
+                                        {bulkCategoryUniqueColorNames.map((name) => (
+                                            <option key={name} value={name} />
+                                        ))}
+                                    </datalist>
+                                    {bulkCategoryId && bulkCategoryUniqueColorNames.length === 0 ? (
+                                        <p className="text-xs text-amber-700">Bu kategoriyada hozircha rang qiymati yo‘q — avval mahsulotlarga rang bering.</p>
+                                    ) : null}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Yangi rang (kutubxona)</label>
+                                    <select
+                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                                        value={bulkColorReplaceTo}
+                                        onChange={(e) => setBulkColorReplaceTo(e.target.value)}
+                                    >
+                                        <option value="">— Tanlang —</option>
+                                        {[...colorLibrary]
+                                            .sort((a, b) =>
+                                                String(colorLibLabel(a)).localeCompare(String(colorLibLabel(b)), undefined, {
+                                                    sensitivity: 'base',
+                                                })
+                                            )
+                                            .map((c) => (
+                                                <option key={c.id} value={c.name}>
+                                                    {colorLibLabel(c)} ({c.name})
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={bulkColorApplying || !bulkCategoryId}
+                                onClick={applyBulkColorReplace}
+                                className="px-6 py-2.5 rounded-xl font-bold bg-violet-600 text-white hover:bg-violet-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {bulkColorApplying ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                                Almashtirishni qo‘llash
+                            </button>
+                        </div>
+                    ) : null}
+
+                    {bulkColorTab === 'add' ? (
+                        <div className="space-y-4 rounded-xl border border-violet-100 bg-white/80 p-4">
+                            <p className="text-xs text-gray-600">
+                                Tanlangan kategoriyadagi barcha mahsulotlarga belgilangan ranglarni qo‘shadi (allaqachon bo‘lsa o‘tkazib yuboradi).
+                            </p>
+                            <div className="flex flex-wrap gap-2 max-h-[220px] overflow-y-auto p-2 bg-gray-50/80 rounded-xl border border-gray-100">
+                                {colorLibrary.length === 0 ? (
+                                    <p className="text-xs text-gray-400 italic">Avval «Ranglar to‘plami» orqali kutubxonaga rang qo‘shing.</p>
+                                ) : (
+                                    [...colorLibrary]
+                                        .sort((a, b) =>
+                                            String(colorLibLabel(a)).localeCompare(String(colorLibLabel(b)), undefined, {
+                                                sensitivity: 'base',
+                                            })
+                                        )
+                                        .map((c) => {
+                                            const on = bulkColorAddNames.includes(c.name)
+                                            return (
+                                                <button
+                                                    key={c.id}
+                                                    type="button"
+                                                    onClick={() => toggleBulkColorAddName(c.name)}
+                                                    className={`flex items-center gap-2 pl-3 pr-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                                                        on
+                                                            ? 'bg-violet-600 border-violet-600 text-white shadow'
+                                                            : 'bg-white border-gray-200 text-gray-600 hover:border-violet-300'
+                                                    }`}
+                                                >
+                                                    <span
+                                                        className="w-3 h-3 rounded-full border border-black/10 shrink-0"
+                                                        style={{ backgroundColor: c.hex_code }}
+                                                    />
+                                                    {colorLibLabel(c)}
+                                                </button>
+                                            )
+                                        })
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                disabled={bulkColorApplying || !bulkCategoryId || bulkColorAddNames.length === 0}
+                                onClick={applyBulkColorAdd}
+                                className="px-6 py-2.5 rounded-xl font-bold bg-violet-600 text-white hover:bg-violet-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {bulkColorApplying ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />}
+                                Tanlangan ranglarni qo‘shish
+                            </button>
+                        </div>
+                    ) : null}
+
+                    {bulkColorTab === 'remove' ? (
+                        <div className="space-y-4 rounded-xl border border-violet-100 bg-white/80 p-4">
+                            <p className="text-xs text-gray-600">
+                                Kategoriyadagi barcha mahsulotlardan bir xil rang qiymatini olib tashlaydi (asosiy ko‘rinish maydoni yangilanadi).
+                            </p>
+                            <div className="space-y-2 max-w-md">
+                                <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Olib tashlash — qiymat</label>
+                                <input
+                                    type="text"
+                                    list="bulk-remove-color-datalist"
+                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                                    placeholder="colors massividagi aniq matn"
+                                    value={bulkColorRemoveName}
+                                    onChange={(e) => setBulkColorRemoveName(e.target.value)}
+                                    disabled={!bulkCategoryId}
+                                />
+                                <datalist id="bulk-remove-color-datalist">
+                                    {bulkCategoryUniqueColorNames.map((name) => (
+                                        <option key={name} value={name} />
+                                    ))}
+                                </datalist>
+                            </div>
+                            <p className="text-[11px] text-gray-500">
+                                Ro‘yxat kategoriyadagi mavjud ranglardan; boshqa qiymatni qo‘lda yozishingiz mumkin — matn colors bilan to‘liq mos kelishi kerak.
+                            </p>
+                            <button
+                                type="button"
+                                disabled={bulkColorApplying || !bulkCategoryId || !bulkColorRemoveName.trim()}
+                                onClick={applyBulkColorRemove}
+                                className="px-6 py-2.5 rounded-xl font-bold bg-red-600 text-white hover:bg-red-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {bulkColorApplying ? <Loader2 className="animate-spin" size={18} /> : <Trash2 size={18} />}
+                                Rangni kategoriyadan olib tashlash
+                            </button>
+                        </div>
+                    ) : null}
                 </div>
             </div>
 

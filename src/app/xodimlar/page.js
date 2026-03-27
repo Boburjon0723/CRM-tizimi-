@@ -6,10 +6,12 @@ import Header from '@/components/Header'
 import { UserPlus, Edit, Trash2, Save, X, Search, Calendar, Users, DollarSign, CreditCard } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 
 export default function Xodimlar() {
     const { toggleSidebar } = useLayout()
     const { t } = useLanguage()
+    const { showAlert, showConfirm } = useDialog()
     const [employees, setEmployees] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
@@ -82,12 +84,12 @@ export default function Xodimlar() {
             loadEmployees()
         } catch (error) {
             console.error('Error saving employee:', error)
-            alert(t('common.saveError'))
+            await showAlert(t('common.saveError'), { variant: 'error' })
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm(t('employees.deleteConfirm'))) return
+        if (!(await showConfirm(t('employees.deleteConfirm'), { variant: 'warning' }))) return
 
         try {
             const { error } = await supabase
@@ -99,7 +101,7 @@ export default function Xodimlar() {
             loadEmployees()
         } catch (error) {
             console.error('Error deleting employee:', error)
-            alert(t('employees.deleteError'))
+            await showAlert(t('employees.deleteError'), { variant: 'error' })
         }
     }
 

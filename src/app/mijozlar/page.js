@@ -10,10 +10,12 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 
 export default function Mijozlar() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
+    const { showAlert, showConfirm, showToast } = useDialog()
     const [customers, setCustomers] = useState([])
     const [registeredUsers, setRegisteredUsers] = useState([])
     const [loading, setLoading] = useState(true)
@@ -117,7 +119,7 @@ export default function Mijozlar() {
     async function handleSubmit(e) {
         e.preventDefault()
         if (!form.name || !form.phone) {
-            alert(t('customers.requiredError'))
+            await showAlert(t('customers.requiredError'), { variant: 'warning' })
             return
         }
 
@@ -130,7 +132,7 @@ export default function Mijozlar() {
                     .eq('id', editId)
 
                 if (error) throw error
-                alert(t('customers.successUpdate'))
+                showToast(t('customers.successUpdate'), { type: 'success' })
             } else {
                 // Add new
                 const { error } = await supabase
@@ -138,7 +140,7 @@ export default function Mijozlar() {
                     .insert([form])
 
                 if (error) throw error
-                alert(t('customers.successAdd'))
+                showToast(t('customers.successAdd'), { type: 'success' })
             }
 
             setIsAdding(false)
@@ -147,12 +149,12 @@ export default function Mijozlar() {
             loadData()
         } catch (error) {
             console.error('Error saving customer:', error)
-            alert(t('common.saveError'))
+            await showAlert(t('common.saveError'), { variant: 'error' })
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm(t('common.deleteConfirm'))) return
+        if (!(await showConfirm(t('common.deleteConfirm'), { variant: 'warning' }))) return
 
         try {
             const { error } = await supabase
@@ -162,10 +164,10 @@ export default function Mijozlar() {
 
             if (error) throw error
             loadData()
-            alert(t('customers.successDelete'))
+            showToast(t('customers.successDelete'), { type: 'success' })
         } catch (error) {
             console.error('Error deleting customer:', error)
-            alert(t('common.deleteError'))
+            await showAlert(t('common.deleteError'), { variant: 'error' })
         }
     }
 

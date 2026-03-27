@@ -23,6 +23,12 @@ export const translations = {
             loading: 'Yuklanmoqda...',
             save: 'Saqlash',
             cancel: 'Bekor qilish',
+            ok: 'Tushundim',
+            yes: 'Ha',
+            no: 'Yo\'q',
+            close: 'Yopish',
+            dialogAlertTitle: 'Xabar',
+            dialogConfirmTitle: 'Tasdiqlash',
             edit: 'Tahrirlash',
             delete: 'O\'chirish',
             add: 'Qo\'shish',
@@ -211,7 +217,7 @@ export const translations = {
             modelCode: 'Model kodi',
             modelCodePlaceholder: 'Kod',
             modelCodeFormatHint:
-                'Format: katalogdagi kod bilan bir xil yozing — «Kod» (size) ustunida yoki nomda (uz/ru/en). Masalan: N-032. Katta-kichik harf va probel farq qilmaydi. Agar topilmasa: «Mahsulotlar»da shu mahsulot uchun «Kod» maydoni to‘ldirilganini tekshiring.',
+                'Asosan Mahsulotlar sahifasidagi «Kod» maydoni bilan bir xil yozing (masalan: TK-012). To‘liq kod yozilsa — bitta mahsulot chiqadi. Qisqa qism bilan bir nechta mos kelsa — kodni to‘liqroq yozing. Katta-kichik harf va probel farq qilmaydi.',
             lineProduct: 'Mahsulot',
             lineColor: 'Rang',
             lineUnitPrice: 'Birlik narxi',
@@ -220,7 +226,7 @@ export const translations = {
             resetCatalogPrice: 'Sayt narxiga qaytarish',
             codeFetchButton: 'Olish',
             codeNotFound: 'Bu kod bo\'yicha mahsulot topilmadi.',
-            codeAmbiguous: 'Bir nechta mos keldi — kodni aniqroq yozing.',
+            codeAmbiguous: 'Bir nechta mahsulot topildi. Kodni to‘liq yozing (Mahsulotlar → «Kod» bilan bir xil).',
             codeEmpty: 'Avval kod kiriting.',
             orderLinesEmpty: 'Kamida bitta qatorni kod orqali yuklang («Olish»).',
             orderLinesUnresolved: 'Barcha kodlar yuklanmagan — «Olish» bosing yoki ortiqcha qatorni o\'chiring.',
@@ -248,7 +254,13 @@ export const translations = {
             orderListHiddenCount: 'Yana {n} ta',
             draftRestorePrompt: 'Yangi buyurtma qoralamasi topildi — davom ettirasizmi?',
             draftContinue: 'Davom ettirish',
-            draftDiscard: 'Bekor qilish'
+            draftDiscard: 'Bekor qilish',
+            categoryUncategorized: 'Kategoriyasiz',
+            categorySubtotal: 'Kategoriya jami',
+            lineConfirmSort: 'Tayyor',
+            lineConfirmSortHint: 'Miqdor va narx tayyor — kategoriya bo‘yicha joylash',
+            duplicateProductConfirm:
+                'Bu mahsulot allaqachon buyurtmada bor. Yana shu mahsulotni qo‘shmoqchimisiz?'
         },
         products: {
             title: 'Mahsulotlar',
@@ -429,8 +441,9 @@ export const translations = {
                 missionTitle: 'Sarlavha',
                 missionText1: 'Matn 1',
                 missionText2: 'Matn 2',
-                missionImage: 'Ustaxona Rasmi (Our Workshop) URL',
-                missionImageHint: 'Bu rasm "Biz haqimizda" sahifasida "Our Story/Ustaxona" qismida ko\'rinadi.',
+                missionImage: 'Ustaxona rasmlari',
+                missionImageHint:
+                    'Bir yoki bir nechta rasm tanlang; sahifada silliq almashib turadi. Eski bitta rasm maydoni birinchi rasm sifatida saqlanadi.',
                 valuesSection: 'Qadriyatlar (3 ta)'
             },
             banners: {
@@ -502,6 +515,12 @@ export const translations = {
             loading: 'Загрузка...',
             save: 'Сохранить',
             cancel: 'Отмена',
+            ok: 'Понятно',
+            yes: 'Да',
+            no: 'Нет',
+            close: 'Закрыть',
+            dialogAlertTitle: 'Сообщение',
+            dialogConfirmTitle: 'Подтверждение',
             edit: 'Редактировать',
             delete: 'Удалить',
             add: 'Добавить',
@@ -690,7 +709,7 @@ export const translations = {
             modelCode: 'Код модели',
             modelCodePlaceholder: 'Код',
             modelCodeFormatHint:
-                'Формат: как в каталоге в поле кода модели (обычно колонка «size» / «Код» в товарах). Пример: N-032, ABC-12. Регистр и лишние пробелы не важны. Если код только в названии — введите полное имя или проверьте поле кода в «Товарах».',
+                'Введите код как в колонке «Код» в Товарах (например TK-012). Полный код — один товар. Если короткий фрагмент подходит нескольким — уточните код.',
             lineProduct: 'Товар',
             lineColor: 'Цвет',
             lineUnitPrice: 'Цена',
@@ -699,7 +718,7 @@ export const translations = {
             resetCatalogPrice: 'Вернуть цену сайта',
             codeFetchButton: 'Загрузить',
             codeNotFound: 'Товар с таким кодом не найден.',
-            codeAmbiguous: 'Несколько совпадений — уточните код.',
+            codeAmbiguous: 'Найдено несколько товаров. Введите полный код (как в «Код» товара).',
             codeEmpty: 'Сначала введите код.',
             orderLinesEmpty: 'Добавьте хотя бы одну строку (кнопка «Загрузить»).',
             orderLinesUnresolved: 'Не все коды загружены — нажмите «Загрузить» или удалите лишние строки.',
@@ -727,7 +746,13 @@ export const translations = {
             orderListHiddenCount: 'Ещё {n} шт.',
             draftRestorePrompt: 'Найден черновик нового заказа — продолжить?',
             draftContinue: 'Продолжить',
-            draftDiscard: 'Отменить'
+            draftDiscard: 'Отменить',
+            categoryUncategorized: 'Без категории',
+            categorySubtotal: 'Итого по категории',
+            lineConfirmSort: 'Готово',
+            lineConfirmSortHint: 'Готово — перенести строку в порядок по категории',
+            duplicateProductConfirm:
+                'Этот товар уже есть в заказе. Добавить ещё раз такой же товар?'
         },
         products: {
             title: 'Продукты',
@@ -908,8 +933,9 @@ export const translations = {
                 missionTitle: 'Заголовок',
                 missionText1: 'Текст 1',
                 missionText2: 'Текст 2',
-                missionImage: 'URL изображения мастерской',
-                missionImageHint: 'Это изображение будет отображаться в разделе "Наша история" на странице "О нас".',
+                missionImage: 'Изображения мастерской',
+                missionImageHint:
+                    'Можно выбрать несколько фото; на сайте они плавно сменяются. Первое фото дублируется в поле legacy.',
                 valuesSection: 'Ценности (3 шт)'
             },
             banners: {
@@ -981,6 +1007,12 @@ export const translations = {
             loading: 'Loading...',
             save: 'Save',
             cancel: 'Cancel',
+            ok: 'OK',
+            yes: 'Yes',
+            no: 'No',
+            close: 'Close',
+            dialogAlertTitle: 'Notice',
+            dialogConfirmTitle: 'Please confirm',
             edit: 'Edit',
             delete: 'Delete',
             add: 'Add',
@@ -1169,7 +1201,7 @@ export const translations = {
             modelCode: 'Model code',
             modelCodePlaceholder: 'Code',
             modelCodeFormatHint:
-                'Use the same code as in the catalog (usually the product «size» / SKU field). Examples: N-032, ABC-12. Case and extra spaces are ignored. If the code lives only in the product name, type the full name or fix the code field in Products.',
+                'Type the code like the «Kod» column in Products (e.g. TK-012). Full code → one product. If a short fragment matches several rows, type the full code.',
             lineProduct: 'Product',
             lineColor: 'Color',
             lineUnitPrice: 'Unit price',
@@ -1178,7 +1210,7 @@ export const translations = {
             resetCatalogPrice: 'Use site price',
             codeFetchButton: 'Load',
             codeNotFound: 'No product found for this code.',
-            codeAmbiguous: 'Multiple matches — make the code more specific.',
+            codeAmbiguous: 'Several products match. Enter the full code (same as «Kod» in Products).',
             codeEmpty: 'Enter a code first.',
             orderLinesEmpty: 'Add at least one line (Load code).',
             orderLinesUnresolved: 'Some codes are not loaded — click Load or remove empty rows.',
@@ -1206,7 +1238,13 @@ export const translations = {
             orderListHiddenCount: '{n} more',
             draftRestorePrompt: 'A draft new order was found — continue?',
             draftContinue: 'Continue',
-            draftDiscard: 'Discard'
+            draftDiscard: 'Discard',
+            categoryUncategorized: 'Uncategorized',
+            categorySubtotal: 'Category subtotal',
+            lineConfirmSort: 'Done',
+            lineConfirmSortHint: 'Confirm — move this line into category order',
+            duplicateProductConfirm:
+                'This product is already on the order. Add the same product again?'
         },
         products: {
             title: 'Products',
@@ -1387,8 +1425,9 @@ export const translations = {
                 missionTitle: 'Title',
                 missionText1: 'Text 1',
                 missionText2: 'Text 2',
-                missionImage: 'Workshop Image (Our Workshop) URL',
-                missionImageHint: 'This image will be displayed in the "Our Story/Workshop" section on the "About Us" page.',
+                missionImage: 'Workshop images',
+                missionImageHint:
+                    'Select one or more images; they rotate smoothly on the site. The first is also stored as the legacy single-image field.',
                 valuesSection: 'Values (3 values)'
             },
             banners: {

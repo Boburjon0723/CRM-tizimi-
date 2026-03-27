@@ -7,6 +7,7 @@ import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Set
 import { supabase } from '@/lib/supabase'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 
 const LANGUAGES = [
   { code: 'uz', label: "O'zbekcha" },
@@ -60,7 +61,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
     if (!error) {
       router.push('/login')
     } else {
-      alert('Chiqishda xatolik yuz berdi')
+      await showAlert(t('common.logoutError'), { variant: 'error' })
     }
   }
 

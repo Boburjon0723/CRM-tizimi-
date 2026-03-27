@@ -7,10 +7,12 @@ import { Plus, Edit, Trash2, Save, X, Search, Filter, ArrowUpCircle, ArrowDownCi
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 
 export default function Moliya() {
     const { toggleSidebar } = useLayout()
     const { t } = useLanguage()
+    const { showAlert, showConfirm } = useDialog()
     const [transactions, setTransactions] = useState([])
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
@@ -68,12 +70,12 @@ export default function Moliya() {
             loadTransactions()
         } catch (error) {
             console.error('Error adding transaction:', error)
-            alert(t('common.saveError'))
+            await showAlert(t('common.saveError'), { variant: 'error' })
         }
     }
 
     async function handleDelete(id) {
-        if (!confirm(t('finances.deleteConfirm'))) return
+        if (!(await showConfirm(t('finances.deleteConfirm'), { variant: 'warning' }))) return
         try {
             const { error } = await supabase.from('transactions').delete().eq('id', id)
             if (error) throw error

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 
 function escapeHtml(s) {
     if (s == null) return ''
@@ -55,6 +56,97 @@ function parseOrderItemPrice(v) {
     return Number.isFinite(n) ? n : 0
 }
 
+/** PostgREST: line_index yo‘q yoki categories bog‘lanishi bo‘lmasa so‘rov yiqiladi */
+function isSchemaOrEmbedError(err) {
+    const m = String(err?.message || err?.code || err || '')
+    return /line_index|categories|schema cache|column|does not exist|42703|PGRST/i.test(m)
+}
+
+const ORDERS_SELECT_FALLBACKS = [
+    `*,
+  customers (id, name, phone),
+  order_items (
+    *,
+    products (id, name, category_id, categories (id, name, name_uz))
+  )`,
+    `*,
+  customers (id, name, phone),
+  order_items (
+    *,
+    products (id, name, category_id)
+  )`,
+    `*,
+  customers (id, name, phone),
+  order_items (
+    *,
+    products (id, name)
+  )`,
+    `*,
+  customers (id, name, phone),
+  order_items (*)
+`,
+]
+
+async function fetchOrdersPageWithFallback() {
+    for (const sel of ORDERS_SELECT_FALLBACKS) {
+        const res = await supabase
+            .from('orders')
+            .select(sel)
+            .order('created_at', { ascending: false })
+        if (!res.error) return res
+        if (!isSchemaOrEmbedError(res.error)) return res
+        console.warn('orders select fallback:', res.error?.message)
+    }
+    return { data: null, error: new Error('orders load failed') }
+}
+
+const ORDER_ITEMS_FOR_ORDER_FALLBACKS = [
+    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'line_index' },
+    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'created_at' },
+    { select: `*, products (id, name, category_id)`, order: 'created_at' },
+    { select: `*, products (id, name)`, order: 'created_at' },
+    { select: '*', order: 'created_at' },
+]
+
+async function fetchOrderItemsForOrderId(orderId) {
+    for (const cfg of ORDER_ITEMS_FOR_ORDER_FALLBACKS) {
+        let q = supabase.from('order_items').select(cfg.select).eq('order_id', orderId)
+        q =
+            cfg.order === 'line_index'
+                ? q.order('line_index', { ascending: true })
+                : q.order('created_at', { ascending: true })
+        const r = await q
+        if (!r.error) return r
+        if (!isSchemaOrEmbedError(r.error)) return r
+        console.warn('order_items select fallback:', r.error?.message)
+    }
+    return { data: null, error: new Error('order_items fetch failed') }
+}
+
+const ORDER_ITEMS_FOR_PRINT_LIST_FALLBACKS = [
+    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'line_index' },
+    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'created_at' },
+    { select: `*, products (id, name, category_id)`, order: 'created_at' },
+    { select: `*, products (id, name)`, order: 'created_at' },
+    { select: '*', order: 'created_at' },
+]
+
+async function fetchOrderItemsForOrderIds(orderIds) {
+    if (!orderIds?.length) return { data: [], error: null }
+    for (const cfg of ORDER_ITEMS_FOR_PRINT_LIST_FALLBACKS) {
+        let q = supabase.from('order_items').select(cfg.select).in('order_id', orderIds)
+        q =
+            cfg.order === 'line_index'
+                ? q.order('line_index', { ascending: true })
+                : q.order('created_at', { ascending: true })
+        const r = await q
+        if (!r.error) return r
+        if (!isSchemaOrEmbedError(r.error)) return r
+        console.warn('order_items (in) select fallback:', r.error?.message)
+    }
+    return { data: null, error: new Error('order_items batch fetch failed') }
+}
+
 /** Model kodi solishtirish: probel, tire, katta/kichik harf */
 function normalizeModelKey(s) {
     return String(s || '')
@@ -79,6 +171,12 @@ function displayProductName(p) {
 
 function productNameFields(p) {
     return [p?.name, p?.name_uz, p?.name_ru, p?.name_en].filter((x) => x != null && String(x).trim() !== '')
+}
+
+function productDescriptionFields(p) {
+    return [p?.description, p?.description_uz, p?.description_ru, p?.description_en].filter(
+        (x) => x != null && String(x).trim() !== ''
+    )
 }
 
 /** CRMda ranglar ko‘pincha `colors` massivida (bitta qator) */
@@ -304,6 +402,15 @@ function dedupeOrderItemsKeepNewest(rows) {
         seen.add(key)
         out.push(oi)
     }
+    out.sort((a, b) => {
+        const la = Number(a.line_index ?? 0)
+        const lb = Number(b.line_index ?? 0)
+        if (la !== lb) return la - lb
+        const ta = ts(a)
+        const tb = ts(b)
+        if (!Number.isNaN(ta) && !Number.isNaN(tb) && tb !== ta) return tb - ta
+        return String(b.id || '').localeCompare(String(a.id || ''))
+    })
     return out
 }
 
@@ -328,6 +435,18 @@ function mergeExpandedRowsForSubmit(rows) {
     return Array.from(map.values())
 }
 
+/** Model kodi bo‘yicha natural tartib (A-2 dan keyin A-10). */
+function naturalCompareModelCode(a, b) {
+    const sa = a != null ? String(a) : ''
+    const sb = b != null ? String(b) : ''
+    return sa.localeCompare(sb, 'uz', { numeric: true, sensitivity: 'base' })
+}
+
+function minLineIndexInBucket(lines) {
+    if (!lines?.length) return 0
+    return Math.min(...lines.map((l) => Number(l.line_index ?? 0)))
+}
+
 /** Chop etish: bir SKU (product_id + model kodi/size) — bitta qator; rang/miqdor faqat shu qopqichdagi qatorlardan.
  *  Har bir `order_item` faqat bitta kalitga tushadi — boshqa mahsulotlarning ranglari takrorlanmaydi. */
 function groupOrderItemsForPrint(orderItems) {
@@ -339,7 +458,9 @@ function groupOrderItemsForPrint(orderItems) {
         if (!buckets.has(key)) buckets.set(key, [])
         buckets.get(key).push(oi)
     }
-    return Array.from(buckets.values()).map((lines) => {
+    const bucketArrays = Array.from(buckets.values())
+    bucketArrays.sort((a, b) => minLineIndexInBucket(a) - minLineIndexInBucket(b))
+    return bucketArrays.map((lines) => {
         const first = lines[0]
         const colorMap = new Map()
         let lineMonetary = 0
@@ -374,6 +495,48 @@ function groupOrderItemsForPrint(orderItems) {
     })
 }
 
+/** Kategoriya nomi (chop etish) — mahsulotdan */
+function categoryLabelFromGroupedLine(firstOi) {
+    const cat = firstOi?.products?.categories
+    if (cat && typeof cat === 'object') {
+        const n = (cat.name_uz || cat.name || '').trim()
+        if (n) return n
+    }
+    return ''
+}
+
+/** Forma jadvali: mahsulot qatoridan kategoriya matni (tilga qarab) */
+function categoryLabelFromProduct(product, language) {
+    if (!product) return ''
+    const cat = product.categories
+    if (cat && typeof cat === 'object') {
+        if (language === 'ru' && cat.name) return String(cat.name).trim()
+        if (language === 'en' && (cat.name_en || cat.name)) return String(cat.name_en || cat.name).trim()
+        const n = (cat.name_uz || cat.name || '').trim()
+        if (n) return n
+    }
+    if (product.category != null && String(product.category).trim() !== '') {
+        return String(product.category).trim()
+    }
+    return ''
+}
+
+/**
+ * Guruhlar: avvalo kategoriya (nom bo‘yicha), ichida model kodi (natural), so‘ng forma tartibi (line_index).
+ */
+function sortGroupedBucketsForPrint(grouped) {
+    if (!grouped?.length) return []
+    return [...grouped].sort((a, b) => {
+        const na = (categoryLabelFromGroupedLine(a.lines[0]) || '\uFFFF').toLowerCase()
+        const nb = (categoryLabelFromGroupedLine(b.lines[0]) || '\uFFFF').toLowerCase()
+        const c = na.localeCompare(nb, 'uz')
+        if (c !== 0) return c
+        const cm = naturalCompareModelCode(a.size, b.size)
+        if (cm !== 0) return cm
+        return minLineIndexInBucket(a.lines) - minLineIndexInBucket(b.lines)
+    })
+}
+
 /** Rang va son — ikki ustunda vertikal ro‘yxat (har bir qatorda rang | soni) */
 function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
     const label = typeof labelColorFn === 'function' ? labelColorFn : (c) => c
@@ -395,19 +558,21 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
     const orderNumHtml = item.order_number
         ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>`
         : ''
-    const grouped = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || []))
-    const rowHtml = grouped
-        .map((g, index) => {
-            const sku = escapeHtml(g.size != null && g.size !== '' ? String(g.size) : '—')
-            const imgHtml = g.image_url
-                ? `<img class="prod-thumb" src="${escapeHtml(g.image_url)}" alt="">`
-                : ''
-            const { colorsHtml, qtysHtml } = buildColorQtyStacksHtml(g.colorPairs, labelColorFn)
-            const priceCells = showPrices
-                ? `<td class="mono">$${escapeHtml(formatUsd(g.unitPrice))}</td><td class="mono">$${escapeHtml(formatUsd(g.lineMonetary))}</td>`
-                : ''
-            return `<tr>
-                <td>${index + 1}</td>
+    const groupedRaw = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || []))
+    const grouped = sortGroupedBucketsForPrint(groupedRaw)
+    const colSpanAll = showPrices ? 8 : 6
+
+    function oneDataRowHtml(g, displayIndex) {
+        const sku = escapeHtml(g.size != null && g.size !== '' ? String(g.size) : '—')
+        const imgHtml = g.image_url
+            ? `<img class="prod-thumb" src="${escapeHtml(g.image_url)}" alt="">`
+            : ''
+        const { colorsHtml, qtysHtml } = buildColorQtyStacksHtml(g.colorPairs, labelColorFn)
+        const priceCells = showPrices
+            ? `<td class="mono">$${escapeHtml(formatUsd(g.unitPrice))}</td><td class="mono">$${escapeHtml(formatUsd(g.lineMonetary))}</td>`
+            : ''
+        return `<tr>
+                <td>${displayIndex}</td>
                 <td class="prod-img-cell">${imgHtml ? `<div class="prod-thumb-wrap">${imgHtml}</div>` : '<span class="prod-no-img">—</span>'}</td>
                 <td class="mono">${sku}</td>
                 <td class="colors-stack">${colorsHtml}</td>
@@ -415,8 +580,47 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
                 <td class="mono">${g.totalPieces}</td>
                 ${priceCells}
             </tr>`
-        })
-        .join('')
+    }
+
+    const hasCategoryMeta = grouped.some((g) => Boolean(categoryLabelFromGroupedLine(g.lines[0])))
+    let rowHtml = ''
+    let rowNum = 1
+    if (!hasCategoryMeta) {
+        rowHtml = grouped.map((g) => oneDataRowHtml(g, rowNum++)).join('')
+    } else {
+        let currentKey = null
+        let secPieces = 0
+        let secMoney = 0
+        const catKey = (g) => {
+            const lab = categoryLabelFromGroupedLine(g.lines[0])
+            return lab || '__none__'
+        }
+        for (const g of grouped) {
+            const key = catKey(g)
+            if (currentKey !== null && key !== currentKey) {
+                const priceCells = showPrices
+                    ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>`
+                    : ''
+                rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}</tr>`
+                secPieces = 0
+                secMoney = 0
+            }
+            if (key !== currentKey) {
+                const lab = categoryLabelFromGroupedLine(g.lines[0]) || '—'
+                rowHtml += `<tr class="cat-header-row"><td colspan="${colSpanAll}" style="background:#e2efda;font-weight:700;padding:8px 6px;font-size:0.9rem">Kategoriya: ${escapeHtml(lab)}</td></tr>`
+                currentKey = key
+            }
+            rowHtml += oneDataRowHtml(g, rowNum++)
+            secPieces += Number(g.totalPieces) || 0
+            secMoney += Number(g.lineMonetary) || 0
+        }
+        if (currentKey !== null) {
+            const priceCells = showPrices
+                ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>`
+                : ''
+            rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}</tr>`
+        }
+    }
     const totalPar = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.totalPieces) || 0), 0)
     /** Qatorlar bo‘yicha hisob-kitob (bazadagi subtotal/price*qty); `orders.total` bilan farq bo‘lishi mumkin */
     const totalMoney = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.lineMonetary) || 0), 0)
@@ -498,10 +702,12 @@ function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, 
       table.order-totals-table .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}
       table.order-totals-table .totals-td{text-align:right;vertical-align:middle}
       table.order-totals-table .totals-empty{color:#999;font-weight:400}
+      tr.cat-header-row td{background:#e2efda!important;border:1px solid #92c47c!important}
+      tr.cat-subtotal-row td{background:#eef2ff!important;border:1px solid #9ca3af!important}
       .mono{font-variant-numeric:tabular-nums}
-      .colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.68rem;line-height:1.25}
-      .qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.68rem;line-height:1.25}
-      .colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.25;min-height:1.2em;font-size:0.68rem}
+      .colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.88rem;line-height:1.35}
+      .qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.88rem;line-height:1.35}
+      .colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.35;min-height:1.25em;font-size:0.85rem}
       .qty-stack .stack-line{font-weight:600}
       /* Rasm: zebra fonini kesmasin — oq maydon; biroz kattaroq */
       /* Rasm ustuni qat’iy kenglik — jadval “yoyilib” ketmasin */
@@ -582,6 +788,8 @@ function createEmptyOrderLine() {
         color: '',
         image_url: '',
         resolveError: '',
+        /** `true` — qator kategoriya bo‘yicha tartiblangan blokda; `false` — «Tayyor»gacha pastda qoladi */
+        readyForSort: false,
         /** Bir xil model kodi, turli rang/narx — turli `products` qatorlari */
         variants: [],
         /** Bir qatorda `colors` massivi — rang tanlash */
@@ -589,6 +797,23 @@ function createEmptyOrderLine() {
         /** Ko‘p rang: har bir rang uchun miqdor (0 = shu rangdan yo‘q) */
         colorQtyByColor: {}
     }
+}
+
+/** Kategoriya bo‘yicha surilish: `readyForSort === false` aniq bo‘lsa — hali tayyor emas; `undefined` — bazadan/eski qoralama */
+function isLineCommittedToSortOrder(line) {
+    if (!line?.product_id) return false
+    if (line.readyForSort === true) return true
+    if (line.readyForSort === false) return false
+    return true
+}
+
+/** Boshqa qatorda shu mahsulot allaqachon tanlanganmi */
+function orderLinesHasDuplicateProduct(orderLines, productId, excludeLineId) {
+    if (productId == null || productId === '') return false
+    const pid = String(productId)
+    return (orderLines || []).some(
+        (l) => l.id !== excludeLineId && l.product_id != null && String(l.product_id) === pid
+    )
 }
 
 /** Bir xil `id` bilan kelgan qatorlarni bitta qilib oladi (API/join dublikatlari) */
@@ -613,24 +838,95 @@ function normalizeOrderItemsForList(orderItems) {
     return dedupeOrderItemsById(orderItems || [])
 }
 
+/** Bitta forma qatori bo‘yicha summa */
+function computeOrderLineSubtotal(line) {
+    if (!line?.product_id) return 0
+    const pr = Number(line.product_price) || 0
+    if (line.colorChoices?.length > 1) {
+        let rowSum = 0
+        for (const c of line.colorChoices) {
+            const q = parseInt(String(line.colorQtyByColor?.[c] ?? '0'), 10) || 0
+            rowSum += pr * q
+        }
+        return rowSum
+    }
+    const q = parseInt(String(line.quantity ?? '0'), 10) || 0
+    return pr * q
+}
+
 /** Forma qatorlari yig‘indisi */
 function computeOrderLinesSubtotal(orderLines) {
     if (!orderLines?.length) return 0
-    return orderLines.reduce((s, line) => {
-        const acc = Number(s) || 0
-        if (!line.product_id) return acc
-        const pr = Number(line.product_price) || 0
-        if (line.colorChoices?.length > 1) {
-            let rowSum = 0
-            for (const c of line.colorChoices) {
-                const q = parseInt(String(line.colorQtyByColor?.[c] ?? '0'), 10) || 0
-                rowSum += pr * q
-            }
-            return acc + rowSum
+    return orderLines.reduce((s, line) => s + computeOrderLineSubtotal(line), 0)
+}
+
+/**
+ * Yangi buyurtma jadvali: «Tayyor» bergan qatorlar kategoriya bo‘yicha; qolganlari (kod bo‘sh yoki tayyor emas) pastda.
+ */
+function buildOrderFormTableRows(orderLines, products, language, uncategorizedLabel) {
+    const lines = orderLines || []
+    const draft = []
+    const resolved = []
+    lines.forEach((line, idx) => {
+        if (isLineCommittedToSortOrder(line)) {
+            resolved.push({ line, origIdx: idx })
+        } else {
+            draft.push({ line, origIdx: idx })
         }
-        const q = parseInt(String(line.quantity ?? '0'), 10) || 0
-        return acc + pr * q
-    }, 0)
+    })
+    draft.sort((a, b) => a.origIdx - b.origIdx)
+    const resolvedEnriched = resolved.map(({ line, origIdx }) => {
+        const prod = products.find((p) => String(p.id) === String(line.product_id))
+        const catLab = categoryLabelFromProduct(prod, language)
+        const displayCat = catLab || uncategorizedLabel || '—'
+        const catKey = (catLab || '__none__').toLowerCase()
+        const code =
+            (line.codeInput || '').trim() ||
+            (prod?.size != null && String(prod.size).trim() !== '' ? String(prod.size) : '')
+        return { line, origIdx, prod, catLab, displayCat, catKey, code }
+    })
+    resolvedEnriched.sort((a, b) => {
+        const c = a.catKey.localeCompare(b.catKey, 'uz')
+        if (c !== 0) return c
+        return naturalCompareModelCode(a.code, b.code)
+    })
+    const out = []
+    let currentCat = null
+    let catSum = 0
+    for (const r of resolvedEnriched) {
+        if (currentCat !== r.catKey) {
+            if (currentCat !== null) {
+                out.push({
+                    type: 'catSubtotal',
+                    categoryKey: currentCat,
+                    amount: catSum,
+                    key: `sub_${currentCat}_${out.length}`
+                })
+                catSum = 0
+            }
+            out.push({
+                type: 'catHeader',
+                label: r.displayCat,
+                categoryKey: r.catKey,
+                key: `hdr_${r.catKey}_${out.length}`
+            })
+            currentCat = r.catKey
+        }
+        catSum += computeOrderLineSubtotal(r.line)
+        out.push({ type: 'line', line: r.line, key: `line_${r.line.id}` })
+    }
+    if (currentCat !== null) {
+        out.push({
+            type: 'catSubtotal',
+            categoryKey: currentCat,
+            amount: catSum,
+            key: `sub_${currentCat}_final`
+        })
+    }
+    draft.forEach(({ line }) => {
+        out.push({ type: 'line', line, key: `line_${line.id}` })
+    })
+    return out
 }
 
 /**
@@ -706,7 +1002,8 @@ function orderItemToFormLine(oi, productsList) {
                     colorQtyByColor: {}
                 },
                 colorOpts
-            )
+            ),
+            readyForSort: true
         }
         return base
     }
@@ -724,7 +1021,8 @@ function orderItemToFormLine(oi, productsList) {
         resolveError: '',
         variants: [],
         colorChoices: [],
-        colorQtyByColor: {}
+        colorQtyByColor: {},
+        readyForSort: true
     }
 }
 
@@ -800,7 +1098,8 @@ function orderItemsToOrderLines(orderItems, productsList) {
             resolveError: '',
             variants: [],
             colorChoices: colorOpts,
-            colorQtyByColor
+            colorQtyByColor,
+            readyForSort: true
         })
     }
     return out.length ? out : [createEmptyOrderLine()]
@@ -809,6 +1108,7 @@ function orderItemsToOrderLines(orderItems, productsList) {
 export default function Buyurtmalar() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
+    const { showAlert, showConfirm, showToast } = useDialog()
     const [orders, setOrders] = useState([])
     const [customers, setCustomers] = useState([])
     const [products, setProducts] = useState([])
@@ -944,29 +1244,25 @@ export default function Buyurtmalar() {
         try {
             setLoading(true)
 
-            // Load Orders with Item details (including product_name)
-            const { data: ordersData, error: ordersError } = await supabase
-                .from('orders')
-                .select(`
-                    *,
-                    customers (id, name, phone),
-                    order_items (
-                        id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
-                        products (id, name)
-                    )
-                `)
-                .order('created_at', { ascending: false })
-
+            const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback()
             if (ordersError) throw ordersError
 
             // Load Customers for dropdown
             const { data: customersData } = await supabase.from('customers').select('id, name, phone').order('name')
 
-            // Barcha mahsulotlar (rang variantlari — nofaol qatorlar ham) buyurtma uchun
-            const { data: productsData } = await supabase
+            // Barcha mahsulotlar — kategoriya nomi forma jadvalida tartib va jami uchun
+            let productsData = null
+            const prWithCat = await supabase
                 .from('products')
-                .select('*')
+                .select('*, categories(id, name, name_uz)')
                 .order('name')
+            if (prWithCat.error) {
+                console.warn('products+categories:', prWithCat.error)
+                const prFb = await supabase.from('products').select('*').order('name')
+                productsData = prFb.data
+            } else {
+                productsData = prWithCat.data
+            }
 
             const { data: colorLibData, error: colorLibError } = await supabase
                 .from('product_colors')
@@ -995,8 +1291,10 @@ export default function Buyurtmalar() {
         })
     }
 
-    /** Model kodiga mos barcha mahsulotlar (bir kod — bir nechta rang)
-     *  `size` + barcha nom maydonlari (`name`, `name_uz`, …) bo‘yicha qidiradi.
+    /**
+     * Kod bo‘yicha qidiruv (soddalashtirilgan):
+     * 1) To‘liq mos: «Kod» (size) → keyin nom/tavsif/kategoriya (butun qator bilan bir xil).
+     * 2) Qisman: faqat «Kod» maydoni ichida (min. 3 belgi); bitta topilganda oladi, bir nechta bo‘lsa — aniqroq yozing.
      */
     function getProductsByModelCode(code) {
         const raw = (code || '').trim()
@@ -1011,17 +1309,27 @@ export default function Buyurtmalar() {
         )
         if (exactByAnyName.length >= 1) return { list: dedupeProducts(exactByAnyName), reason: null }
 
-        const partialSize = products.filter(
-            (p) => normalizeModelKey(p.size).includes(low) && low.length >= 2
+        const exactByDescription = products.filter((p) =>
+            productDescriptionFields(p).some((f) => normalizeModelKey(f) === low)
         )
+        if (exactByDescription.length >= 1) return { list: dedupeProducts(exactByDescription), reason: null }
+
+        const exactByCategoryText = products.filter(
+            (p) => p.category != null && String(p.category).trim() !== '' && normalizeModelKey(p.category) === low
+        )
+        if (exactByCategoryText.length >= 1) return { list: dedupeProducts(exactByCategoryText), reason: null }
+
+        const minPartial = 3
+        if (low.length < minPartial) {
+            return { list: [], reason: 'notfound' }
+        }
+        const partialSize = products.filter((p) => {
+            const sz = normalizeModelKey(p.size)
+            return sz && sz.includes(low)
+        })
         if (partialSize.length === 1) return { list: partialSize, reason: null }
         if (partialSize.length > 1) return { list: [], reason: 'ambiguous' }
 
-        const byNamePartial = products.filter((p) =>
-            productNameFields(p).some((f) => normalizeModelKey(f).includes(low) && low.length >= 2)
-        )
-        if (byNamePartial.length === 1) return { list: byNamePartial, reason: null }
-        if (byNamePartial.length > 1) return { list: [], reason: 'ambiguous' }
         return { list: [], reason: 'notfound' }
     }
 
@@ -1053,7 +1361,8 @@ export default function Buyurtmalar() {
                     product_price: 0,
                     color: '',
                     image_url: '',
-                    resolveError: msg
+                    resolveError: msg,
+                    readyForSort: false
                 }
             }
             if (list.length === 1) {
@@ -1070,7 +1379,8 @@ export default function Buyurtmalar() {
                         product_price: Number(product.sale_price) || 0,
                         color: '',
                         image_url: product.image_url || '',
-                        resolveError: ''
+                        resolveError: '',
+                        readyForSort: false
                     }
                 }
                 return {
@@ -1083,7 +1393,8 @@ export default function Buyurtmalar() {
                     product_price: Number(product.sale_price) || 0,
                     color: colorOpts[0] || product.color || '',
                     image_url: product.image_url || '',
-                    resolveError: ''
+                    resolveError: '',
+                    readyForSort: false
                 }
             }
             return {
@@ -1096,12 +1407,21 @@ export default function Buyurtmalar() {
                 product_price: 0,
                 color: '',
                 image_url: '',
-                resolveError: t('orders.pickColorVariant')
+                resolveError: t('orders.pickColorVariant'),
+                readyForSort: false
             }
         })
     }
 
-    function applyVariantToLine(lineId, productIdStr) {
+    async function applyVariantToLine(lineId, productIdStr) {
+        const snapshot = orderLinesRef.current
+        if (
+            productIdStr &&
+            orderLinesHasDuplicateProduct(snapshot, productIdStr, lineId) &&
+            !(await showConfirm(t('orders.duplicateProductConfirm'), { variant: 'warning' }))
+        ) {
+            return
+        }
         setOrderLines((prev) =>
             prev.map((line) => {
                 if (line.id !== lineId) return line
@@ -1115,7 +1435,8 @@ export default function Buyurtmalar() {
                         image_url: '',
                         colorChoices: [],
                         colorQtyByColor: {},
-                        resolveError: line.variants?.length ? t('orders.pickColorVariant') : ''
+                        resolveError: line.variants?.length ? t('orders.pickColorVariant') : '',
+                        readyForSort: false
                     }
                 }
                 const pool = line.variants?.length ? line.variants : products
@@ -1130,78 +1451,98 @@ export default function Buyurtmalar() {
                     image_url: p.image_url || '',
                     colorChoices: [],
                     colorQtyByColor: {},
-                    resolveError: ''
+                    resolveError: '',
+                    readyForSort: false
                 }
             })
         )
     }
 
-    function resolveOrderLine(lineId) {
-        setOrderLines((prev) =>
-            prev.map((line) => {
-                if (line.id !== lineId) return line
-                const { list, reason } = getProductsByModelCode(line.codeInput)
-                if (!list.length) {
-                    let msg = t('orders.codeNotFound')
-                    if (reason === 'ambiguous') msg = t('orders.codeAmbiguous')
-                    if (reason === 'empty') msg = t('orders.codeEmpty')
-                return {
+    async function resolveOrderLine(lineId) {
+        const line = orderLinesRef.current.find((l) => l.id === lineId)
+        if (!line) return
+
+        const { list, reason } = getProductsByModelCode(line.codeInput)
+        const prevSnapshot = orderLinesRef.current
+
+        if (!list.length) {
+            let msg = t('orders.codeNotFound')
+            if (reason === 'ambiguous') msg = t('orders.codeAmbiguous')
+            if (reason === 'empty') msg = t('orders.codeEmpty')
+            const nextLine = {
+                ...line,
+                variants: [],
+                colorChoices: [],
+                colorQtyByColor: {},
+                product_id: null,
+                product_name: '',
+                product_price: 0,
+                color: '',
+                image_url: '',
+                resolveError: msg,
+                readyForSort: false
+            }
+            setOrderLines((p) => p.map((l) => (l.id === lineId ? nextLine : l)))
+            return
+        }
+
+        if (list.length === 1) {
+            const product = list[0]
+            if (
+                orderLinesHasDuplicateProduct(prevSnapshot, product.id, lineId) &&
+                !(await showConfirm(t('orders.duplicateProductConfirm'), { variant: 'warning' }))
+            ) {
+                return
+            }
+            const colorOpts = normalizeColorsArray(product)
+            let nextLine
+            if (colorOpts.length > 1) {
+                nextLine = {
+                    ...line,
+                    variants: [],
+                    colorChoices: colorOpts,
+                    colorQtyByColor: seedColorQtyForMatrix(line, colorOpts),
+                    product_id: product.id,
+                    product_name: displayProductName(product),
+                    product_price: Number(product.sale_price) || 0,
+                    color: '',
+                    image_url: product.image_url || '',
+                    resolveError: '',
+                    readyForSort: false
+                }
+            } else {
+                nextLine = {
                     ...line,
                     variants: [],
                     colorChoices: [],
                     colorQtyByColor: {},
-                    product_id: null,
-                    product_name: '',
-                    product_price: 0,
-                    color: '',
-                    image_url: '',
-                    resolveError: msg
+                    product_id: product.id,
+                    product_name: displayProductName(product),
+                    product_price: Number(product.sale_price) || 0,
+                    color: colorOpts[0] || product.color || '',
+                    image_url: product.image_url || '',
+                    resolveError: '',
+                    readyForSort: false
                 }
-                }
-                if (list.length === 1) {
-                    const product = list[0]
-                    const colorOpts = normalizeColorsArray(product)
-                    if (colorOpts.length > 1) {
-                        return {
-                            ...line,
-                            variants: [],
-                            colorChoices: colorOpts,
-                            colorQtyByColor: seedColorQtyForMatrix(line, colorOpts),
-                            product_id: product.id,
-                            product_name: displayProductName(product),
-                            product_price: Number(product.sale_price) || 0,
-                            color: '',
-                            image_url: product.image_url || '',
-                            resolveError: ''
-                        }
-                    }
-                    return {
-                        ...line,
-                        variants: [],
-                        colorChoices: [],
-                        colorQtyByColor: {},
-                        product_id: product.id,
-                        product_name: displayProductName(product),
-                        product_price: Number(product.sale_price) || 0,
-                        color: colorOpts[0] || product.color || '',
-                        image_url: product.image_url || '',
-                        resolveError: ''
-                    }
-                }
-                return {
-                    ...line,
-                    variants: list,
-                    colorChoices: [],
-                    colorQtyByColor: {},
-                    product_id: null,
-                    product_name: displayProductName(list[0]) || '',
-                    product_price: 0,
-                    color: '',
-                    image_url: '',
-                    resolveError: t('orders.pickColorVariant')
-                }
-            })
-        )
+            }
+            setOrderLines((p) => p.map((l) => (l.id === lineId ? nextLine : l)))
+            return
+        }
+
+        const nextLine = {
+            ...line,
+            variants: list,
+            colorChoices: [],
+            colorQtyByColor: {},
+            product_id: null,
+            product_name: displayProductName(list[0]) || '',
+            product_price: 0,
+            color: '',
+            image_url: '',
+            resolveError: t('orders.pickColorVariant'),
+            readyForSort: false
+        }
+        setOrderLines((p) => p.map((l) => (l.id === lineId ? nextLine : l)))
     }
 
     function updateOrderLine(lineId, patch) {
@@ -1232,11 +1573,17 @@ export default function Buyurtmalar() {
         })
     }
 
+    function commitLineToSortOrder(lineId) {
+        setOrderLines((prev) =>
+            prev.map((l) => (l.id === lineId && l.product_id ? { ...l, readyForSort: true } : l))
+        )
+    }
+
     async function handleSubmit(e) {
         e.preventDefault()
         const nameTrim = (form.customer_name || '').trim()
         if (!nameTrim) {
-            alert(t('orders.customerNameRequired'))
+            await showAlert(t('orders.customerNameRequired'), { variant: 'warning' })
             return
         }
         if (savingOrderRef.current) return
@@ -1249,14 +1596,16 @@ export default function Buyurtmalar() {
                 nameTrim || customer?.name || ''
             const resolvedPhone = (form.customer_phone || '').trim() || customer?.phone || ''
 
+            const linesForSave = orderLines.map((l) => (l.product_id ? { ...l, readyForSort: true } : l))
+
             const unresolvedFetch = orderLines.filter((l) => (l.codeInput || '').trim() && !l.product_id)
                 if (unresolvedFetch.length) {
-                    alert(t('orders.orderLinesUnresolved'))
+                    await showAlert(t('orders.orderLinesUnresolved'), { variant: 'warning' })
                     return
                 }
-                const expandedRows = mergeExpandedRowsForSubmit(orderLines.flatMap(expandOrderLineForSubmit))
+                const expandedRows = mergeExpandedRowsForSubmit(linesForSave.flatMap(expandOrderLineForSubmit))
                 if (expandedRows.length === 0) {
-                    alert(t('orders.orderLinesEmpty'))
+                    await showAlert(t('orders.orderLinesEmpty'), { variant: 'warning' })
                     return
                 }
                 const rawTotal = expandedRows.reduce((s, row) => {
@@ -1285,7 +1634,10 @@ export default function Buyurtmalar() {
                     }
                 }
                 if (stockIssues.length) {
-                    const ok = window.confirm(`${t('orders.stockWarningTitle')}\n\n${stockIssues.join('\n')}\n\n${t('orders.stockWarningConfirm')}`)
+                    const ok = await showConfirm(
+                        `${stockIssues.join('\n')}\n\n${t('orders.stockWarningConfirm')}`,
+                        { title: t('orders.stockWarningTitle'), variant: 'warning' }
+                    )
                     if (!ok) return
                 }
 
@@ -1312,7 +1664,7 @@ export default function Buyurtmalar() {
                 }
 
                 const makeItemPayloads = (orderId) =>
-                    expandedRows.map((line) => {
+                    expandedRows.map((line, idx) => {
                         const prod = products.find((p) => String(p.id) === String(line.product_id))
                         const qtyRaw = parseOrderItemQty(line.quantity)
                         const qty = qtyRaw > 0 ? qtyRaw : 1
@@ -1335,7 +1687,8 @@ export default function Buyurtmalar() {
                             subtotal,
                             size: prod?.size != null ? String(prod.size) : null,
                             color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
-                            image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null
+                            image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null,
+                            line_index: idx
                         }
                     })
 
@@ -1397,7 +1750,7 @@ export default function Buyurtmalar() {
                         customer_name: form.customer_name,
                         customer_phone: form.customer_phone,
                         customer_id: form.customer_id,
-                        lines: orderLines
+                        lines: linesForSave
                             .filter((l) => l.product_id)
                             .map((l) => ({
                                 codeInput: l.codeInput,
@@ -1456,7 +1809,10 @@ export default function Buyurtmalar() {
                 (typeof error === 'string' ? error : JSON.stringify(error))
             const hint = error?.hint ? `\n${error.hint}` : ''
             const details = error?.details ? `\n${error.details}` : ''
-            alert(`${t('common.saveError')}\n\n${msg}${details}${hint}`)
+            await showAlert(`${msg}${details}${hint}`, {
+                title: t('common.saveError'),
+                variant: 'error',
+            })
         } finally {
             savingOrderRef.current = false
             setIsSavingOrder(false)
@@ -1464,7 +1820,7 @@ export default function Buyurtmalar() {
     }
 
     async function handleDelete(id) {
-        if (!confirm(t('common.deleteConfirm'))) return
+        if (!(await showConfirm(t('common.deleteConfirm'), { variant: 'warning' }))) return
 
         try {
             const { error } = await supabase
@@ -1476,7 +1832,7 @@ export default function Buyurtmalar() {
             loadData()
         } catch (error) {
             console.error('Error deleting order:', error)
-            alert(t('common.deleteError'))
+            await showAlert(t('common.deleteError'), { variant: 'error' })
         }
     }
 
@@ -1485,18 +1841,11 @@ export default function Buyurtmalar() {
         const seq = editLoadSeqRef.current
         const orderId = item.id
 
-        const { data: rows, error } = await supabase
-            .from('order_items')
-            .select(
-                `id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
-                 products (id, name)`
-            )
-            .eq('order_id', orderId)
-            .order('created_at', { ascending: false })
+        const { data: rows, error } = await fetchOrderItemsForOrderId(orderId)
 
         if (error) {
             console.error('handleEdit order_items:', error)
-            alert(t('common.saveError'))
+            await showAlert(t('common.saveError'), { variant: 'error' })
             return
         }
         if (seq !== editLoadSeqRef.current) return
@@ -1587,11 +1936,11 @@ export default function Buyurtmalar() {
         setDraftBanner(false)
     }
 
-    function repeatLastOrder() {
+    async function repeatLastOrder() {
         try {
             const raw = localStorage.getItem(LS_LAST_ORDER)
             if (!raw) {
-                alert(t('orders.repeatNone'))
+                await showAlert(t('orders.repeatNone'), { variant: 'info' })
                 return
             }
             const d = JSON.parse(raw)
@@ -1624,7 +1973,8 @@ export default function Buyurtmalar() {
                         resolveError: '',
                         variants: [],
                         colorChoices,
-                        colorQtyByColor
+                        colorQtyByColor,
+                        readyForSort: ln.product_id ? true : false
                     }
                 })
                 setOrderLines(lines)
@@ -1632,7 +1982,7 @@ export default function Buyurtmalar() {
             setIsAdding(true)
         } catch (e) {
             console.error(e)
-            alert(t('orders.repeatError'))
+            await showAlert(t('orders.repeatError'), { variant: 'error' })
         }
     }
 
@@ -1640,13 +1990,7 @@ export default function Buyurtmalar() {
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
         let orderForPrint = item
         try {
-            const { data: rows, error: oiErr } = await supabase
-                .from('order_items')
-                .select(
-                    `id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
-                     products (id, name)`
-                )
-                .eq('order_id', item.id)
+            const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(item.id)
             if (oiErr) throw oiErr
             const { data: orderRow, error: ordErr } = await supabase
                 .from('orders')
@@ -1671,26 +2015,22 @@ export default function Buyurtmalar() {
             labelColorFn
         })
         if (!openPrintTab(html)) {
-            alert(t('orders.printPopupBlocked') || 'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.')
+            showToast(t('orders.printPopupBlocked') || 'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.', {
+                type: 'info',
+            })
         }
     }
 
     async function handlePrintOrderList(list, showPrices) {
         if (!list?.length) {
-            alert(t('orders.listPrintEmpty'))
+            await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
             return
         }
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
         const ids = list.map((o) => o.id).filter(Boolean)
         let ordersForPrint = list
         try {
-            const { data: allRows, error } = await supabase
-                .from('order_items')
-                .select(
-                    `order_id, id, product_id, quantity, price, subtotal, product_name, color, size, image_url, created_at,
-                     products (id, name)`
-                )
-                .in('order_id', ids)
+            const { data: allRows, error } = await fetchOrderItemsForOrderIds(ids)
             if (error) throw error
             const byOrder = new Map()
             for (const oi of allRows || []) {
@@ -1717,11 +2057,21 @@ export default function Buyurtmalar() {
             labelColorFn
         })
         if (!openPrintTab(html)) {
-            alert(t('orders.printPopupBlocked') || 'Popup bloklangan.')
+            showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })
         }
     }
 
     const orderLinesSubtotal = useMemo(() => computeOrderLinesSubtotal(orderLines), [orderLines])
+    const orderFormTableRows = useMemo(
+        () => buildOrderFormTableRows(orderLines, products, language, t('orders.categoryUncategorized')),
+        [orderLines, products, language, t]
+    )
+    const firstCodeLineId = useMemo(
+        () =>
+            orderFormTableRows.find((r) => r.type === 'line' && !r.line.product_id)?.line?.id ??
+            orderFormTableRows.find((r) => r.type === 'line')?.line?.id,
+        [orderFormTableRows]
+    )
 
     const filteredOrders = orders.filter((b) => {
         const customerName = b.customer_name || b.customers?.name || t('common.unknown') || 'Noma\'lum'
@@ -2049,9 +2399,9 @@ export default function Buyurtmalar() {
                                         </div>
                                         <div className="border border-gray-200 rounded-xl overflow-hidden">
                                             <div className="overflow-x-auto">
-                                                <table className="w-full text-sm min-w-[720px]">
+                                                <table className="w-full text-base min-w-[720px]">
                                                     <thead>
-                                                        <tr className="bg-gray-50 text-left text-xs uppercase text-gray-500 font-bold">
+                                                        <tr className="bg-gray-50 text-left text-sm uppercase text-gray-500 font-bold">
                                                             <th className="px-3 py-2 w-36">{t('orders.modelCode')}</th>
                                                             <th className="px-3 py-2 w-28" />
                                                             <th className="px-3 py-2">{t('orders.lineProduct')}</th>
@@ -2063,7 +2413,36 @@ export default function Buyurtmalar() {
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
-                                                        {orderLines.map((line, lineIdx) => {
+                                                        {orderFormTableRows.map((row) => {
+                                                            if (row.type === 'catHeader') {
+                                                                return (
+                                                                    <tr key={row.key} className="bg-emerald-50/90">
+                                                                        <td
+                                                                            colSpan={8}
+                                                                            className="px-3 py-2 text-sm font-bold text-emerald-900 border-t border-emerald-100"
+                                                                        >
+                                                                            {t('products.category')}: {row.label}
+                                                                        </td>
+                                                                    </tr>
+                                                                )
+                                                            }
+                                                            if (row.type === 'catSubtotal') {
+                                                                return (
+                                                                    <tr key={row.key} className="bg-indigo-50/80">
+                                                                        <td
+                                                                            colSpan={6}
+                                                                            className="px-3 py-2 text-right text-sm font-bold text-indigo-900"
+                                                                        >
+                                                                            {t('orders.categorySubtotal')}
+                                                                        </td>
+                                                                        <td className="px-3 py-2 text-right font-mono text-sm font-bold text-indigo-950">
+                                                                            ${formatUsd(row.amount)}
+                                                                        </td>
+                                                                        <td className="px-3 py-2 bg-indigo-50/80" />
+                                                                    </tr>
+                                                                )
+                                                            }
+                                                            const line = row.line
                                                             const isMatrix = line.colorChoices?.length > 1
                                                             const qtySum = isMatrix
                                                                 ? line.colorChoices.reduce(
@@ -2072,7 +2451,7 @@ export default function Buyurtmalar() {
                                                                       0
                                                                   )
                                                                 : parseInt(line.quantity, 10) || 0
-                                                            const sub = (Number(line.product_price) || 0) * qtySum
+                                                            const sub = computeOrderLineSubtotal(line)
                                                             const prodRow =
                                                                 line.product_id &&
                                                                 products.find((p) => String(p.id) === String(line.product_id))
@@ -2089,9 +2468,9 @@ export default function Buyurtmalar() {
                                                                 <tr key={line.id} className="bg-white">
                                                                     <td className="px-3 py-2 align-top">
                                                                         <input
-                                                                            ref={lineIdx === 0 ? firstModelCodeRef : undefined}
+                                                                            ref={line.id === firstCodeLineId ? firstModelCodeRef : undefined}
                                                                             type="text"
-                                                                            className="w-full px-2 py-1.5 border rounded-lg font-mono text-xs"
+                                                                            className="w-full px-2 py-1.5 border rounded-lg font-mono text-sm"
                                                                             placeholder={t('orders.modelCodePlaceholder')}
                                                                             value={line.codeInput}
                                                                             onChange={(e) =>
@@ -2105,7 +2484,8 @@ export default function Buyurtmalar() {
                                                                                     product_name: '',
                                                                                     product_price: 0,
                                                                                     color: '',
-                                                                                    image_url: ''
+                                                                                    image_url: '',
+                                                                                    readyForSort: false
                                                                                 })
                                                                             }
                                                                             onKeyDown={(e) => {
@@ -2135,10 +2515,10 @@ export default function Buyurtmalar() {
                                                                             <span className="text-gray-400">—</span>
                                                                         )}
                                                                     </td>
-                                                                    <td className="px-3 py-2 align-top text-xs min-w-[200px]">
+                                                                    <td className="px-3 py-2 align-top text-sm min-w-[200px]">
                                                                         {line.variants?.length >= 2 ? (
                                                                             <select
-                                                                                className="w-full px-2 py-1.5 border rounded-lg text-xs bg-white"
+                                                                                className="w-full px-2 py-1.5 border rounded-lg text-sm bg-white"
                                                                                 value={line.product_id ? String(line.product_id) : ''}
                                                                                 onChange={(e) =>
                                                                                     applyVariantToLine(line.id, e.target.value)
@@ -2162,16 +2542,16 @@ export default function Buyurtmalar() {
                                                                             </select>
                                                                         ) : line.colorChoices?.length > 1 ? (
                                                                             <div className="space-y-1.5 rounded-lg border border-gray-200 bg-gray-50/80 p-2">
-                                                                                <p className="text-[10px] font-semibold text-gray-600">
+                                                                                <p className="text-xs font-semibold text-gray-600">
                                                                                     {t('orders.colorQtyMatrixTitle')}
                                                                                 </p>
-                                                                                <div className="space-y-1">
+                                                                                <div className="space-y-1.5">
                                                                                     {line.colorChoices.map((c) => (
                                                                                         <div
                                                                                             key={c}
                                                                                             className="flex items-center gap-2 justify-between"
                                                                                         >
-                                                                                            <span className="truncate max-w-[100px] font-medium text-gray-800">
+                                                                                            <span className="truncate max-w-[140px] font-medium text-gray-800 text-sm leading-snug">
                                                                                                 {labelColorCanonical(
                                                                                                     c,
                                                                                                     productColors,
@@ -2182,7 +2562,7 @@ export default function Buyurtmalar() {
                                                                                                 type="number"
                                                                                                 min="0"
                                                                                                 step="1"
-                                                                                                className="w-14 px-1.5 py-0.5 border rounded text-right text-xs bg-white"
+                                                                                                className="w-16 px-2 py-1 border rounded text-right text-sm font-semibold bg-white"
                                                                                                 value={line.colorQtyByColor?.[c] ?? '0'}
                                                                                                 onChange={(e) =>
                                                                                                     updateOrderLineColorQty(line.id, c, e.target.value)
@@ -2191,12 +2571,12 @@ export default function Buyurtmalar() {
                                                                                         </div>
                                                                                     ))}
                                                                                 </div>
-                                                                                <p className="text-[10px] text-gray-500 leading-tight">
+                                                                                <p className="text-xs text-gray-500 leading-snug">
                                                                                     {t('orders.colorQtyMatrixHint')}
                                                                                 </p>
                                                                             </div>
                                                                         ) : (
-                                                                            <span>
+                                                                            <span className="text-sm font-medium text-gray-900">
                                                                                 {line.color
                                                                                     ? labelColorCanonical(
                                                                                           line.color,
@@ -2207,7 +2587,7 @@ export default function Buyurtmalar() {
                                                                             </span>
                                                                         )}
                                                                     </td>
-                                                                    <td className="px-3 py-2 align-top text-xs">
+                                                                    <td className="px-3 py-2 align-top text-sm">
                                                                         {line.product_id ? (
                                                                             <div className="space-y-1">
                                                                                 <div className="flex items-center gap-0.5">
@@ -2216,7 +2596,7 @@ export default function Buyurtmalar() {
                                                                                         type="number"
                                                                                         min="0"
                                                                                         step="0.01"
-                                                                                        className="w-24 px-2 py-1 border rounded-lg font-mono text-xs"
+                                                                                        className="w-24 px-2 py-1 border rounded-lg font-mono text-sm"
                                                                                         value={
                                                                                             Number.isFinite(Number(line.product_price))
                                                                                                 ? line.product_price
@@ -2269,13 +2649,13 @@ export default function Buyurtmalar() {
                                                                             <span className="font-mono text-gray-400">—</span>
                                                                         )}
                                                                     </td>
-                                                                    <td className="px-3 py-2 align-top">
+                                                                    <td className="px-3 py-2 align-top text-sm">
                                                                         {line.product_id && isMatrix ? (
                                                                             <div className="pt-1">
-                                                                                <span className="text-xs text-gray-500 block">
+                                                                                <span className="text-xs text-gray-500 block font-medium">
                                                                                     {t('orders.qtyColumnTotal')}
                                                                                 </span>
-                                                                                <span className="font-mono text-sm font-semibold text-gray-900">
+                                                                                <span className="font-mono text-lg font-bold text-gray-900 tabular-nums">
                                                                                     {qtySum}
                                                                                 </span>
                                                                             </div>
@@ -2284,7 +2664,7 @@ export default function Buyurtmalar() {
                                                                                 type="number"
                                                                                 min="0"
                                                                                 step="1"
-                                                                                className="w-16 px-2 py-1 border rounded-lg"
+                                                                                className="w-20 px-2 py-1.5 border rounded-lg text-base font-semibold tabular-nums"
                                                                                 value={line.quantity}
                                                                                 onChange={(e) =>
                                                                                     updateOrderLine(line.id, { quantity: e.target.value })
@@ -2300,18 +2680,31 @@ export default function Buyurtmalar() {
                                                                             </p>
                                                                         ) : null}
                                                                     </td>
-                                                                    <td className="px-3 py-2 align-top font-mono text-xs font-bold">
-                                                                        {line.product_id ? `$${sub.toLocaleString()}` : '—'}
+                                                                    <td className="px-3 py-2 align-top font-mono text-sm font-bold">
+                                                                        {line.product_id ? `$${formatUsd(sub)}` : '—'}
                                                                     </td>
                                                                     <td className="px-3 py-2 align-top">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => removeOrderLine(line.id)}
-                                                                            className="text-red-500 p-1 hover:bg-red-50 rounded"
-                                                                            title={t('common.delete')}
-                                                                        >
-                                                                            <Trash2 size={16} />
-                                                                        </button>
+                                                                        <div className="flex flex-col gap-1.5 items-end">
+                                                                            {line.product_id && line.readyForSort === false ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => commitLineToSortOrder(line.id)}
+                                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 text-white hover:bg-emerald-700 whitespace-nowrap"
+                                                                                    title={t('orders.lineConfirmSortHint')}
+                                                                                >
+                                                                                    <CheckCircle size={14} />
+                                                                                    {t('orders.lineConfirmSort')}
+                                                                                </button>
+                                                                            ) : null}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => removeOrderLine(line.id)}
+                                                                                className="text-red-500 p-1 hover:bg-red-50 rounded"
+                                                                                title={t('common.delete')}
+                                                                            >
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        </div>
                                                                     </td>
                                                                 </tr>
                                                             )
@@ -2450,7 +2843,7 @@ export default function Buyurtmalar() {
                                                             {visible.map((oi, idx) => (
                                                                 <div
                                                                     key={oi.id || idx}
-                                                                    className="text-sm border-b border-gray-100 last:border-0 pb-1 mb-1 last:mb-0"
+                                                                    className="text-base border-b border-gray-100 last:border-0 pb-1 mb-1 last:mb-0"
                                                                 >
                                                                     <div className="flex items-start gap-2.5 min-w-0">
                                                                         {oi.image_url ? (
@@ -2469,8 +2862,10 @@ export default function Buyurtmalar() {
                                                                                 {oi.product_name || oi.products?.name}
                                                                             </div>
                                                                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-                                                                                <span className="font-bold text-blue-600">{oi.quantity}x</span>
-                                                                                <div className="text-[9px] text-gray-400 flex flex-wrap gap-x-2 gap-y-0">
+                                                                                <span className="font-bold text-blue-700 text-lg tabular-nums">
+                                                                                    {oi.quantity}x
+                                                                                </span>
+                                                                                <div className="text-xs text-gray-600 flex flex-wrap gap-x-2 gap-y-0.5 font-medium">
                                                                                     {oi.size && <span>Kod: {oi.size}</span>}
                                                                                     {oi.color && (
                                                                                         <span>

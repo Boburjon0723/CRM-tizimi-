@@ -4,12 +4,14 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { Lock, Mail } from 'lucide-react'
+import { useDialog } from '@/context/DialogContext'
 
 export default function LoginPage() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
     const router = useRouter()
+    const { showAlert } = useDialog()
 
     const handleLogin = async (e) => {
         e.preventDefault()
@@ -26,7 +28,10 @@ export default function LoginPage() {
             router.push('/')
             router.refresh()
         } catch (error) {
-            alert('Kirishda xatolik: ' + error.message)
+            await showAlert(String(error?.message || error), {
+                title: 'Kirishda xatolik',
+                variant: 'error',
+            })
         } finally {
             setLoading(false)
         }

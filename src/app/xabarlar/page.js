@@ -5,11 +5,13 @@ import { Mail, Trash2, Eye, MessageSquare, Calendar, Phone, User, Filter } from 
 import Header from '@/components/Header'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useDialog } from '@/context/DialogContext'
 import { supabase } from '@/lib/supabase'
 
 export default function Xabarlar() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
+    const { showAlert, showConfirm } = useDialog()
     const [messages, setMessages] = useState([])
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState('all') // all, new, read, replied
@@ -91,7 +93,7 @@ export default function Xabarlar() {
             loadMessages()
         } catch (error) {
             console.error('Error updating message:', error)
-            alert(t('messages.updateError'))
+            await showAlert(t('messages.updateError'), { variant: 'error' })
         }
     }
 
