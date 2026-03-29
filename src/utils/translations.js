@@ -262,7 +262,7 @@ export const translations = {
             duplicateProductConfirm:
                 'Bu mahsulot allaqachon buyurtmada bor. Yana shu mahsulotni qo‘shmoqchimisiz?',
             mergeHint:
-                'Birlashtirish: ro‘yxatdan kamida 2 ta buyurtmani belgilang, «Birlashtirish» ni bosing — bitta jadvalda umumiy miqdor va narx; yangi buyurtma formasi ochiladi (eski buyurtmalar o‘chmaydi, «Saqlash» bilan yangisini yarating).',
+                'Birlashtirish: kamida 2 ta buyurtmani belgilang — bitta mahsulot jadvali ochiladi; pastdagi summa va jami dona har bir buyurtmaning o‘zidagi saqlangan jami va qatorlar miqdoridan qo‘shilib hisoblanadi (yangi buyurtmani «Saqlash» bilan yarating).',
             mergeSelectColumn: 'Birlashtirish uchun',
             mergeSelectAll: 'Filtrdagi barcha buyurtmalarni belgilash',
             mergeButton: 'Birlashtirish',
@@ -274,7 +274,13 @@ export const translations = {
             mergeEmptyLines: 'Tanlangan buyurtmalarda mahsulot qatorlari topilmadi.',
             mergeNotePrefix: 'Birlashtirilgan buyurtmalar',
             mergeOpenedForm: 'Birlashtirilgan jadval yangi buyurtma formasiga yuklandi — tekshirib «Saqlash» bosing.',
+            mergeTotalsHint:
+                'Summa: tanlangan har bir buyurtmaning bazadagi umumiy summasi qo‘shildi (jadval qatorlaridan qayta hisoblanmadi).',
+            mergeQtyHint:
+                'Jami dona: har bir buyurtmadagi mahsulot qatorlari miqdorlari alohida yig‘ilib, keyin qo‘shildi.',
+            mergeTotalQtyLabel: 'Jami miqdor (dona)',
             activeList: 'Buyurtmalar',
+            statsVisibleCount: 'Ko‘rinayotgan buyurtmalar',
             trashBin: 'Karzinka',
             trashHint:
                 'Bu yerda o‘chirilgan buyurtmalar turadi. «Qaytarish» — asosiy ro‘yxatga; qizil axlat — bazadan butunlay o‘chiradi (qatorlar ham o‘chadi).',
@@ -796,7 +802,7 @@ export const translations = {
             duplicateProductConfirm:
                 'Этот товар уже есть в заказе. Добавить ещё раз такой же товар?',
             mergeHint:
-                'Объединение: отметьте минимум 2 заказа в списке и нажмите «Объединить» — одна таблица позиций с суммарным количеством и ценой; откроется форма нового заказа (старые заказы не удаляются, сохраните новый отдельно).',
+                'Объединение: отметьте минимум 2 заказа — откроется одна таблица позиций; сумма и общее количество штук складываются из сохранённых итогов каждого заказа и сумм количеств по строкам (новый заказ — «Сохранить»).',
             mergeSelectColumn: 'Для объединения',
             mergeSelectAll: 'Выбрать все заказы в фильтре',
             mergeButton: 'Объединить',
@@ -809,6 +815,7 @@ export const translations = {
             mergeNotePrefix: 'Объединённые заказы',
             mergeOpenedForm: 'Объединённая таблица загружена в форму нового заказа — проверьте и нажмите «Сохранить».',
             activeList: 'Заказы',
+            statsVisibleCount: 'Видимые заказы',
             trashBin: 'Корзина',
             trashHint:
                 'Здесь удалённые заказы. «Вернуть» — в основной список; красная корзина — полное удаление из базы (включая строки заказа).',
@@ -1330,7 +1337,7 @@ export const translations = {
             duplicateProductConfirm:
                 'This product is already on the order. Add the same product again?',
             mergeHint:
-                'Merge: select at least 2 orders in the list, then click Merge — one combined line-items table with summed quantities and weighted average unit price; a new order form opens (original orders stay until you delete them; use Save to create the new one).',
+                'Merge: select at least 2 orders — one combined line-items table opens; the amount and total pieces are each order’s saved total plus summed line quantities (create the new order with Save).',
             mergeSelectColumn: 'Merge',
             mergeSelectAll: 'Select all orders in current filter',
             mergeButton: 'Merge',
@@ -1342,7 +1349,13 @@ export const translations = {
             mergeEmptyLines: 'Selected orders have no line items.',
             mergeNotePrefix: 'Merged orders',
             mergeOpenedForm: 'Merged table loaded into the new order form — review and click Save.',
+            mergeTotalsHint:
+                'Amount: sum of each selected order’s stored order total (not recalculated from the table rows).',
+            mergeQtyHint:
+                'Total pieces: line quantities are summed per order, then those sums are added together.',
+            mergeTotalQtyLabel: 'Total quantity (pcs)',
             activeList: 'Orders',
+            statsVisibleCount: 'Visible orders',
             trashBin: 'Trash',
             trashHint:
                 'Deleted orders appear here. Restore moves them back to the main list; the red trash icon permanently deletes the order and its line items.',

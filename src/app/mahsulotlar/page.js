@@ -4,7 +4,26 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { withTimeout } from '@/lib/withTimeout'
 import Header from '@/components/Header'
-import { Plus, Edit, Trash2, Save, X, Search, Image, Eye, EyeOff, Globe, Upload, Loader2, Package, AlertTriangle, Layers, Palette, ListTree } from 'lucide-react'
+import {
+    Plus,
+    Edit,
+    Trash2,
+    Save,
+    X,
+    Search,
+    Image,
+    Eye,
+    EyeOff,
+    Globe,
+    Upload,
+    Loader2,
+    Package,
+    AlertTriangle,
+    Layers,
+    Palette,
+    ListTree,
+    ChevronDown,
+} from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
@@ -86,6 +105,23 @@ function featuresToPayload(rows) {
             name: String(r.name_en ?? '').trim(),
             value: String(r.value_en ?? '').trim(),
         })),
+    }
+}
+
+const SESSION_PRODUCTS_BULK_UI = 'crm_products_bulk_ui_v1'
+
+function readBulkAccordionInitial() {
+    if (typeof window === 'undefined') return { descOpen: false, colorsOpen: false }
+    try {
+        const raw = sessionStorage.getItem(SESSION_PRODUCTS_BULK_UI)
+        if (!raw) return { descOpen: false, colorsOpen: false }
+        const j = JSON.parse(raw)
+        return {
+            descOpen: Boolean(j.descOpen),
+            colorsOpen: Boolean(j.colorsOpen),
+        }
+    } catch {
+        return { descOpen: false, colorsOpen: false }
     }
 }
 
@@ -213,6 +249,15 @@ export default function Mahsulotlar() {
     })
     const [isAddingColor, setIsAddingColor] = useState(false)
     const [newColor, setNewColor] = useState({ name_uz: '', name_ru: '', name_en: '', hex_code: '#000000' })
+    const [editingColorId, setEditingColorId] = useState(null)
+    const [editColorDraft, setEditColorDraft] = useState({
+        name_uz: '',
+        name_ru: '',
+        name_en: '',
+        hex_code: '#000000',
+    })
+    /** `products.colors` va `product_colors.name` dagi joriy ichki kalit */
+    const [editColorNameOriginal, setEditColorNameOriginal] = useState('')
     const [cleanupInProgress, setCleanupInProgress] = useState(false)
 
     /** Kategoriya bo'yicha bir martalik tavsif / xususiyat (shu kategoriyadagi barcha mahsulotlarga) */
@@ -231,14 +276,34 @@ export default function Mahsulotlar() {
     const [bulkColorRemoveName, setBulkColorRemoveName] = useState('')
     const [bulkColorApplying, setBulkColorApplying] = useState(false)
 
+    const initBulkAccordion = useMemo(() => readBulkAccordionInitial(), [])
+    const [bulkDescSectionOpen, setBulkDescSectionOpen] = useState(initBulkAccordion.descOpen)
+    const [bulkColorsSectionOpen, setBulkColorsSectionOpen] = useState(initBulkAccordion.colorsOpen)
+
     useEffect(() => {
         loadData()
     }, [])
 
-    async function loadData() {
+    useEffect(() => {
+        try {
+            sessionStorage.setItem(
+                SESSION_PRODUCTS_BULK_UI,
+                JSON.stringify({
+                    descOpen: bulkDescSectionOpen,
+                    colorsOpen: bulkColorsSectionOpen,
+                })
+            )
+        } catch {
+            /* ignore */
+        }
+    }, [bulkDescSectionOpen, bulkColorsSectionOpen])
+
+    /** `silent: true` — saqlash/o‘chirishdan keyin spinner siz yangilash */
+    async function loadData(opts = {}) {
+        const silent = opts.silent === true
         try {
             setLoadError(null)
-            setLoading(true)
+            if (!silent) setLoading(true)
             await withTimeout(
                 (async () => {
                     const { data: catData, error: eCat } = await supabase
@@ -269,7 +334,7 @@ export default function Mahsulotlar() {
             console.error('Error loading data:', error)
             setLoadError(error?.message || "Ma'lumot yuklanmadi.")
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
     }
 
@@ -472,7 +537,7 @@ export default function Mahsulotlar() {
                 model_3d_url: '',
             })
             setIsModalOpen(false)
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Error saving product:', error)
             await showAlert(t('common.saveError'), { variant: 'error' })
@@ -489,7 +554,7 @@ export default function Mahsulotlar() {
                 .eq('id', id)
 
             if (error) throw error
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Error deleting product:', error)
             alert(t('common.deleteError'))
@@ -553,6 +618,8 @@ export default function Mahsulotlar() {
         })
         setEditId(null)
         setIsModalOpen(false)
+        setEditingColorId(null)
+        setIsAddingColor(false)
     }
 
     async function handleAddColor() {
@@ -581,32 +648,163 @@ export default function Mahsulotlar() {
         }
     }
 
-    async function handleDeleteColor(e, colorId, colorName) {
+    /**
+     * Rangni o‘chirish: `colorKey` — bazadagi ichki kalit (`product_colors.name`, `products.colors` elementi).
+     * `displayLabel` — faqat tasdiq xabari uchun (ko‘rinadigan nom).
+     */
+    async function handleDeleteColor(e, colorId, colorKey, displayLabel) {
+        e.preventDefault()
         e.stopPropagation()
-        if (!confirm(`"${colorName}" rangini o'chirishni xohlaysizmi? Barcha mahsulotlardan ham olib tashlanadi.`)) return
+        const lab = (displayLabel || colorKey || '').trim() || colorKey
+        const ok = await showConfirm(
+            `«${lab}» o‘chirilsinmi? Mahsulotlardan kalit «${colorKey}» olib tashlanadi.`,
+            { title: 'Rangni o‘chirish', variant: 'warning' }
+        )
+        if (!ok) return
         try {
-            // 1. Barcha mahsulotlardan shu rangni olib tashlash
-            const { data: productsWithColor } = await supabase
+            const { data: productsWithColor, error: selErr } = await supabase
                 .from('products')
                 .select('id, colors')
-                .overlaps('colors', [colorName])
+                .overlaps('colors', [colorKey])
+            if (selErr) throw selErr
 
-            if (productsWithColor?.length) {
-                for (const p of productsWithColor) {
-                    const newColors = (p.colors || []).filter(c => c !== colorName)
-                    await supabase.from('products').update({ colors: newColors }).eq('id', p.id)
+            for (const p of productsWithColor || []) {
+                const newColors = (p.colors || []).filter((c) => c !== colorKey)
+                const { error: upErr } = await supabase.from('products').update({ colors: newColors }).eq('id', p.id)
+                if (upErr) throw upErr
+            }
+
+            const { data: legacyRows, error: legSelErr } = await supabase
+                .from('products')
+                .select('id, color')
+                .eq('color', colorKey)
+            if (legSelErr) throw legSelErr
+            for (const p of legacyRows || []) {
+                const { error: legUp } = await supabase.from('products').update({ color: null }).eq('id', p.id)
+                if (legUp) throw legUp
+            }
+
+            const { error } = await supabase.from('product_colors').delete().eq('id', colorId)
+            if (error) throw error
+            setColorLibrary((prev) => prev.filter((c) => c.id !== colorId))
+            setForm((f) => ({
+                ...f,
+                colors: (f.colors || []).filter((c) => c !== colorKey),
+                color: f.color === colorKey ? '' : f.color,
+            }))
+            if (editingColorId === colorId) {
+                setEditingColorId(null)
+            }
+            await loadData({ silent: true })
+            await showAlert('Rang o‘chirildi.', { variant: 'success' })
+        } catch (error) {
+            console.error('Error deleting color:', error)
+            await showAlert('Rangni o‘chirishda xatolik: ' + (error?.message || ''), { variant: 'error' })
+        }
+    }
+
+    function openEditColor(color) {
+        setIsAddingColor(false)
+        setEditingColorId(color.id)
+        setEditColorNameOriginal(color.name)
+        setEditColorDraft({
+            name_uz: color.name_uz ?? '',
+            name_ru: color.name_ru ?? '',
+            name_en: color.name_en ?? '',
+            hex_code: color.hex_code || '#000000',
+        })
+    }
+
+    function cancelEditColor() {
+        setEditingColorId(null)
+    }
+
+    async function handleSaveEditColor() {
+        if (!editingColorId) return
+        const name_uz = (editColorDraft.name_uz || '').trim()
+        const name_ru = (editColorDraft.name_ru || '').trim()
+        const name_en = (editColorDraft.name_en || '').trim()
+        if (!name_uz && !name_ru && !name_en) {
+            await showAlert('Kamida bitta tilda rang nomini kiriting.', { variant: 'warning' })
+            return
+        }
+        const newKey = name_uz || name_ru || name_en
+        const oldKey = editColorNameOriginal
+        const hex = editColorDraft.hex_code || '#000000'
+
+        try {
+            if (newKey !== oldKey) {
+                const taken = colorLibrary.some((c) => c.name === newKey && c.id !== editingColorId)
+                if (taken) {
+                    await showAlert('Bu ichki kalit (birinchi to‘ldirilgan til bo‘yicha nom) allaqachon mavjud.', {
+                        variant: 'warning',
+                    })
+                    return
+                }
+                const ok = await showConfirm(
+                    `Ichki kalit «${oldKey}» → «${newKey}» ga o‘zgaradi. Barcha mahsulotlardagi bog‘lanishlar yangilanadi. Davom etasizmi?`,
+                    { title: 'Rang kalitini yangilash', variant: 'warning' }
+                )
+                if (!ok) return
+
+                const { data: arrHits, error: aErr } = await supabase
+                    .from('products')
+                    .select('id, colors')
+                    .overlaps('colors', [oldKey])
+                if (aErr) throw aErr
+                for (const p of arrHits || []) {
+                    const nc = (p.colors || []).map((c) => (c === oldKey ? newKey : c))
+                    const { error: u1 } = await supabase.from('products').update({ colors: nc }).eq('id', p.id)
+                    if (u1) throw u1
+                }
+                const { data: legHits, error: lErr } = await supabase
+                    .from('products')
+                    .select('id')
+                    .eq('color', oldKey)
+                if (lErr) throw lErr
+                for (const p of legHits || []) {
+                    const { error: u2 } = await supabase.from('products').update({ color: newKey }).eq('id', p.id)
+                    if (u2) throw u2
                 }
             }
 
-            // 2. Rangni product_colors dan o'chirish
-            const { error } = await supabase.from('product_colors').delete().eq('id', colorId)
+            const { error } = await supabase
+                .from('product_colors')
+                .update({
+                    name: newKey,
+                    name_uz: name_uz || newKey,
+                    name_ru: name_ru || newKey,
+                    name_en: name_en || newKey,
+                    hex_code: hex,
+                })
+                .eq('id', editingColorId)
             if (error) throw error
-            setColorLibrary(colorLibrary.filter(c => c.id !== colorId))
-            setForm(f => ({ ...f, colors: (f.colors || []).filter(c => c !== colorName) }))
-            loadData()
+
+            setColorLibrary((prev) =>
+                prev.map((c) =>
+                    c.id === editingColorId
+                        ? {
+                              ...c,
+                              name: newKey,
+                              name_uz: name_uz || newKey,
+                              name_ru: name_ru || newKey,
+                              name_en: name_en || newKey,
+                              hex_code: hex,
+                          }
+                        : c
+                )
+            )
+            setForm((f) => ({
+                ...f,
+                colors: (f.colors || []).map((c) => (c === oldKey ? newKey : c)),
+                color: f.color === oldKey ? newKey : f.color,
+            }))
+            setEditingColorId(null)
+            await loadData({ silent: true })
+            await showAlert('Rang yangilandi.', { variant: 'success' })
         } catch (error) {
-            console.error('Error deleting color:', error)
-            alert('Rangni o\'chirishda xatolik: ' + (error?.message || ''))
+            console.error('Error updating color:', error)
+            await showAlert('Rangni saqlashda xatolik: ' + (error?.message || ''), { variant: 'error' })
         }
     }
 
@@ -625,7 +823,7 @@ export default function Mahsulotlar() {
                     updated++
                 }
             }
-            loadData()
+            loadData({ silent: true })
             alert(updated > 0 ? `${updated} ta mahsulot tozalandi.` : 'Tozalanadigan mahsulot topilmadi.')
         } catch (error) {
             console.error('Error cleaning colors:', error)
@@ -654,7 +852,7 @@ export default function Mahsulotlar() {
                 .eq('id', id)
 
             if (error) throw error
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Error updating status:', error)
         }
@@ -757,7 +955,7 @@ export default function Mahsulotlar() {
             const { error } = await supabase.from('products').update(payload).eq('category_id', bulkCategoryId)
             if (error) throw error
             alert(`Muvaffaqiyatli: ${bulkProductCount} ta mahsulot yangilandi.`)
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Bulk update error:', error)
             alert('Yangilashda xatolik: ' + (error.message || ''))
@@ -838,7 +1036,7 @@ export default function Mahsulotlar() {
                     : "Hech bir mahsulotda bunday rang qiymati topilmadi (colors yoki legacy color).",
                 { variant: updated > 0 ? 'success' : 'info' }
             )
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Bulk color replace error:', error)
             await showAlert('Yangilashda xatolik: ' + (error.message || ''), { variant: 'error' })
@@ -882,7 +1080,7 @@ export default function Mahsulotlar() {
                 updated > 0 ? `${updated} ta mahsulotga yangi rang qo‘shildi.` : `Tanlangan ranglar bu ${targets.length} ta mahsulotda allaqachon bor edi.`,
                 { variant: updated > 0 ? 'success' : 'info' }
             )
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Bulk color add error:', error)
             await showAlert('Yangilashda xatolik: ' + (error.message || ''), { variant: 'error' })
@@ -926,7 +1124,7 @@ export default function Mahsulotlar() {
                 updated > 0 ? `${updated} ta mahsulotdan rang olib tashlandi.` : 'Hech bir mahsulotda bu rang yo‘q.',
                 { variant: updated > 0 ? 'success' : 'info' }
             )
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Bulk color remove error:', error)
             await showAlert('Yangilashda xatolik: ' + (error.message || ''), { variant: 'error' })
@@ -997,20 +1195,20 @@ export default function Mahsulotlar() {
             <Header title={t('common.products')} toggleSidebar={toggleSidebar} />
 
             {/* Actions Bar */}
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                <div className="relative w-full md:w-96">
-                    <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
+            <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2 mb-5 bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border border-gray-100">
+                <div className="relative w-full md:max-w-sm md:flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input
                         type="text"
                         placeholder={t('products.searchPlaceholder')}
-                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all"
+                        className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-lg outline-none transition-all"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <div className="flex gap-3 w-full md:w-auto flex-wrap">
+                <div className="flex gap-1.5 w-full md:w-auto flex-wrap items-center">
                     <select
-                        className="px-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none cursor-pointer transition-all text-gray-700 font-medium"
+                        className="px-2.5 py-2 text-xs sm:text-sm bg-gray-50 border border-gray-100 focus:bg-white focus:border-blue-500 rounded-lg outline-none cursor-pointer transition-all text-gray-700 font-medium min-w-0 max-w-[11rem] sm:max-w-none"
                         value={filterCategory}
                         onChange={(e) => setFilterCategory(e.target.value)}
                     >
@@ -1023,19 +1221,29 @@ export default function Mahsulotlar() {
                         type="button"
                         onClick={handleCleanupOrphanedColors}
                         disabled={cleanupInProgress}
-                        className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                        className="inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-50"
                         title="Mahsulotlardan o'chirilgan ranglarni tozalash"
                     >
-                        {cleanupInProgress ? 'Tozalanmoqda...' : 'Ranglarni tozalash'}
+                        {cleanupInProgress ? (
+                            <>
+                                <Loader2 className="animate-spin shrink-0" size={14} />
+                                <span className="hidden sm:inline">Tozalanmoqda...</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="hidden sm:inline">Ranglarni tozalash</span>
+                                <span className="sm:hidden">Ranglar</span>
+                            </>
+                        )}
                     </button>
                     <button
                         type="button"
                         onClick={() => reportDuplicateProducts()}
                         disabled={loading || !products.length}
-                        className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold transition-all border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                        className="inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all border border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100 disabled:opacity-50"
                         title={t('products.duplicateCheckButton')}
                     >
-                        <ListTree size={18} />
+                        <ListTree size={15} />
                         <span className="hidden sm:inline">{t('products.duplicateCheckButton')}</span>
                     </button>
                     <button
@@ -1067,65 +1275,93 @@ export default function Mahsulotlar() {
                             })
                             setIsModalOpen(true)
                         }}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
+                        className="inline-flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg transition-all shadow-sm font-bold text-xs"
                     >
-                        <Plus size={20} />
+                        <Plus size={16} />
                         <span className="hidden sm:inline">{t('common.add')}</span>
                     </button>
                 </div>
             </div>
 
+            {/* Bitta kategoriya — tavsif/xususiyat va rang jamoalari uchun */}
+            <div className="mb-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2 rounded-lg border border-slate-200/90 bg-slate-50/90 px-3 py-2.5">
+                <div className="min-w-[200px] flex-1 max-w-md space-y-1">
+                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide">
+                        Jamoaviy kategoriya
+                    </label>
+                    <select
+                        className="w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-slate-400 text-gray-800"
+                        value={bulkCategoryId}
+                        onChange={(e) => setBulkCategoryId(e.target.value)}
+                    >
+                        <option value="">— Tanlang —</option>
+                        {categories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                                {cat.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+                {bulkCategoryId ? (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-700 pb-0.5 sm:pb-1">
+                        <span>
+                            Ta’sir: <strong className="text-gray-900 tabular-nums">{bulkProductCount}</strong> mahsulot
+                        </span>
+                        <span className="hidden sm:inline text-gray-300">·</span>
+                        <span>
+                            Noyob rang:{' '}
+                            <strong className="text-gray-900 tabular-nums">{bulkCategoryUniqueColorNames.length}</strong>
+                        </span>
+                    </div>
+                ) : (
+                    <p className="text-[11px] text-gray-500 pb-0.5 self-center sm:self-end">
+                        Quyidagi ikki blok uchun umumiy.
+                    </p>
+                )}
+            </div>
+
             {/* Kategoriya bo'yicha umumiy tavsif va xususiyatlar */}
-            <div className="mb-8 bg-gradient-to-br from-slate-50 to-blue-50/40 rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-200/80 bg-white/60 flex flex-wrap items-center gap-3">
-                    <Layers className="text-blue-600 shrink-0" size={22} />
-                    <div>
-                        <h2 className="text-base font-bold text-gray-900">Kategoriya bo‘yicha tavsif va xususiyat</h2>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                            Alohida mahsulot qo‘shish o‘zgarishsiz. Bu yerda tanlangan kategoriyadagi <strong>barcha</strong> mahsulotlarga bir xil matn va xususiyatlar yoziladi.
+            <div className="mb-4 bg-gradient-to-br from-slate-50 to-blue-50/40 rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setBulkDescSectionOpen((o) => !o)}
+                    aria-expanded={bulkDescSectionOpen}
+                    className="w-full px-4 py-3 border-b border-slate-200/80 bg-white/70 flex items-start gap-3 text-left hover:bg-white/90 transition-colors"
+                >
+                    <ChevronDown
+                        className={`text-gray-500 shrink-0 mt-0.5 transition-transform duration-200 ${bulkDescSectionOpen ? 'rotate-180' : ''}`}
+                        size={18}
+                        aria-hidden
+                    />
+                    <Layers className="text-blue-600 shrink-0 mt-0.5" size={20} />
+                    <div className="min-w-0 flex-1">
+                        <h2 className="text-sm font-bold text-gray-900">Kategoriya bo‘yicha tavsif va xususiyat</h2>
+                        <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">
+                            Tanlangan kategoriyadagi barcha mahsulotlarga bir xil tavsif va xususiyatlar.
                         </p>
                     </div>
-                </div>
-                <div className="p-5 space-y-5">
-                    <div className="flex flex-col sm:flex-row gap-4 flex-wrap items-start sm:items-end">
-                        <div className="w-full sm:flex-1 sm:min-w-[220px] space-y-2">
-                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Kategoriya</label>
-                            <select
-                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-gray-800"
-                                value={bulkCategoryId}
-                                onChange={(e) => setBulkCategoryId(e.target.value)}
-                            >
-                                <option value="">— Tanlang —</option>
-                                {categories.map((cat) => (
-                                    <option key={cat.id} value={cat.id}>
-                                        {cat.name}
-                                    </option>
-                                ))}
-                            </select>
-                            {bulkCategoryId ? (
-                                <p className="text-xs text-blue-700 font-medium">
-                                    Ta’sir: <strong>{bulkProductCount}</strong> ta mahsulot
-                                </p>
-                            ) : null}
-                        </div>
+                </button>
+                {bulkDescSectionOpen ? (
+                <div className="p-4 space-y-4">
+                    <div className="flex flex-wrap justify-end">
                         <button
                             type="button"
                             onClick={loadBulkTemplateFromCategory}
                             disabled={!bulkCategoryId}
-                            className="px-4 py-3 rounded-xl text-sm font-bold border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            className="px-3 py-2 rounded-lg text-xs font-semibold border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
                         >
                             Birinchi mahsulotdan yuklash
                         </button>
                     </div>
 
-                    <div className="space-y-3">
-                        <h3 className="text-sm font-bold text-gray-800">Tavsif</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                        <h3 className="text-xs font-bold text-gray-800">Tavsif</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-blue-600">UZ</label>
                                 <textarea
                                     rows={3}
-                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                     value={bulkDescUz}
                                     onChange={(e) => setBulkDescUz(e.target.value)}
                                     placeholder="O‘zbekcha tavsif"
@@ -1135,7 +1371,7 @@ export default function Mahsulotlar() {
                                 <label className="text-xs font-bold text-red-700">RU</label>
                                 <textarea
                                     rows={3}
-                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                     value={bulkDescRu}
                                     onChange={(e) => setBulkDescRu(e.target.value)}
                                     placeholder="Русское описание"
@@ -1145,7 +1381,7 @@ export default function Mahsulotlar() {
                                 <label className="text-xs font-bold text-gray-600">EN</label>
                                 <textarea
                                     rows={3}
-                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                     value={bulkDescEn}
                                     onChange={(e) => setBulkDescEn(e.target.value)}
                                     placeholder="English description"
@@ -1154,18 +1390,18 @@ export default function Mahsulotlar() {
                         </div>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                         <div className="flex justify-between items-center gap-2">
-                            <h3 className="text-sm font-bold text-gray-800">Xususiyatlar</h3>
+                            <h3 className="text-xs font-bold text-gray-800">Xususiyatlar</h3>
                             <button
                                 type="button"
                                 onClick={bulkAddFeature}
-                                className="text-sm text-blue-600 font-bold hover:underline"
+                                className="text-xs text-blue-600 font-semibold hover:underline"
                             >
                                 + Qator qo‘shish
                             </button>
                         </div>
-                        <div className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
+                        <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
                             {bulkFeatures.length === 0 ? (
                                 <p className="text-xs text-gray-400 italic">
                                     Faqat tavsifni yangilamoqchi bo‘lsangiz, xususiyat qatorlarini bo‘sh qoldiring — mavjud xususiyatlar o‘zgarmaydi.
@@ -1174,7 +1410,7 @@ export default function Mahsulotlar() {
                             {bulkFeatures.map((feature, index) => (
                                 <div
                                     key={index}
-                                    className="rounded-xl border border-gray-200 bg-white/80 p-4 space-y-3"
+                                    className="rounded-lg border border-gray-200 bg-white/80 p-3 space-y-2"
                                 >
                                     <div className="flex justify-between items-center">
                                         <span className="text-xs font-bold text-gray-400">#{index + 1}</span>
@@ -1245,7 +1481,7 @@ export default function Mahsulotlar() {
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap justify-end gap-3 pt-2 border-t border-slate-200/80">
+                    <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-200/80">
                         <button
                             type="button"
                             onClick={() => {
@@ -1260,7 +1496,7 @@ export default function Mahsulotlar() {
                                 setBulkColorAddNames([])
                                 setBulkColorRemoveName('')
                             }}
-                            className="px-5 py-2.5 rounded-xl font-bold text-gray-600 hover:bg-white/80 border border-transparent hover:border-gray-200"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:bg-white border border-transparent hover:border-gray-200"
                         >
                             Tozalash
                         </button>
@@ -1268,53 +1504,40 @@ export default function Mahsulotlar() {
                             type="button"
                             disabled={bulkApplying || !bulkCategoryId}
                             onClick={applyBulkCategoryContent}
-                            className="px-6 py-2.5 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
                         >
-                            {bulkApplying ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                            {bulkApplying ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />}
                             Kategoriyadagilarga qo‘llash
                         </button>
                     </div>
                 </div>
+                ) : null}
             </div>
 
             {/* Kategoriya bo'yicha jamoaviy ranglar */}
-            <div className="mb-8 bg-gradient-to-br from-violet-50/80 to-slate-50 rounded-2xl border border-violet-200/60 shadow-sm overflow-hidden">
-                <div className="px-5 py-4 border-b border-violet-200/50 bg-white/70 flex flex-wrap items-center gap-3">
-                    <Palette className="text-violet-600 shrink-0" size={22} />
-                    <div>
-                        <h2 className="text-base font-bold text-gray-900">Kategoriya bo‘yicha ranglar (jamoa)</h2>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                            Noto‘g‘ri rangni bir vaqtda almashtirish, ko‘plab mahsulotga rang qo‘shish yoki kategoriyadan bir rangni olib tashlash. Qiymatlar mahsulotdagi{' '}
-                            <code className="text-[11px] bg-violet-100/80 px-1 rounded">colors</code> massivi bilan bir xil (kutubxonaning ichki nomi).
+            <div className="mb-5 bg-gradient-to-br from-violet-50/80 to-slate-50 rounded-xl border border-violet-200/60 shadow-sm overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setBulkColorsSectionOpen((o) => !o)}
+                    aria-expanded={bulkColorsSectionOpen}
+                    className="w-full px-4 py-3 border-b border-violet-200/50 bg-white/70 flex items-start gap-3 text-left hover:bg-white/90 transition-colors"
+                >
+                    <ChevronDown
+                        className={`text-gray-500 shrink-0 mt-0.5 transition-transform duration-200 ${bulkColorsSectionOpen ? 'rotate-180' : ''}`}
+                        size={18}
+                        aria-hidden
+                    />
+                    <Palette className="text-violet-600 shrink-0 mt-0.5" size={20} />
+                    <div className="min-w-0 flex-1">
+                        <h2 className="text-sm font-bold text-gray-900">Kategoriya bo‘yicha ranglar (jamoa)</h2>
+                        <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">
+                            Almashtirish, qo‘shish yoki olib tashlash — <code className="text-[10px] bg-violet-100/80 px-0.5 rounded">colors</code> qiymatlari bilan.
                         </p>
                     </div>
-                </div>
-                <div className="p-5 space-y-4">
-                    <div className="flex flex-col sm:flex-row gap-4 flex-wrap items-start sm:items-end">
-                        <div className="w-full sm:flex-1 sm:min-w-[220px] space-y-2">
-                            <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Kategoriya</label>
-                            <select
-                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-gray-800"
-                                value={bulkCategoryId}
-                                onChange={(e) => setBulkCategoryId(e.target.value)}
-                            >
-                                <option value="">— Tanlang —</option>
-                                {categories.map((cat) => (
-                                    <option key={cat.id} value={cat.id}>
-                                        {cat.name}
-                                    </option>
-                                ))}
-                            </select>
-                            {bulkCategoryId ? (
-                                <p className="text-xs text-violet-800 font-medium">
-                                    Ta’sir: <strong>{bulkProductCount}</strong> ta mahsulot · Ushbu kategoriyadagi ranglar:{' '}
-                                    <strong>{bulkCategoryUniqueColorNames.length}</strong> ta noyob qiymat
-                                </p>
-                            ) : null}
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
+                </button>
+                {bulkColorsSectionOpen ? (
+                <div className="p-4 space-y-3">
+                    <div className="inline-flex flex-wrap gap-1 p-0.5 rounded-lg bg-violet-100/50 border border-violet-200/60">
                         {[
                             { id: 'replace', label: 'Almashtirish' },
                             { id: 'add', label: 'Qo‘shish' },
@@ -1324,10 +1547,10 @@ export default function Mahsulotlar() {
                                 key={tab.id}
                                 type="button"
                                 onClick={() => setBulkColorTab(tab.id)}
-                                className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
+                                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                                     bulkColorTab === tab.id
-                                        ? 'bg-violet-600 text-white shadow-md'
-                                        : 'bg-white border border-violet-200 text-violet-800 hover:bg-violet-50'
+                                        ? 'bg-violet-600 text-white shadow-sm'
+                                        : 'text-violet-900 hover:bg-white/80'
                                 }`}
                             >
                                 {tab.label}
@@ -1336,17 +1559,17 @@ export default function Mahsulotlar() {
                     </div>
 
                     {bulkColorTab === 'replace' ? (
-                        <div className="space-y-4 rounded-xl border border-violet-100 bg-white/80 p-4">
+                        <div className="space-y-3 rounded-lg border border-violet-100 bg-white/80 p-3">
                             <p className="text-xs text-gray-600">
                                 Masalan, noto‘g‘ri tanlangan rang nomi 100 ta mahsulotda — eski nomni yangi kutubxona nomiga bir marta almashtirasiz.
                             </p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Eski rang (qiymat)</label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide">Eski rang (qiymat)</label>
                                     <input
                                         type="text"
                                         list="bulk-cat-color-datalist"
-                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-violet-500 text-sm"
                                         placeholder="colors massividagi aniq matn"
                                         value={bulkColorReplaceFrom}
                                         onChange={(e) => setBulkColorReplaceFrom(e.target.value)}
@@ -1361,10 +1584,10 @@ export default function Mahsulotlar() {
                                         <p className="text-xs text-amber-700">Bu kategoriyada hozircha rang qiymati yo‘q — avval mahsulotlarga rang bering.</p>
                                     ) : null}
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide">Yangi rang (kutubxona)</label>
+                                <div className="space-y-1.5">
+                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide">Yangi rang (kutubxona)</label>
                                     <select
-                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-violet-500 text-sm"
                                         value={bulkColorReplaceTo}
                                         onChange={(e) => setBulkColorReplaceTo(e.target.value)}
                                     >
@@ -1387,16 +1610,16 @@ export default function Mahsulotlar() {
                                 type="button"
                                 disabled={bulkColorApplying || !bulkCategoryId}
                                 onClick={applyBulkColorReplace}
-                                className="px-6 py-2.5 rounded-xl font-bold bg-violet-600 text-white hover:bg-violet-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-600 text-white hover:bg-violet-700 shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
                             >
-                                {bulkColorApplying ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                                {bulkColorApplying ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />}
                                 Almashtirishni qo‘llash
                             </button>
                         </div>
                     ) : null}
 
                     {bulkColorTab === 'add' ? (
-                        <div className="space-y-4 rounded-xl border border-violet-100 bg-white/80 p-4">
+                        <div className="space-y-3 rounded-lg border border-violet-100 bg-white/80 p-3">
                             <p className="text-xs text-gray-600">
                                 Tanlangan kategoriyadagi barcha mahsulotlarga belgilangan ranglarni qo‘shadi (allaqachon bo‘lsa o‘tkazib yuboradi).
                             </p>
@@ -1437,16 +1660,16 @@ export default function Mahsulotlar() {
                                 type="button"
                                 disabled={bulkColorApplying || !bulkCategoryId || bulkColorAddNames.length === 0}
                                 onClick={applyBulkColorAdd}
-                                className="px-6 py-2.5 rounded-xl font-bold bg-violet-600 text-white hover:bg-violet-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-600 text-white hover:bg-violet-700 shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
                             >
-                                {bulkColorApplying ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />}
+                                {bulkColorApplying ? <Loader2 className="animate-spin" size={15} /> : <Plus size={15} />}
                                 Tanlangan ranglarni qo‘shish
                             </button>
                         </div>
                     ) : null}
 
                     {bulkColorTab === 'remove' ? (
-                        <div className="space-y-4 rounded-xl border border-violet-100 bg-white/80 p-4">
+                        <div className="space-y-3 rounded-lg border border-violet-100 bg-white/80 p-3">
                             <p className="text-xs text-gray-600">
                                 Kategoriyadagi barcha mahsulotlardan bir xil rang qiymatini olib tashlaydi (asosiy ko‘rinish maydoni yangilanadi).
                             </p>
@@ -1455,7 +1678,7 @@ export default function Mahsulotlar() {
                                 <input
                                     type="text"
                                     list="bulk-remove-color-datalist"
-                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-violet-500 text-sm"
+                                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-violet-500 text-sm"
                                     placeholder="colors massividagi aniq matn"
                                     value={bulkColorRemoveName}
                                     onChange={(e) => setBulkColorRemoveName(e.target.value)}
@@ -1474,14 +1697,15 @@ export default function Mahsulotlar() {
                                 type="button"
                                 disabled={bulkColorApplying || !bulkCategoryId || !bulkColorRemoveName.trim()}
                                 onClick={applyBulkColorRemove}
-                                className="px-6 py-2.5 rounded-xl font-bold bg-red-600 text-white hover:bg-red-700 shadow-md disabled:opacity-50 flex items-center gap-2"
+                                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700 shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
                             >
-                                {bulkColorApplying ? <Loader2 className="animate-spin" size={18} /> : <Trash2 size={18} />}
+                                {bulkColorApplying ? <Loader2 className="animate-spin" size={15} /> : <Trash2 size={15} />}
                                 Rangni kategoriyadan olib tashlash
                             </button>
                         </div>
                     ) : null}
                 </div>
+                ) : null}
             </div>
 
             {/* Table */}
@@ -1657,7 +1881,10 @@ export default function Mahsulotlar() {
                                         <label className="block text-sm font-bold text-gray-700">Ranglar to'plami</label>
                                         <button
                                             type="button"
-                                            onClick={() => setIsAddingColor(true)}
+                                            onClick={() => {
+                                                setEditingColorId(null)
+                                                setIsAddingColor(true)
+                                            }}
                                             className="text-xs text-blue-600 font-bold hover:underline"
                                         >
                                             + Yangi rang qo'shish
@@ -1666,15 +1893,16 @@ export default function Mahsulotlar() {
                                     <div className="flex flex-wrap gap-2 p-4 bg-gray-50 rounded-xl border border-gray-100 min-h-[100px]">
                                         {colorLibrary.map(color => {
                                             const colorLabel = color[`name_${language}`] || color.name_uz || color.name_ru || color.name_en || color.name
+                                            const isEditingThis = editingColorId === color.id
                                             return (
                                                 <div
                                                     key={color.id}
-                                                    className="relative group"
+                                                    className={`relative group rounded-lg ${isEditingThis ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
                                                 >
                                                     <button
                                                         type="button"
                                                         onClick={() => toggleColor(color.name)}
-                                                        className={`flex items-center gap-2 pl-3 pr-8 py-1.5 rounded-lg border transition-all ${form.colors?.includes(color.name)
+                                                        className={`flex items-center gap-2 pl-3 pr-[2.75rem] py-1.5 rounded-lg border transition-all ${form.colors?.includes(color.name)
                                                             ? 'bg-blue-600 border-blue-600 text-white shadow-md'
                                                             : 'bg-white border-gray-200 text-gray-600 hover:border-blue-400'
                                                             }`}
@@ -1683,16 +1911,32 @@ export default function Mahsulotlar() {
                                                             className="w-3 h-3 rounded-full border border-black/10 flex-shrink-0"
                                                             style={{ backgroundColor: color.hex_code }}
                                                         />
-                                                        <span className="text-xs font-bold">{colorLabel}</span>
+                                                        <span className="text-xs font-bold max-w-[10rem] truncate" title={`${colorLabel} · kalit: ${color.name}`}>
+                                                            {colorLabel}
+                                                        </span>
                                                     </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => handleDeleteColor(e, color.id, colorLabel)}
-                                                        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-red-100 text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                        title="O'chirish"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
+                                                    <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.preventDefault()
+                                                                e.stopPropagation()
+                                                                openEditColor(color)
+                                                            }}
+                                                            className={`p-1 rounded hover:bg-black/10 ${form.colors?.includes(color.name) ? 'text-white hover:bg-white/20' : 'text-blue-600 hover:bg-blue-50'}`}
+                                                            title="Tahrirlash"
+                                                        >
+                                                            <Edit size={14} />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleDeleteColor(e, color.id, color.name, colorLabel)}
+                                                            className={`p-1 rounded hover:bg-red-100 text-red-500 hover:text-red-700 ${form.colors?.includes(color.name) ? 'hover:bg-white/20' : ''}`}
+                                                            title="O'chirish"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             )
                                         })}
@@ -1701,6 +1945,83 @@ export default function Mahsulotlar() {
                                             <p className="text-gray-400 text-xs italic">Ranglar kutubxonasi bo'sh</p>
                                         )}
                                     </div>
+
+                                    {editingColorId ? (
+                                        <div className="mt-4 p-4 bg-amber-50/90 rounded-xl border border-amber-200 space-y-4">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <p className="text-xs font-bold text-amber-900">
+                                                    Rangni tahrirlash
+                                                    <span className="font-mono font-normal text-amber-800/90">
+                                                        {' '}
+                                                        · kalit: {editColorNameOriginal}
+                                                    </span>
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={cancelEditColor}
+                                                    className="text-xs text-gray-600 hover:text-gray-800 font-semibold"
+                                                >
+                                                    Bekor
+                                                </button>
+                                            </div>
+                                            <p className="text-[11px] text-amber-900/80 leading-snug">
+                                                Birinchi to‘ldirilgan til (odatda UZ) ichki kalit bo‘ladi — mahsulotlarda shu matn <code className="px-0.5 bg-white/80 rounded">colors</code>{' '}
+                                                massivida saqlanadi. Kalit o‘zgarsa, barcha bog‘langan mahsulotlar yangilanadi.
+                                            </p>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs font-bold text-blue-600 uppercase">Rang nomi (UZ)</label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg outline-none text-sm"
+                                                        value={editColorDraft.name_uz}
+                                                        onChange={(e) =>
+                                                            setEditColorDraft({ ...editColorDraft, name_uz: e.target.value })
+                                                        }
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs font-bold text-red-600 uppercase">Rang nomi (RU)</label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg outline-none text-sm"
+                                                        value={editColorDraft.name_ru}
+                                                        onChange={(e) =>
+                                                            setEditColorDraft({ ...editColorDraft, name_ru: e.target.value })
+                                                        }
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs font-bold text-gray-600 uppercase">Rang nomi (EN)</label>
+                                                    <input
+                                                        type="text"
+                                                        className="w-full px-3 py-2 bg-white border border-amber-200 rounded-lg outline-none text-sm"
+                                                        value={editColorDraft.name_en}
+                                                        onChange={(e) =>
+                                                            setEditColorDraft({ ...editColorDraft, name_en: e.target.value })
+                                                        }
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <input
+                                                    type="color"
+                                                    className="w-10 h-10 rounded-lg cursor-pointer border border-gray-200 bg-white"
+                                                    value={editColorDraft.hex_code}
+                                                    onChange={(e) =>
+                                                        setEditColorDraft({ ...editColorDraft, hex_code: e.target.value })
+                                                    }
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleSaveEditColor}
+                                                    className="bg-amber-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-md hover:bg-amber-700"
+                                                >
+                                                    O‘zgarishlarni saqlash
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : null}
 
                                     {isAddingColor && (
                                         <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100 space-y-4 animate-fade-in">

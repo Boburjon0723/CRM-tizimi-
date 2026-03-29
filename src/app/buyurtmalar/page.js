@@ -71,19 +71,19 @@ const ORDERS_SELECT_FALLBACKS = [
   customers (id, name, phone),
   order_items (
     *,
-    products (id, name, category_id, categories (id, name, name_uz))
+    products (id, name, size, category_id, categories (id, name, name_uz))
   )`,
     `*,
   customers (id, name, phone),
   order_items (
     *,
-    products (id, name, category_id)
+    products (id, name, size, category_id)
   )`,
     `*,
   customers (id, name, phone),
   order_items (
     *,
-    products (id, name)
+    products (id, name, size)
   )`,
     `*,
   customers (id, name, phone),
@@ -130,10 +130,10 @@ async function fetchDeletedOrdersPageWithFallback() {
 }
 
 const ORDER_ITEMS_FOR_ORDER_FALLBACKS = [
-    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'line_index' },
-    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'created_at' },
-    { select: `*, products (id, name, category_id)`, order: 'created_at' },
-    { select: `*, products (id, name)`, order: 'created_at' },
+    { select: `*, products (id, name, size, category_id, categories (id, name, name_uz))`, order: 'line_index' },
+    { select: `*, products (id, name, size, category_id, categories (id, name, name_uz))`, order: 'created_at' },
+    { select: `*, products (id, name, size, category_id)`, order: 'created_at' },
+    { select: `*, products (id, name, size)`, order: 'created_at' },
     { select: '*', order: 'created_at' },
 ]
 
@@ -153,10 +153,10 @@ async function fetchOrderItemsForOrderId(orderId) {
 }
 
 const ORDER_ITEMS_FOR_PRINT_LIST_FALLBACKS = [
-    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'line_index' },
-    { select: `*, products (id, name, category_id, categories (id, name, name_uz))`, order: 'created_at' },
-    { select: `*, products (id, name, category_id)`, order: 'created_at' },
-    { select: `*, products (id, name)`, order: 'created_at' },
+    { select: `*, products (id, name, size, category_id, categories (id, name, name_uz))`, order: 'line_index' },
+    { select: `*, products (id, name, size, category_id, categories (id, name, name_uz))`, order: 'created_at' },
+    { select: `*, products (id, name, size, category_id)`, order: 'created_at' },
+    { select: `*, products (id, name, size)`, order: 'created_at' },
     { select: '*', order: 'created_at' },
 ]
 
@@ -386,13 +386,16 @@ function exportOrdersToCsv(rows, filename) {
     URL.revokeObjectURL(a.href)
 }
 
-/** Chop etish: bir SKU — bitta kalit (product_id + model kodi). */
-function skuBucketKeyForOrderItem(oi) {
+/**
+ * Bir SKU — bitta kalit (product_id + model kodi).
+ * `productsList` berilsa, bo‘sh `size` katalogdagi kod bilan to‘ldiriladi — aks holda bir xil mahsulot
+ * `pid:…:nosz` va `pid:…:sz:…` ga tushib, forma/yig‘indida ikki marta sanalardi (birlashtirish).
+ */
+function skuBucketKeyForOrderItem(oi, productsList) {
     const pid = oi.product_id != null && oi.product_id !== '' ? String(oi.product_id) : ''
-    const sizeRaw = (oi.size != null ? String(oi.size) : '').trim()
+    const sizeRaw = resolvedOrderItemSizeRaw(oi, productsList || [])
     const sizeKey = normalizeModelKey(sizeRaw)
     if (pid) {
-        /** `size` bo‘sh bo‘lsa har bir `order_items.id` uchun alohida kalit — bir xil mahsulotning ranglari turli guruhlarga tushib, keyingi tahrirda miqdor 2x bo‘lib qolardi. */
         return sizeKey ? `pid:${pid}:sz:${sizeKey}` : `pid:${pid}:nosz`
     }
     if (oi.id != null && oi.id !== '') return `noid:${String(oi.id)}`
@@ -516,65 +519,16 @@ function mergeOrderItemPayloadsForDb(payloads) {
 function resolvedOrderItemSizeRaw(oi, productsList) {
     const s = oi?.size != null ? String(oi.size).trim() : ''
     if (s) return s
+    const emb = oi?.products
+    if (emb && typeof emb === 'object' && emb.size != null && String(emb.size).trim() !== '') {
+        return String(emb.size).trim()
+    }
     const p =
         oi?.product_id && productsList?.length
             ? productsList.find((x) => String(x.id) === String(oi.product_id))
             : null
     if (p?.size != null && String(p.size).trim() !== '') return String(p.size).trim()
     return ''
-}
-
-/**
- * Bir nechta buyurtmaning `order_items` qatorlarini bitta ro‘yxatga yig‘adi:
- * bir xil mahsulot + model kodi + rang — miqdorlar qo‘shiladi, birlik narxi og‘irlik bo‘yicha o‘rtacha.
- * @param {Array} rows
- * @param {Array} productsList — mahsulotlar ro‘yxati (bo‘sh size ni katalog kodi bilan birlashtirish uchun)
- */
-function mergeOrderItemsRowsForCombine(rows, productsList) {
-    if (!rows?.length) return []
-    const plist = productsList || []
-    const map = new Map()
-    rows.forEach((oi, fallbackIdx) => {
-        const pid = String(oi.product_id ?? '')
-        const szNorm = normalizeModelKey(resolvedOrderItemSizeRaw(oi, plist))
-        const col = normalizeModelKey(oi.color != null ? String(oi.color) : '')
-        const key = pid
-            ? `${pid}|${szNorm}|${col}`
-            : `nopid:${String(oi.id ?? '')}:${szNorm}:${col}:${fallbackIdx}`
-        const q = parseOrderItemQty(oi.quantity)
-        const pr = parseOrderItemPrice(oi.price)
-        const money = Math.round(pr * q * 100) / 100
-        const prev = map.get(key)
-        if (!prev) {
-            map.set(key, {
-                template: oi,
-                qty: q,
-                moneySum: money,
-                sizeResolved: resolvedOrderItemSizeRaw(oi, plist)
-            })
-        } else {
-            prev.qty += q
-            prev.moneySum = Math.round((prev.moneySum + money) * 100) / 100
-            const r = resolvedOrderItemSizeRaw(oi, plist)
-            if (r && !prev.sizeResolved) prev.sizeResolved = r
-        }
-    })
-    let seq = 0
-    return Array.from(map.values()).map(({ template, qty, moneySum, sizeResolved }) => {
-        const unit = qty > 0 ? Math.round((moneySum / qty) * 100) / 100 : parseOrderItemPrice(template.price)
-        const syntheticId = `merge_${seq++}`
-        const sizeOut = sizeResolved || resolvedOrderItemSizeRaw(template, plist)
-        const sizeFinal =
-            sizeOut != null && String(sizeOut).trim() !== '' ? String(sizeOut).trim() : template.size
-        return {
-            ...template,
-            id: syntheticId,
-            quantity: qty,
-            price: unit,
-            subtotal: moneySum,
-            size: sizeFinal
-        }
-    })
 }
 
 /** Model kodi bo‘yicha natural tartib (A-2 dan keyin A-10). */
@@ -591,12 +545,12 @@ function minLineIndexInBucket(lines) {
 
 /** Chop etish: bir SKU (product_id + model kodi/size) — bitta qator; rang/miqdor faqat shu qopqichdagi qatorlardan.
  *  Har bir `order_item` faqat bitta kalitga tushadi — boshqa mahsulotlarning ranglari takrorlanmaydi. */
-function groupOrderItemsForPrint(orderItems) {
+function groupOrderItemsForPrint(orderItems, productsList) {
     if (!orderItems?.length) return []
     const items = normalizeOrderItemsForList(orderItems)
     const buckets = new Map()
     for (const oi of items) {
-        const key = skuBucketKeyForOrderItem(oi)
+        const key = skuBucketKeyForOrderItem(oi, productsList)
         if (!buckets.has(key)) buckets.set(key, [])
         buckets.get(key).push(oi)
     }
@@ -626,7 +580,7 @@ function groupOrderItemsForPrint(orderItems) {
             totalPieces > 0 ? Math.round((lineMonetaryFinal / totalPieces) * 100) / 100 : parseOrderItemPrice(first.price)
         return {
             product_name: first.product_name || first.products?.name || '-',
-            size: first.size,
+            size: resolvedOrderItemSizeRaw(first, productsList || []) || first.size,
             image_url: first.image_url,
             lines,
             colorPairs,
@@ -692,7 +646,7 @@ function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
     return { colorsHtml, qtysHtml }
 }
 
-function buildOrderBlockHtml(item, showPrices, labelColorFn) {
+function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
     const customerName = escapeHtml(item.customer_name || item.customers?.name || 'Noma\'lum')
     const phone = escapeHtml(item.customer_phone || item.customers?.phone || '-')
     const date = escapeHtml(new Date(item.created_at).toLocaleDateString())
@@ -700,7 +654,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
     const orderNumHtml = item.order_number
         ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>`
         : ''
-    const groupedRaw = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || []))
+    const groupedRaw = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || []), productsList)
     const grouped = sortGroupedBucketsForPrint(groupedRaw)
     const colSpanAll = showPrices ? 8 : 6
 
@@ -810,9 +764,9 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn) {
     </div>`
 }
 
-function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn }) {
+function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList }) {
     const blocks = orders
-        .map((o) => buildOrderBlockHtml(o, showPrices, labelColorFn))
+        .map((o) => buildOrderBlockHtml(o, showPrices, labelColorFn, productsList))
         .join('<div class="page-break"></div>')
     const listBanner = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title>
@@ -1003,6 +957,27 @@ function computeOrderLinesSubtotal(orderLines) {
 }
 
 /**
+ * Bir nechta buyurtmani birlashtirish: umumiy summa = har bir buyurtmaning `orders.total` yig‘indisi;
+ * jami dona = har bir buyurtmadagi `order_items` miqdorlari yig‘indisining yig‘indisi (qatorlarni qayta narxlamaasdan).
+ */
+function aggregateMergedOrdersTotals(ordersToMerge, itemRows) {
+    const subtotal =
+        Math.round(ordersToMerge.reduce((acc, o) => acc + (Number(o.total) || 0), 0) * 100) / 100
+    const byOrder = new Map()
+    for (const oi of itemRows || []) {
+        const oid = oi?.order_id
+        if (oid == null || oid === '') continue
+        const k = String(oid)
+        byOrder.set(k, (byOrder.get(k) || 0) + parseOrderItemQty(oi.quantity))
+    }
+    let totalQty = 0
+    for (const o of ordersToMerge) {
+        totalQty += byOrder.get(String(o.id)) || 0
+    }
+    return { subtotal, totalQty }
+}
+
+/**
  * Yangi buyurtma jadvali: «Tayyor» bergan qatorlar kategoriya bo‘yicha; qolganlari (kod bo‘sh yoki tayyor emas) pastda.
  */
 function buildOrderFormTableRows(orderLines, products, language, uncategorizedLabel) {
@@ -1114,12 +1089,7 @@ function orderItemToFormLine(oi, productsList) {
     const savedPrice = oi.price != null ? Number(oi.price) : NaN
     const catalogPrice = prod ? Number(prod.sale_price) || 0 : 0
     const product_price = Number.isFinite(savedPrice) ? Math.round(savedPrice * 100) / 100 : catalogPrice
-    const sizeStr =
-        oi.size != null && String(oi.size).trim() !== ''
-            ? String(oi.size).trim()
-            : prod?.size != null
-              ? String(prod.size)
-              : ''
+    const sizeStr = resolvedOrderItemSizeRaw(oi, productsList) || ''
     const qtyOne = parseOrderItemQty(oi.quantity) || 1
     const colorOpts = prod ? normalizeColorsArray(prod) : []
 
@@ -1175,7 +1145,7 @@ function orderItemsToOrderLines(orderItems, productsList) {
 
     const buckets = new Map()
     for (const oi of items) {
-        const key = skuBucketKeyForOrderItem(oi)
+        const key = skuBucketKeyForOrderItem(oi, productsList)
         if (!buckets.has(key)) buckets.set(key, [])
         buckets.get(key).push(oi)
     }
@@ -1194,12 +1164,7 @@ function orderItemsToOrderLines(orderItems, productsList) {
         const savedPrice = first.price != null ? Number(first.price) : NaN
         const catalogPrice = prod ? Number(prod.sale_price) || 0 : 0
         const product_price = Number.isFinite(savedPrice) ? Math.round(savedPrice * 100) / 100 : catalogPrice
-        const sizeStr =
-            first.size != null && String(first.size).trim() !== ''
-                ? String(first.size).trim()
-                : prod?.size != null
-                  ? String(prod.size)
-                  : ''
+        const sizeStr = resolvedOrderItemSizeRaw(first, productsList) || ''
 
         /** Bir xil rang (turli yozuv) bitta kalitda — miqdorlar qo‘shiladi, takroriy ustunlar bo‘lmaydi */
         const byColorNorm = new Map()
@@ -1263,6 +1228,8 @@ export default function Buyurtmalar() {
     const [filterStatus, setFilterStatus] = useState('all')
     /** Bir nechta buyurtmani bitta yangi buyurtmaga birlashtirish uchun tanlov */
     const [mergeSelection, setMergeSelection] = useState({})
+    /** Birlashtirishdan keyin: jami summa/miqdor tanlangan buyurtmalarning o‘zidagi yig‘indilar (qatorlardan qayta hisoblanmaydi) */
+    const [mergeSourceAgg, setMergeSourceAgg] = useState(null)
     /** Faol ro‘yxat yoki karzinka (o‘chirilganlar) */
     const [ordersListView, setOrdersListView] = useState('active')
     const [trashOrders, setTrashOrders] = useState([])
@@ -1368,7 +1335,7 @@ export default function Buyurtmalar() {
         void loadDataRef.current()
 
         const reloadFromRemote = async () => {
-            await loadDataRef.current()
+            await loadDataRef.current({ silent: true })
             if (ordersListViewRef.current === 'trash') await loadTrashOrdersRef.current()
         }
 
@@ -1405,9 +1372,11 @@ export default function Buyurtmalar() {
         setTrashOrders(data || [])
     }
 
-    async function loadData() {
+    /** `silent: true` — tahrir/o‘chirishdan keyin: ro‘yxat yangilanadi, lekin butun sahifa spinneri yo‘q */
+    async function loadData(opts = {}) {
+        const silent = opts.silent === true
         try {
-            setLoading(true)
+            if (!silent) setLoading(true)
 
             const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback({ activeOnly: true })
             if (ordersError) throw ordersError
@@ -1451,7 +1420,7 @@ export default function Buyurtmalar() {
         } catch (error) {
             console.error('Error loading data:', error)
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
     }
 
@@ -1791,13 +1760,17 @@ export default function Buyurtmalar() {
                     await showAlert(t('orders.orderLinesEmpty'), { variant: 'warning' })
                     return
                 }
-                const rawTotal = expandedRows.reduce((s, row) => {
-                    const acc = Number(s) || 0
-                    const pr = Number(row.product_price) || 0
-                    const q = parseInt(String(row.quantity ?? '0'), 10) || 0
-                    return acc + pr * q
-                }, 0)
-                const totalSum = Math.round(rawTotal * 100) / 100
+                const computedTotal =
+                    Math.round(
+                        expandedRows.reduce((s, row) => {
+                            const acc = Number(s) || 0
+                            const pr = Number(row.product_price) || 0
+                            const q = parseInt(String(row.quantity ?? '0'), 10) || 0
+                            return acc + pr * q
+                        }, 0) * 100
+                    ) / 100
+                const totalSum =
+                    mergeSourceAgg != null ? mergeSourceAgg.subtotal : computedTotal
 
                 const qtyByProductId = new Map()
                 for (const row of expandedRows) {
@@ -1911,7 +1884,8 @@ export default function Buyurtmalar() {
                     setOrderLines([createEmptyOrderLine()])
                     setEditId(null)
                     setIsAdding(false)
-                    loadData()
+                    setMergeSourceAgg(null)
+                    loadData({ silent: true })
                     return
                 }
 
@@ -2000,7 +1974,8 @@ export default function Buyurtmalar() {
                 })
                 setOrderLines([createEmptyOrderLine()])
                 setIsAdding(false)
-                loadData()
+                setMergeSourceAgg(null)
+                loadData({ silent: true })
         } catch (error) {
             console.error('Error saving order:', error)
             const msg =
@@ -2040,7 +2015,7 @@ export default function Buyurtmalar() {
                 delete next[id]
                 return next
             })
-            await loadData()
+            await loadData({ silent: true })
             if (ordersListViewRef.current === 'trash') await loadTrashOrders()
         } catch (error) {
             console.error('Error deleting order:', error)
@@ -2058,7 +2033,7 @@ export default function Buyurtmalar() {
                 }
                 throw error
             }
-            await loadData()
+            await loadData({ silent: true })
             await loadTrashOrders()
         } catch (error) {
             console.error('Error restoring order:', error)
@@ -2077,7 +2052,7 @@ export default function Buyurtmalar() {
                 delete next[id]
                 return next
             })
-            await loadData()
+            await loadData({ silent: true })
             await loadTrashOrders()
         } catch (error) {
             console.error('Error permanently deleting order:', error)
@@ -2099,6 +2074,7 @@ export default function Buyurtmalar() {
         }
         if (seq !== editLoadSeqRef.current) return
 
+        setMergeSourceAgg(null)
         const linesRaw = orderItemsToOrderLines(dedupeOrderItemsKeepNewest(rows || []), products)
         const lines = enrichOrderLinesFromDb(linesRaw)
 
@@ -2135,6 +2111,7 @@ export default function Buyurtmalar() {
     function handleCancel() {
         clearNewOrderDraft()
         setDraftBanner(false)
+        setMergeSourceAgg(null)
         setEditId(null)
         setForm({
             customer_id: '',
@@ -2155,6 +2132,7 @@ export default function Buyurtmalar() {
             setDraftBanner(false)
             return
         }
+        setMergeSourceAgg(null)
         setForm(
             d.form || {
                 customer_id: '',
@@ -2194,6 +2172,7 @@ export default function Buyurtmalar() {
             }
             const d = JSON.parse(raw)
             setEditId(null)
+            setMergeSourceAgg(null)
             setForm((f) => ({
                 ...f,
                 customer_name: d.customer_name || '',
@@ -2286,12 +2265,22 @@ export default function Buyurtmalar() {
             const { data: allRows, error } = await fetchOrderItemsForOrderIds(ordersToMerge.map((o) => o.id))
             if (error) throw error
             const cleanedRows = normalizeOrderItemsForList(allRows || [])
-            const mergedFlat = mergeOrderItemsRowsForCombine(cleanedRows, products)
-            if (!mergedFlat.length) {
+            if (!cleanedRows.length) {
                 await showAlert(t('orders.mergeEmptyLines'), { variant: 'warning' })
                 return
             }
-            const linesRaw = orderItemsToOrderLines(mergedFlat, products)
+            const orderRank = new Map(ordersToMerge.map((o, i) => [String(o.id), i]))
+            const sortedForForm = [...cleanedRows].sort((a, b) => {
+                const ra = orderRank.get(String(a.order_id)) ?? 999
+                const rb = orderRank.get(String(b.order_id)) ?? 999
+                if (ra !== rb) return ra - rb
+                const la = Number(a.line_index ?? 0)
+                const lb = Number(b.line_index ?? 0)
+                if (la !== lb) return la - lb
+                return String(a.id || '').localeCompare(String(b.id || ''))
+            })
+            setMergeSourceAgg(aggregateMergedOrdersTotals(ordersToMerge, cleanedRows))
+            const linesRaw = orderItemsToOrderLines(sortedForForm, products)
             const lines = enrichOrderLinesFromDb(linesRaw)
             const labels = ordersToMerge.map((o) =>
                 o.order_number ? `№ ${o.order_number}` : `#${String(o.id).slice(0, 8)}`
@@ -2352,7 +2341,8 @@ export default function Buyurtmalar() {
             listTitle: '',
             orders: [orderForPrint],
             showPrices,
-            labelColorFn
+            labelColorFn,
+            productsList: products
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.', {
@@ -2394,7 +2384,8 @@ export default function Buyurtmalar() {
             listTitle: `${t('orders.listPrintCount')}: ${list.length}`,
             orders: ordersForPrint,
             showPrices,
-            labelColorFn
+            labelColorFn,
+            productsList: products
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })
@@ -2402,6 +2393,8 @@ export default function Buyurtmalar() {
     }
 
     const orderLinesSubtotal = useMemo(() => computeOrderLinesSubtotal(orderLines), [orderLines])
+    const displayFormSubtotal =
+        mergeSourceAgg != null ? mergeSourceAgg.subtotal : orderLinesSubtotal
     const orderFormTableRows = useMemo(
         () => buildOrderFormTableRows(orderLines, products, language, t('orders.categoryUncategorized')),
         [orderLines, products, language, t]
@@ -2441,12 +2434,18 @@ export default function Buyurtmalar() {
     }
 
     const ordersForList = ordersListView === 'active' ? orders : trashOrders
+    /** Jadval va yuqori 4 karta bir xil `filteredOrders` dan — jami va statuslar mos keladi */
     const filteredOrders = ordersForList.filter(orderMatchesListFilters)
-    const totalSumma = orders.filter(orderMatchesListFilters).reduce((sum, b) => sum + (b.total || 0), 0)
+    const totalSumma = filteredOrders.reduce((sum, b) => sum + (Number(b.total) || 0), 0)
     const statusCounts = {
-        Yangi: orders.filter(b => b.status === 'Yangi' || b.status === 'new').length,
-        Jarayonda: orders.filter(b => b.status === 'Jarayonda' || b.status === 'pending').length,
-        Tugallandi: orders.filter(b => b.status === 'Tugallandi' || b.status === 'completed').length
+        Yangi: filteredOrders.filter((b) => b.status === 'Yangi' || b.status === 'new').length,
+        Jarayonda: filteredOrders.filter((b) => b.status === 'Jarayonda' || b.status === 'pending').length,
+        Tugallandi: filteredOrders.filter(
+            (b) =>
+                b.status === 'Tugallandi' ||
+                b.status === 'completed' ||
+                b.status === 'Tugallangan'
+        ).length,
     }
 
     if (loading) {
@@ -2464,44 +2463,35 @@ export default function Buyurtmalar() {
         <div className="max-w-7xl mx-auto px-6">
             <Header title={t('common.orders')} toggleSidebar={toggleSidebar} />
 
-            <div className="mb-6 space-y-2">
-                <div className="rounded-xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950 shadow-sm">
-                    <p className="font-semibold text-blue-900">{t('orders.tableEditHint')}</p>
+            {ordersListView === 'trash' ? (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+                    <p className="font-medium leading-snug">{t('orders.trashHint')}</p>
                 </div>
-                {ordersListView === 'active' ? (
-                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950 shadow-sm">
-                        <p className="font-medium text-indigo-900">{t('orders.mergeHint')}</p>
-                    </div>
-                ) : (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 shadow-sm">
-                        <p className="font-medium text-amber-900">{t('orders.trashHint')}</p>
-                    </div>
-                )}
-            </div>
+            ) : null}
 
-            <div className="flex flex-wrap gap-2 mb-6">
+            <div className="flex flex-wrap gap-1.5 mb-4">
                 <button
                     type="button"
                     onClick={() => switchOrdersListView('active')}
-                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
                         ordersListView === 'active'
                             ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25'
                             : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                     }`}
                 >
-                    <ShoppingCart size={18} />
+                    <ShoppingCart size={16} />
                     {t('orders.activeList')}
                 </button>
                 <button
                     type="button"
                     onClick={() => switchOrdersListView('trash')}
-                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
                         ordersListView === 'trash'
                             ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25'
                             : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                     }`}
                 >
-                    <Archive size={18} />
+                    <Archive size={16} />
                     {t('orders.trashBin')}
                     {trashOrderCount > 0 ? (
                         <span className="min-w-[1.5rem] rounded-full bg-white/20 px-1.5 text-center text-xs tabular-nums">
@@ -2515,8 +2505,8 @@ export default function Buyurtmalar() {
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-blue-100">{t('dashboard.newOrders')}</p>
-                            <p className="text-3xl font-bold mt-2">{orders.length}</p>
+                            <p className="text-sm font-medium text-blue-100">{t('orders.statsVisibleCount')}</p>
+                            <p className="text-3xl font-bold mt-2">{filteredOrders.length}</p>
                         </div>
                         <div className="p-3 bg-white/20 rounded-xl">
                             <ShoppingCart className="text-white" size={24} />
@@ -2548,7 +2538,7 @@ export default function Buyurtmalar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-500">{t('common.totalRevenue')}</p>
+                            <p className="text-sm font-medium text-gray-500">{t('dashboard.totalRevenue')}</p>
                             <p className="text-3xl font-bold mt-2 text-gray-800">${formatUsd(totalSumma)}</p>
                         </div>
                         <div className="p-3 bg-amber-50 rounded-xl text-amber-600 font-bold text-xl">
@@ -2580,35 +2570,35 @@ export default function Buyurtmalar() {
                 </div>
             ) : null}
 
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                <div className="relative w-full md:w-96">
-                    <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
+            <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-2 mb-6 bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border border-gray-100">
+                <div className="relative w-full lg:max-w-sm lg:flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input
                         type="text"
                         placeholder={t('orders.searchPlaceholder')}
-                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all"
+                        className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-lg outline-none transition-all"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
 
-                    <div className="flex flex-wrap gap-3 w-full md:w-auto justify-end">
+                <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto justify-start lg:justify-end">
                     <button
                         type="button"
                         onClick={repeatLastOrder}
-                        className="flex items-center justify-center gap-2 bg-violet-50 hover:bg-violet-100 text-violet-800 border border-violet-200 px-4 py-3 rounded-xl transition-all font-bold text-sm"
+                        className="inline-flex items-center justify-center gap-1 bg-violet-50 hover:bg-violet-100 text-violet-800 border border-violet-200 px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs"
                         title={t('orders.repeatLastTitle')}
                     >
-                        <Repeat size={18} />
+                        <Repeat size={15} />
                         <span className="hidden sm:inline">{t('orders.repeatLast')}</span>
                     </button>
                     <button
                         type="button"
                         onClick={() => exportOrdersToCsv(filteredOrders, `buyurtmalar-${new Date().toISOString().slice(0, 10)}.csv`)}
-                        className="flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 px-4 py-3 rounded-xl transition-all font-bold text-sm"
+                        className="inline-flex items-center justify-center gap-1 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs"
                         title={t('orders.exportCsvTitle')}
                     >
-                        <Download size={18} />
+                        <Download size={15} />
                         <span className="hidden sm:inline">CSV</span>
                     </button>
                     {ordersListView === 'active' ? (
@@ -2617,17 +2607,17 @@ export default function Buyurtmalar() {
                                 type="button"
                                 onClick={handleMergeSelectedOrders}
                                 disabled={selectedMergeCount < 2}
-                                className={`flex items-center justify-center gap-2 border px-4 py-3 rounded-xl transition-all font-bold text-sm ${
+                                className={`inline-flex items-center justify-center gap-1 border px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs ${
                                     selectedMergeCount >= 2
-                                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-md shadow-indigo-600/25'
+                                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'
                                         : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                                 }`}
                                 title={t('orders.mergeButtonTitle')}
                             >
-                                <GitMerge size={18} />
+                                <GitMerge size={15} />
                                 <span className="hidden sm:inline">{t('orders.mergeButton')}</span>
                                 {selectedMergeCount > 0 ? (
-                                    <span className="min-w-[1.25rem] rounded-full bg-white/20 px-1.5 text-center text-xs font-black tabular-nums">
+                                    <span className="min-w-[1.1rem] rounded-full bg-white/20 px-1 text-center text-[10px] font-bold tabular-nums leading-none py-0.5">
                                         {selectedMergeCount}
                                     </span>
                                 ) : null}
@@ -2636,7 +2626,7 @@ export default function Buyurtmalar() {
                                 <button
                                     type="button"
                                     onClick={clearMergeSelection}
-                                    className="flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 py-3 rounded-xl transition-all font-semibold text-xs"
+                                    className="inline-flex items-center justify-center bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-2 py-1.5 rounded-lg transition-all font-medium text-[11px]"
                                     title={t('orders.mergeClearTitle')}
                                 >
                                     {t('orders.mergeClear')}
@@ -2644,12 +2634,12 @@ export default function Buyurtmalar() {
                             ) : null}
                         </>
                     ) : null}
-                    <div className="flex items-center gap-2 bg-gray-50 px-4 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 transition-all">
-                        <Filter size={20} className="text-gray-500" />
+                    <div className="flex items-center gap-1.5 bg-gray-50 px-2 rounded-lg border border-gray-100">
+                        <Filter size={15} className="text-gray-500 shrink-0" />
                         <select
                             value={filterStatus}
                             onChange={(e) => setFilterStatus(e.target.value)}
-                            className="bg-transparent py-3 outline-none text-gray-700 font-medium cursor-pointer"
+                            className="bg-transparent py-1.5 pr-1 outline-none text-gray-700 text-xs font-medium cursor-pointer max-w-[9.5rem]"
                         >
                             <option value="all">{t('orders.allStatuses')}</option>
                             <option value="new">{t('orders.statusNew')}</option>
@@ -2659,34 +2649,24 @@ export default function Buyurtmalar() {
                         </select>
                     </div>
 
-                    <div className="flex flex-col items-stretch sm:items-end gap-1 w-full md:w-auto">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 text-center sm:text-right w-full">
-                            {t('orders.listPrintSection')}
-                        </p>
-                        <div className="flex flex-wrap gap-3 justify-end">
-                            <button
-                                type="button"
-                                onClick={() => handlePrintOrderList(filteredOrders, true)}
-                                className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl transition-all font-bold text-sm shadow-md shadow-emerald-600/20 min-w-[140px]"
-                                title={`${t('orders.listPrintWithPrices')} · ${t('orders.exportPdfHint')}`}
-                            >
-                                <Receipt size={18} />
-                                <span className="hidden sm:inline">{t('orders.listPrintShortWithPrices')}</span>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => handlePrintOrderList(filteredOrders, false)}
-                                className="flex items-center justify-center gap-2 bg-slate-600 hover:bg-slate-700 text-white px-4 py-3 rounded-xl transition-all font-bold text-sm shadow-md shadow-slate-600/20 min-w-[140px]"
-                                title={t('orders.listPrintWithoutPrices')}
-                            >
-                                <List size={18} />
-                                <span className="hidden sm:inline">{t('orders.listPrintShortNoPrices')}</span>
-                            </button>
-                        </div>
-                        <p className="text-[11px] text-gray-500 max-w-[280px] text-center sm:text-right leading-snug">
-                            {t('orders.listPrintHint')}
-                        </p>
-                    </div>
+                    <button
+                        type="button"
+                        onClick={() => handlePrintOrderList(filteredOrders, true)}
+                        className="inline-flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs"
+                        title={`${t('orders.listPrintWithPrices')} · ${t('orders.exportPdfHint')}`}
+                    >
+                        <Receipt size={15} />
+                        <span className="hidden sm:inline">{t('orders.listPrintShortWithPrices')}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handlePrintOrderList(filteredOrders, false)}
+                        className="inline-flex items-center justify-center gap-1 bg-slate-600 hover:bg-slate-700 text-white px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs"
+                        title={t('orders.listPrintWithoutPrices')}
+                    >
+                        <List size={15} />
+                        <span className="hidden sm:inline">{t('orders.listPrintShortNoPrices')}</span>
+                    </button>
 
                     <button
                         type="button"
@@ -2707,12 +2687,13 @@ export default function Buyurtmalar() {
                                     note: '',
                                     source: 'dokon'
                                 })
+                                setMergeSourceAgg(null)
                                 setIsAdding(true)
                             }
                         }}
-                        className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
+                        className="inline-flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-all font-bold text-xs shadow-sm"
                     >
-                        {isAdding ? <X size={20} /> : <Plus size={20} />}
+                        {isAdding ? <X size={16} /> : <Plus size={16} />}
                         <span className="hidden sm:inline">{isAdding ? t('common.cancel') : t('orders.newOrder')}</span>
                     </button>
                 </div>
@@ -3145,9 +3126,24 @@ export default function Buyurtmalar() {
                             <div className="space-y-2">
                                 <label className="block text-sm font-bold text-gray-700">{t('orders.summa')} ($)</label>
                                 <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-bold text-gray-900">
-                                    ${formatUsd(orderLinesSubtotal)}
+                                    ${formatUsd(displayFormSubtotal)}
                                 </div>
+                                {mergeSourceAgg ? (
+                                    <p className="text-xs text-gray-600 leading-snug">{t('orders.mergeTotalsHint')}</p>
+                                ) : null}
                             </div>
+
+                            {mergeSourceAgg ? (
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-gray-700">
+                                        {t('orders.mergeTotalQtyLabel')}
+                                    </label>
+                                    <div className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 font-bold text-gray-900 tabular-nums">
+                                        {mergeSourceAgg.totalQty}
+                                    </div>
+                                    <p className="text-xs text-gray-600 leading-snug">{t('orders.mergeQtyHint')}</p>
+                                </div>
+                            ) : null}
 
                             <div className="space-y-2">
                                 <label className="block text-sm font-bold text-gray-700">{t('orders.status')}</label>

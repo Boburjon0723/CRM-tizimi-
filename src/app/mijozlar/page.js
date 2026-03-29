@@ -37,9 +37,11 @@ export default function Mijozlar() {
         loadData()
     }, [])
 
-    async function loadData() {
+    /** `silent: true` — saqlash/o‘chirishdan keyin to‘liq sahifa yuklovchisiz */
+    async function loadData(opts = {}) {
+        const silent = opts.silent === true
         try {
-            setLoading(true)
+            if (!silent) setLoading(true)
 
             // Fetch customers from customers table
             const { data: customersData, error: custError } = await supabase
@@ -114,7 +116,7 @@ export default function Mijozlar() {
         } catch (error) {
             console.error('Error loading data:', error)
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
     }
 
@@ -148,7 +150,7 @@ export default function Mijozlar() {
             setIsAdding(false)
             setEditId(null)
             setForm({ name: '', email: '', phone: '', country: '', address: '', notes: '' })
-            loadData()
+            loadData({ silent: true })
         } catch (error) {
             console.error('Error saving customer:', error)
             await showAlert(t('common.saveError'), { variant: 'error' })
@@ -165,7 +167,7 @@ export default function Mijozlar() {
                 .eq('id', id)
 
             if (error) throw error
-            loadData()
+            loadData({ silent: true })
             showToast(t('customers.successDelete'), { type: 'success' })
         } catch (error) {
             console.error('Error deleting customer:', error)
@@ -266,7 +268,7 @@ export default function Mijozlar() {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-start">
                         <div>
-                            <p className="text-sm font-medium text-gray-600">{t('common.totalRevenue')}</p>
+                            <p className="text-sm font-medium text-gray-600">{t('dashboard.totalRevenue')}</p>
                             <p className="text-2xl font-bold text-amber-600 mt-2">
                                 {(customers.reduce((sum, c) => sum + c.totalSpend, 0) / 1000000).toFixed(1)}M
                             </p>
