@@ -184,6 +184,7 @@ export default function Mahsulotlar() {
         color: '', // legacy
         colors: [], // multi-select
         size: '', // Mapping to 'Kod'
+        sort_order: '0', // vitrinada kategoriya ichida tartib (kichik = yuqoriroq)
         rating: '0',
         reviews: '0',
         model_3d_url: '' // 3D model link
@@ -344,6 +345,7 @@ export default function Mahsulotlar() {
                 color: form.colors?.[0] || form.color || '', // preserve first for legacy
                 colors: form.colors || [],
                 size: form.size, // Kod
+                sort_order: Math.max(0, parseInt(form.sort_order, 10) || 0),
                 features: featuresToPayload(form.features),
                 rating: parseFloat(form.rating) || 0,
                 reviews: parseInt(form.reviews) || 0,
@@ -383,6 +385,7 @@ export default function Mahsulotlar() {
                 color: '',
                 colors: [],
                 size: '',
+                sort_order: '0',
                 rating: '0',
                 reviews: '0',
                 model_3d_url: '',
@@ -430,6 +433,7 @@ export default function Mahsulotlar() {
             color: item.color || '',
             colors: item.colors || (item.color ? [item.color] : []),
             size: item.size || '',
+            sort_order: item.sort_order != null ? String(item.sort_order) : '0',
             features: featuresRowsFromProduct(item),
             imageUrlInput: '',
             rating: item.rating?.toString() || '0',
@@ -461,6 +465,7 @@ export default function Mahsulotlar() {
             color: '',
             colors: [],
             size: '',
+            sort_order: '0',
             rating: '0',
             reviews: '0',
             model_3d_url: '',
@@ -964,6 +969,7 @@ export default function Mahsulotlar() {
                                 color: '',
                                 colors: [],
                                 size: '',
+                                sort_order: '0',
                                 rating: '0',
                                 reviews: '0',
                                 model_3d_url: '',
@@ -1672,6 +1678,19 @@ export default function Mahsulotlar() {
                                         onChange={e => setForm({ ...form, size: e.target.value })}
                                         placeholder="Masalan: TR-102"
                                     />
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="block text-sm font-bold text-gray-700">Vitrinada tartib</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                                        value={form.sort_order}
+                                        onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
+                                        placeholder="0"
+                                    />
+                                    <p className="text-xs text-gray-500">Kichik raqam kategoriyada yuqoriroq chiqadi; bir xil bo‘lsa kod va nom bo‘yicha.</p>
                                 </div>
                                 <div className="space-y-4">
                                     <label className="block text-sm font-bold text-gray-700">Kategoriya</label>
