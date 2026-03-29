@@ -8,6 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Package, Users, ShoppingCart, DollarSign, TrendingUp, TrendingDown } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
 
 export default function Dashboard() {
   const { toggleSidebar } = useLayout()
@@ -41,16 +42,34 @@ export default function Dashboard() {
 
   async function loadData() {
     try {
-      const [productsRes, employeesRes, ordersRes, transactionsRes] = await Promise.all([
+      let ordersRes = await supabase
+        .from('orders')
+        .select('*, customers(name)')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      if (ordersRes.error && isDeletedAtMissingError(ordersRes.error)) {
+        ordersRes = await supabase
+          .from('orders')
+          .select('*, customers(name)')
+          .order('created_at', { ascending: false })
+          .limit(5)
+      }
+
+      const [productsRes, employeesRes, transactionsRes] = await Promise.all([
         supabase.from('products').select('stock'),
         supabase.from('employees').select('id'),
-        supabase.from('orders').select('*, customers(name)').order('created_at', { ascending: false }).limit(5),
         supabase.from('transactions').select('type, amount, date')
       ])
 
       const totalStock = productsRes.data?.reduce((sum, p) => sum + (p.stock || 0), 0) || 0
       const totalEmployees = employeesRes.data?.length || 0
-      const totalOrders = (await supabase.from('orders').select('id', { count: 'exact', head: true })).count || 0
+
+      let countRes = await supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null)
+      if (countRes.error && isDeletedAtMissingError(countRes.error)) {
+        countRes = await supabase.from('orders').select('id', { count: 'exact', head: true })
+      }
+      const totalOrders = countRes.count || 0
 
       const income = transactionsRes.data?.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
       const expense = transactionsRes.data?.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
@@ -64,7 +83,7 @@ export default function Dashboard() {
       })
 
       // Format recent orders for display
-      const formattedRecentOrders = (ordersRes.data || []).map(order => ({
+      const formattedRecentOrders = (ordersRes.error ? [] : ordersRes.data || []).map(order => ({
         id: order.id,
         mijoz: order.customers?.name || 'Mijoz',
         mahsulot: 'Order #' + order.id.toString().slice(0, 8),

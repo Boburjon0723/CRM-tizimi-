@@ -273,7 +273,21 @@ export const translations = {
             mergeFetchError: 'Buyurtma qatorlarini yuklashda xato.',
             mergeEmptyLines: 'Tanlangan buyurtmalarda mahsulot qatorlari topilmadi.',
             mergeNotePrefix: 'Birlashtirilgan buyurtmalar',
-            mergeOpenedForm: 'Birlashtirilgan jadval yangi buyurtma formasiga yuklandi — tekshirib «Saqlash» bosing.'
+            mergeOpenedForm: 'Birlashtirilgan jadval yangi buyurtma formasiga yuklandi — tekshirib «Saqlash» bosing.',
+            activeList: 'Buyurtmalar',
+            trashBin: 'Karzinka',
+            trashHint:
+                'Bu yerda o‘chirilgan buyurtmalar turadi. «Qaytarish» — asosiy ro‘yxatga; qizil axlat — bazadan butunlay o‘chiradi (qatorlar ham o‘chadi).',
+            trashEmpty: 'Karzinka bo‘sh.',
+            softDeleteConfirm: 'Buyurtmani karzinkaga ko‘chirishni tasdiqlaysizmi? (Asosiy ro‘yxatdan yo‘qoladi, keyin qaytarish mumkin.)',
+            permanentDeleteConfirm:
+                'Butunlay o‘chirish: buyurtma va uning barcha qatorlari bazadan yo‘qoladi. Davom etasizmi?',
+            deletedAtMigrationHint:
+                'Buyurtmalar jadvalida `deleted_at` ustuni yo‘q. Supabase SQL Editor da loyihadagi `add_orders_deleted_at.sql` faylini bir marta ishga tushiring, keyin sahifani yangilang.',
+            restoreOrder: 'Qaytarish',
+            restoreOrderTitle: 'Asosiy ro‘yxatga qaytarish',
+            moveToTrashTitle: 'Karzinkaga ko‘chirish',
+            permanentDeleteTitle: 'Butunlay o‘chirish'
         },
         products: {
             title: 'Mahsulotlar',
@@ -793,7 +807,21 @@ export const translations = {
             mergeFetchError: 'Ошибка загрузки строк заказов.',
             mergeEmptyLines: 'В выбранных заказах нет позиций.',
             mergeNotePrefix: 'Объединённые заказы',
-            mergeOpenedForm: 'Объединённая таблица загружена в форму нового заказа — проверьте и нажмите «Сохранить».'
+            mergeOpenedForm: 'Объединённая таблица загружена в форму нового заказа — проверьте и нажмите «Сохранить».',
+            activeList: 'Заказы',
+            trashBin: 'Корзина',
+            trashHint:
+                'Здесь удалённые заказы. «Вернуть» — в основной список; красная корзина — полное удаление из базы (включая строки заказа).',
+            trashEmpty: 'Корзина пуста.',
+            softDeleteConfirm: 'Переместить заказ в корзину? (Исчезнет из основного списка, можно вернуть.)',
+            permanentDeleteConfirm:
+                'Полное удаление: заказ и все его позиции будут удалены из базы. Продолжить?',
+            deletedAtMigrationHint:
+                'В таблице orders нет столбца deleted_at. Выполните один раз SQL из файла add_orders_deleted_at.sql в Supabase SQL Editor и обновите страницу.',
+            restoreOrder: 'Вернуть',
+            restoreOrderTitle: 'Вернуть в основной список',
+            moveToTrashTitle: 'В корзину',
+            permanentDeleteTitle: 'Удалить навсегда'
         },
         products: {
             title: 'Продукты',
@@ -1313,7 +1341,21 @@ export const translations = {
             mergeFetchError: 'Could not load order line items.',
             mergeEmptyLines: 'Selected orders have no line items.',
             mergeNotePrefix: 'Merged orders',
-            mergeOpenedForm: 'Merged table loaded into the new order form — review and click Save.'
+            mergeOpenedForm: 'Merged table loaded into the new order form — review and click Save.',
+            activeList: 'Orders',
+            trashBin: 'Trash',
+            trashHint:
+                'Deleted orders appear here. Restore moves them back to the main list; the red trash icon permanently deletes the order and its line items.',
+            trashEmpty: 'Trash is empty.',
+            softDeleteConfirm: 'Move this order to trash? (It leaves the main list; you can restore it later.)',
+            permanentDeleteConfirm:
+                'Permanently delete this order and all its line items from the database? This cannot be undone.',
+            deletedAtMigrationHint:
+                'Column deleted_at is missing on orders. Run the SQL in add_orders_deleted_at.sql once in the Supabase SQL Editor, then refresh.',
+            restoreOrder: 'Restore',
+            restoreOrderTitle: 'Restore to main list',
+            moveToTrashTitle: 'Move to trash',
+            permanentDeleteTitle: 'Delete permanently'
         },
         products: {
             title: 'Products',

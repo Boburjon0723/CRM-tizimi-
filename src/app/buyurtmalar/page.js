@@ -25,10 +25,13 @@ import {
     ChevronDown,
     ChevronUp,
     Edit,
+    Archive,
+    RotateCcw,
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
 
 function escapeHtml(s) {
     if (s == null) return ''
@@ -88,17 +91,42 @@ const ORDERS_SELECT_FALLBACKS = [
 `,
 ]
 
-async function fetchOrdersPageWithFallback() {
+async function fetchOrdersPageWithFallback(options = {}) {
+    const { activeOnly = true } = options
+
+    async function trySelect(useDeletedFilter) {
+        for (const sel of ORDERS_SELECT_FALLBACKS) {
+            let q = supabase.from('orders').select(sel).order('created_at', { ascending: false })
+            if (useDeletedFilter && activeOnly) q = q.is('deleted_at', null)
+            const res = await q
+            if (!res.error) return res
+            if (useDeletedFilter && activeOnly && isDeletedAtMissingError(res.error)) return null
+            if (!isSchemaOrEmbedError(res.error)) return res
+            console.warn('orders select fallback:', res.error?.message)
+        }
+        return { data: null, error: new Error('orders load failed') }
+    }
+
+    if (activeOnly) {
+        const first = await trySelect(true)
+        if (first !== null) return first
+    }
+    return trySelect(false)
+}
+
+async function fetchDeletedOrdersPageWithFallback() {
     for (const sel of ORDERS_SELECT_FALLBACKS) {
         const res = await supabase
             .from('orders')
             .select(sel)
+            .not('deleted_at', 'is', null)
             .order('created_at', { ascending: false })
         if (!res.error) return res
+        if (isDeletedAtMissingError(res.error)) return { data: [], error: null }
         if (!isSchemaOrEmbedError(res.error)) return res
-        console.warn('orders select fallback:', res.error?.message)
+        console.warn('deleted orders select fallback:', res.error?.message)
     }
-    return { data: null, error: new Error('orders load failed') }
+    return { data: [], error: null }
 }
 
 const ORDER_ITEMS_FOR_ORDER_FALLBACKS = [
@@ -482,40 +510,69 @@ function mergeOrderItemPayloadsForDb(payloads) {
 }
 
 /**
+ * `order_items.size` bo‘sh bo‘lsa — mahsulot katalogidagi kod (makeItemPayloads / tahrir bilan mos).
+ * Aks holda birlashtirishda bir xil mahsulot turli kalitga tushib, keyin jadvalda miqdor 2x bo‘lardi.
+ */
+function resolvedOrderItemSizeRaw(oi, productsList) {
+    const s = oi?.size != null ? String(oi.size).trim() : ''
+    if (s) return s
+    const p =
+        oi?.product_id && productsList?.length
+            ? productsList.find((x) => String(x.id) === String(oi.product_id))
+            : null
+    if (p?.size != null && String(p.size).trim() !== '') return String(p.size).trim()
+    return ''
+}
+
+/**
  * Bir nechta buyurtmaning `order_items` qatorlarini bitta ro‘yxatga yig‘adi:
  * bir xil mahsulot + model kodi + rang — miqdorlar qo‘shiladi, birlik narxi og‘irlik bo‘yicha o‘rtacha.
+ * @param {Array} rows
+ * @param {Array} productsList — mahsulotlar ro‘yxati (bo‘sh size ni katalog kodi bilan birlashtirish uchun)
  */
-function mergeOrderItemsRowsForCombine(rows) {
+function mergeOrderItemsRowsForCombine(rows, productsList) {
     if (!rows?.length) return []
+    const plist = productsList || []
     const map = new Map()
     rows.forEach((oi, fallbackIdx) => {
         const pid = String(oi.product_id ?? '')
-        const sz = normalizeModelKey(oi.size != null ? String(oi.size) : '')
+        const szNorm = normalizeModelKey(resolvedOrderItemSizeRaw(oi, plist))
         const col = normalizeModelKey(oi.color != null ? String(oi.color) : '')
         const key = pid
-            ? `${pid}|${sz}|${col}`
-            : `nopid:${String(oi.id ?? '')}:${sz}:${col}:${fallbackIdx}`
+            ? `${pid}|${szNorm}|${col}`
+            : `nopid:${String(oi.id ?? '')}:${szNorm}:${col}:${fallbackIdx}`
         const q = parseOrderItemQty(oi.quantity)
         const pr = parseOrderItemPrice(oi.price)
         const money = Math.round(pr * q * 100) / 100
         const prev = map.get(key)
         if (!prev) {
-            map.set(key, { template: oi, qty: q, moneySum: money })
+            map.set(key, {
+                template: oi,
+                qty: q,
+                moneySum: money,
+                sizeResolved: resolvedOrderItemSizeRaw(oi, plist)
+            })
         } else {
             prev.qty += q
             prev.moneySum = Math.round((prev.moneySum + money) * 100) / 100
+            const r = resolvedOrderItemSizeRaw(oi, plist)
+            if (r && !prev.sizeResolved) prev.sizeResolved = r
         }
     })
     let seq = 0
-    return Array.from(map.values()).map(({ template, qty, moneySum }) => {
+    return Array.from(map.values()).map(({ template, qty, moneySum, sizeResolved }) => {
         const unit = qty > 0 ? Math.round((moneySum / qty) * 100) / 100 : parseOrderItemPrice(template.price)
         const syntheticId = `merge_${seq++}`
+        const sizeOut = sizeResolved || resolvedOrderItemSizeRaw(template, plist)
+        const sizeFinal =
+            sizeOut != null && String(sizeOut).trim() !== '' ? String(sizeOut).trim() : template.size
         return {
             ...template,
             id: syntheticId,
             quantity: qty,
             price: unit,
-            subtotal: moneySum
+            subtotal: moneySum,
+            size: sizeFinal
         }
     })
 }
@@ -1206,6 +1263,13 @@ export default function Buyurtmalar() {
     const [filterStatus, setFilterStatus] = useState('all')
     /** Bir nechta buyurtmani bitta yangi buyurtmaga birlashtirish uchun tanlov */
     const [mergeSelection, setMergeSelection] = useState({})
+    /** Faol ro‘yxat yoki karzinka (o‘chirilganlar) */
+    const [ordersListView, setOrdersListView] = useState('active')
+    const [trashOrders, setTrashOrders] = useState([])
+    const [trashOrderCount, setTrashOrderCount] = useState(0)
+    const ordersListViewRef = useRef('active')
+    const loadDataRef = useRef(async () => {})
+    const loadTrashOrdersRef = useRef(async () => {})
     /** Buyurtmalar jadvalidagi mahsulotlar ro‘yxatini yoyish/yig‘ish */
     const [orderListExpandedById, setOrderListExpandedById] = useState({})
     /** Yangi buyurtma: bir nechta qator — model kodi orqali mahsulot, soni qo‘lda */
@@ -1297,18 +1361,26 @@ export default function Buyurtmalar() {
     }, [isAdding, editId])
 
     useEffect(() => {
-        loadData()
+        ordersListViewRef.current = ordersListView
+    }, [ordersListView])
 
-        // Subscribe to changes
+    useEffect(() => {
+        void loadDataRef.current()
+
+        const reloadFromRemote = async () => {
+            await loadDataRef.current()
+            if (ordersListViewRef.current === 'trash') await loadTrashOrdersRef.current()
+        }
+
         const channel = supabase
             .channel('orders_changes')
-            .on('postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'orders' },
-                (payload) => {
-                    playNotificationSound()
-                    loadData() // Reload to get joins
-                }
-            )
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
+                playNotificationSound()
+                void reloadFromRemote()
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, () => {
+                void reloadFromRemote()
+            })
             .subscribe()
 
         return () => {
@@ -1327,12 +1399,27 @@ export default function Buyurtmalar() {
         }
     }
 
+    async function loadTrashOrders() {
+        const { data, error } = await fetchDeletedOrdersPageWithFallback()
+        if (error) console.error('loadTrashOrders:', error)
+        setTrashOrders(data || [])
+    }
+
     async function loadData() {
         try {
             setLoading(true)
 
-            const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback()
+            const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback({ activeOnly: true })
             if (ordersError) throw ordersError
+
+            let trashCnt = 0
+            const trashCntRes = await supabase
+                .from('orders')
+                .select('id', { count: 'exact', head: true })
+                .not('deleted_at', 'is', null)
+            if (!trashCntRes.error) trashCnt = trashCntRes.count ?? 0
+            else if (!isDeletedAtMissingError(trashCntRes.error)) console.warn('trash count:', trashCntRes.error)
+            setTrashOrderCount(trashCnt)
 
             // Load Customers for dropdown
             const { data: customersData } = await supabase.from('customers').select('id, name, phone').order('name')
@@ -1366,6 +1453,15 @@ export default function Buyurtmalar() {
         } finally {
             setLoading(false)
         }
+    }
+
+    loadDataRef.current = loadData
+    loadTrashOrdersRef.current = loadTrashOrders
+
+    async function switchOrdersListView(next) {
+        setMergeSelection({})
+        setOrdersListView(next)
+        if (next === 'trash') await loadTrashOrders()
     }
 
     function dedupeProducts(list) {
@@ -1924,18 +2020,67 @@ export default function Buyurtmalar() {
     }
 
     async function handleDelete(id) {
-        if (!(await showConfirm(t('common.deleteConfirm'), { variant: 'warning' }))) return
+        if (!(await showConfirm(t('orders.softDeleteConfirm'), { variant: 'warning' }))) return
 
         try {
             const { error } = await supabase
                 .from('orders')
-                .delete()
+                .update({ deleted_at: new Date().toISOString() })
                 .eq('id', id)
 
-            if (error) throw error
-            loadData()
+            if (error) {
+                if (isDeletedAtMissingError(error)) {
+                    await showAlert(t('orders.deletedAtMigrationHint'), { variant: 'warning' })
+                    return
+                }
+                throw error
+            }
+            setMergeSelection((prev) => {
+                const next = { ...prev }
+                delete next[id]
+                return next
+            })
+            await loadData()
+            if (ordersListViewRef.current === 'trash') await loadTrashOrders()
         } catch (error) {
             console.error('Error deleting order:', error)
+            await showAlert(t('common.deleteError'), { variant: 'error' })
+        }
+    }
+
+    async function handleRestoreOrder(id) {
+        try {
+            const { error } = await supabase.from('orders').update({ deleted_at: null }).eq('id', id)
+            if (error) {
+                if (isDeletedAtMissingError(error)) {
+                    await showAlert(t('orders.deletedAtMigrationHint'), { variant: 'warning' })
+                    return
+                }
+                throw error
+            }
+            await loadData()
+            await loadTrashOrders()
+        } catch (error) {
+            console.error('Error restoring order:', error)
+            await showAlert(t('common.saveError'), { variant: 'error' })
+        }
+    }
+
+    async function handlePermanentDelete(id) {
+        if (!(await showConfirm(t('orders.permanentDeleteConfirm'), { variant: 'warning' }))) return
+
+        try {
+            const { error } = await supabase.from('orders').delete().eq('id', id)
+            if (error) throw error
+            setMergeSelection((prev) => {
+                const next = { ...prev }
+                delete next[id]
+                return next
+            })
+            await loadData()
+            await loadTrashOrders()
+        } catch (error) {
+            console.error('Error permanently deleting order:', error)
             await showAlert(t('common.deleteError'), { variant: 'error' })
         }
     }
@@ -2123,6 +2268,7 @@ export default function Buyurtmalar() {
     }
 
     async function handleMergeSelectedOrders() {
+        if (ordersListView !== 'active') return
         const ids = Object.keys(mergeSelection).filter((id) => mergeSelection[id])
         if (ids.length < 2) {
             await showAlert(t('orders.mergeNeedTwo'), { variant: 'warning' })
@@ -2139,7 +2285,8 @@ export default function Buyurtmalar() {
         try {
             const { data: allRows, error } = await fetchOrderItemsForOrderIds(ordersToMerge.map((o) => o.id))
             if (error) throw error
-            const mergedFlat = mergeOrderItemsRowsForCombine(allRows || [])
+            const cleanedRows = normalizeOrderItemsForList(allRows || [])
+            const mergedFlat = mergeOrderItemsRowsForCombine(cleanedRows, products)
             if (!mergedFlat.length) {
                 await showAlert(t('orders.mergeEmptyLines'), { variant: 'warning' })
                 return
@@ -2266,7 +2413,7 @@ export default function Buyurtmalar() {
         [orderFormTableRows]
     )
 
-    const filteredOrders = orders.filter((b) => {
+    function orderMatchesListFilters(b) {
         const customerName = b.customer_name || b.customers?.name || t('common.unknown') || 'Noma\'lum'
         const q = searchTerm.trim().toLowerCase()
         const matchesSearch =
@@ -2291,9 +2438,11 @@ export default function Buyurtmalar() {
             (filterStatus === 'cancelled' &&
                 (st === 'cancelled' || st === 'Bekor qilingan' || st === 'Bekor qilindi'))
         return matchesSearch && matchesStatus
-    })
+    }
 
-    const totalSumma = filteredOrders.reduce((sum, b) => sum + (b.total || 0), 0)
+    const ordersForList = ordersListView === 'active' ? orders : trashOrders
+    const filteredOrders = ordersForList.filter(orderMatchesListFilters)
+    const totalSumma = orders.filter(orderMatchesListFilters).reduce((sum, b) => sum + (b.total || 0), 0)
     const statusCounts = {
         Yangi: orders.filter(b => b.status === 'Yangi' || b.status === 'new').length,
         Jarayonda: orders.filter(b => b.status === 'Jarayonda' || b.status === 'pending').length,
@@ -2319,9 +2468,47 @@ export default function Buyurtmalar() {
                 <div className="rounded-xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950 shadow-sm">
                     <p className="font-semibold text-blue-900">{t('orders.tableEditHint')}</p>
                 </div>
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950 shadow-sm">
-                    <p className="font-medium text-indigo-900">{t('orders.mergeHint')}</p>
-                </div>
+                {ordersListView === 'active' ? (
+                    <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-sm text-indigo-950 shadow-sm">
+                        <p className="font-medium text-indigo-900">{t('orders.mergeHint')}</p>
+                    </div>
+                ) : (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 shadow-sm">
+                        <p className="font-medium text-amber-900">{t('orders.trashHint')}</p>
+                    </div>
+                )}
+            </div>
+
+            <div className="flex flex-wrap gap-2 mb-6">
+                <button
+                    type="button"
+                    onClick={() => switchOrdersListView('active')}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                        ordersListView === 'active'
+                            ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25'
+                            : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                    }`}
+                >
+                    <ShoppingCart size={18} />
+                    {t('orders.activeList')}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => switchOrdersListView('trash')}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                        ordersListView === 'trash'
+                            ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25'
+                            : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                    }`}
+                >
+                    <Archive size={18} />
+                    {t('orders.trashBin')}
+                    {trashOrderCount > 0 ? (
+                        <span className="min-w-[1.5rem] rounded-full bg-white/20 px-1.5 text-center text-xs tabular-nums">
+                            {trashOrderCount}
+                        </span>
+                    ) : null}
+                </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -2424,34 +2611,38 @@ export default function Buyurtmalar() {
                         <Download size={18} />
                         <span className="hidden sm:inline">CSV</span>
                     </button>
-                    <button
-                        type="button"
-                        onClick={handleMergeSelectedOrders}
-                        disabled={selectedMergeCount < 2}
-                        className={`flex items-center justify-center gap-2 border px-4 py-3 rounded-xl transition-all font-bold text-sm ${
-                            selectedMergeCount >= 2
-                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-md shadow-indigo-600/25'
-                                : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                        }`}
-                        title={t('orders.mergeButtonTitle')}
-                    >
-                        <GitMerge size={18} />
-                        <span className="hidden sm:inline">{t('orders.mergeButton')}</span>
-                        {selectedMergeCount > 0 ? (
-                            <span className="min-w-[1.25rem] rounded-full bg-white/20 px-1.5 text-center text-xs font-black tabular-nums">
-                                {selectedMergeCount}
-                            </span>
-                        ) : null}
-                    </button>
-                    {selectedMergeCount > 0 ? (
-                        <button
-                            type="button"
-                            onClick={clearMergeSelection}
-                            className="flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 py-3 rounded-xl transition-all font-semibold text-xs"
-                            title={t('orders.mergeClearTitle')}
-                        >
-                            {t('orders.mergeClear')}
-                        </button>
+                    {ordersListView === 'active' ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={handleMergeSelectedOrders}
+                                disabled={selectedMergeCount < 2}
+                                className={`flex items-center justify-center gap-2 border px-4 py-3 rounded-xl transition-all font-bold text-sm ${
+                                    selectedMergeCount >= 2
+                                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 shadow-md shadow-indigo-600/25'
+                                        : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                }`}
+                                title={t('orders.mergeButtonTitle')}
+                            >
+                                <GitMerge size={18} />
+                                <span className="hidden sm:inline">{t('orders.mergeButton')}</span>
+                                {selectedMergeCount > 0 ? (
+                                    <span className="min-w-[1.25rem] rounded-full bg-white/20 px-1.5 text-center text-xs font-black tabular-nums">
+                                        {selectedMergeCount}
+                                    </span>
+                                ) : null}
+                            </button>
+                            {selectedMergeCount > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={clearMergeSelection}
+                                    className="flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 py-3 rounded-xl transition-all font-semibold text-xs"
+                                    title={t('orders.mergeClearTitle')}
+                                >
+                                    {t('orders.mergeClear')}
+                                </button>
+                            ) : null}
+                        </>
                     ) : null}
                     <div className="flex items-center gap-2 bg-gray-50 px-4 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 transition-all">
                         <Filter size={20} className="text-gray-500" />
@@ -3020,27 +3211,35 @@ export default function Buyurtmalar() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 {filteredOrders.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-                        <ShoppingCart size={48} className="mb-4 opacity-20" />
-                        <p className="font-medium text-lg">{t('orders.noOrders')}</p>
+                        {ordersListView === 'trash' ? (
+                            <Archive size={48} className="mb-4 opacity-20" />
+                        ) : (
+                            <ShoppingCart size={48} className="mb-4 opacity-20" />
+                        )}
+                        <p className="font-medium text-lg">
+                            {ordersListView === 'trash' ? t('orders.trashEmpty') : t('orders.noOrders')}
+                        </p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                    <th className="w-12 px-3 py-4 rounded-tl-2xl text-center" title={t('orders.mergeSelectColumn')}>
-                                        <input
-                                            type="checkbox"
-                                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                                            checked={
-                                                filteredOrders.length > 0 &&
-                                                filteredOrders.every((o) => mergeSelection[o.id])
-                                            }
-                                            onChange={toggleMergeSelectAllFiltered}
-                                            aria-label={t('orders.mergeSelectAll')}
-                                        />
-                                    </th>
-                                    <th className="px-6 py-4">{t('orders.idDate')}</th>
+                                    {ordersListView === 'active' ? (
+                                        <th className="w-12 px-3 py-4 rounded-tl-2xl text-center" title={t('orders.mergeSelectColumn')}>
+                                            <input
+                                                type="checkbox"
+                                                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                checked={
+                                                    filteredOrders.length > 0 &&
+                                                    filteredOrders.every((o) => mergeSelection[o.id])
+                                                }
+                                                onChange={toggleMergeSelectAllFiltered}
+                                                aria-label={t('orders.mergeSelectAll')}
+                                            />
+                                        </th>
+                                    ) : null}
+                                    <th className={`px-6 py-4 ${ordersListView === 'trash' ? 'rounded-tl-2xl' : ''}`}>{t('orders.idDate')}</th>
                                     <th className="px-6 py-4">{t('orders.customer')}</th>
                                     <th className="px-6 py-4">{t('orders.products')}</th>
                                     <th className="px-6 py-4">{t('orders.total')}</th>
@@ -3053,15 +3252,17 @@ export default function Buyurtmalar() {
                             <tbody className="divide-y divide-gray-50">
                                 {filteredOrders.map((item) => (
                                     <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
-                                        <td className="px-3 py-4 align-top text-center">
-                                            <input
-                                                type="checkbox"
-                                                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-1"
-                                                checked={!!mergeSelection[item.id]}
-                                                onChange={() => toggleMergeSelectOrder(item.id)}
-                                                aria-label={t('orders.mergeSelectColumn')}
-                                            />
-                                        </td>
+                                        {ordersListView === 'active' ? (
+                                            <td className="px-3 py-4 align-top text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-1"
+                                                    checked={!!mergeSelection[item.id]}
+                                                    onChange={() => toggleMergeSelectOrder(item.id)}
+                                                    aria-label={t('orders.mergeSelectColumn')}
+                                                />
+                                            </td>
+                                        ) : null}
                                         <td className="px-6 py-4">
                                             {item.order_number ? (
                                                 <div className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded inline-block mb-1">
@@ -3242,21 +3443,47 @@ export default function Buyurtmalar() {
                                                 >
                                                     <List size={18} />
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleEdit(item)}
-                                                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-600/25 transition-colors hover:bg-blue-700"
-                                                    title={t('orders.editOrder')}
-                                                >
-                                                    <Edit size={16} className="shrink-0" />
-                                                    <span>{t('common.edit')}</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(item.id)}
-                                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                >
-                                                    <Trash2 size={18} />
-                                                </button>
+                                                {ordersListView === 'active' ? (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleEdit(item)}
+                                                            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-600/25 transition-colors hover:bg-blue-700"
+                                                            title={t('orders.editOrder')}
+                                                        >
+                                                            <Edit size={16} className="shrink-0" />
+                                                            <span>{t('common.edit')}</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDelete(item.id)}
+                                                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title={t('orders.moveToTrashTitle')}
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRestoreOrder(item.id)}
+                                                            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-green-600/25 transition-colors hover:bg-green-700"
+                                                            title={t('orders.restoreOrderTitle')}
+                                                        >
+                                                            <RotateCcw size={16} className="shrink-0" />
+                                                            <span>{t('orders.restoreOrder')}</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePermanentDelete(item.id)}
+                                                            className="p-2 text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                                                            title={t('orders.permanentDeleteTitle')}
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

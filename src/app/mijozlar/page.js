@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
 
 export default function Mijozlar() {
     const { toggleSidebar } = useLayout()
@@ -84,10 +85,11 @@ export default function Mijozlar() {
                 setRegisteredUsers(formattedUsers)
             }
 
-            // Fetch orders for customer stats
-            const { data: allOrders } = await supabase
-                .from('orders')
-                .select('*')
+            let allOrdersRes = await supabase.from('orders').select('*').is('deleted_at', null)
+            if (allOrdersRes.error && isDeletedAtMissingError(allOrdersRes.error)) {
+                allOrdersRes = await supabase.from('orders').select('*')
+            }
+            const allOrders = allOrdersRes.error ? [] : allOrdersRes.data
 
             // Enrich customers with order stats
             const enrichedCustomers = (customersData || []).map(cust => {

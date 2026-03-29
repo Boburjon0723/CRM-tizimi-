@@ -7,6 +7,7 @@ import Header from '@/components/Header'
 import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type, Settings, FileText, AlertCircle, Plus, X, Trash2, Eye, EyeOff, Wallet, TrendingUp, Heart, Award, Mail } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
 
 function getMissionImagesArrayFromSettings(s) {
   if (!s) return []
@@ -130,9 +131,20 @@ export default function Vebsayt() {
       const { data: productsData } = await supabase.from('products').select('*').order('created_at', { ascending: false })
       setProducts(productsData || [])
 
-      // Load web orders
-      const { data: ordersData } = await supabase.from('orders').select('*, order_items(product_name, quantity)').eq('source', 'website').order('created_at', { ascending: false })
-      setWebOrders(ordersData || [])
+      let webOrd = await supabase
+        .from('orders')
+        .select('*, order_items(product_name, quantity)')
+        .eq('source', 'website')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (webOrd.error && isDeletedAtMissingError(webOrd.error)) {
+        webOrd = await supabase
+          .from('orders')
+          .select('*, order_items(product_name, quantity)')
+          .eq('source', 'website')
+          .order('created_at', { ascending: false })
+      }
+      setWebOrders(webOrd.error ? [] : webOrd.data || [])
 
       // Load reviews
       const { data: reviewsData } = await supabase

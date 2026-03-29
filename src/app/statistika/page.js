@@ -25,6 +25,7 @@ import {
 } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
 
 const STAT_FILTER_RANGE_KEY = 'crm_stat_filter_days'
 const VALID_FILTER_RANGES = ['7', '30', '90', '365']
@@ -47,8 +48,14 @@ export default function StatistikaPage() {
     async function loadData() {
         try {
             setLoading(true)
-            // Load Orders with items for category analysis
-            const ordersPromise = supabase.from('orders').select(`
+            const transPromise = supabase.from('transactions').select('*')
+            const productsPromise = supabase.from('products').select('*')
+
+            const [financeRes, productsRes] = await Promise.all([transPromise, productsPromise])
+
+            let ordersRes = await supabase
+                .from('orders')
+                .select(`
                 *,
                 order_items (
                     quantity,
@@ -60,18 +67,24 @@ export default function StatistikaPage() {
                     )
                 )
             `)
-
-            const transPromise = supabase.from('transactions').select('*')
-            const productsPromise = supabase.from('products').select('*')
-
-            const [ordersRes, financeRes, productsRes] = await Promise.all([
-                ordersPromise,
-                transPromise,
-                productsPromise
-            ])
+                .is('deleted_at', null)
+            if (ordersRes.error && isDeletedAtMissingError(ordersRes.error)) {
+                ordersRes = await supabase.from('orders').select(`
+                *,
+                order_items (
+                    quantity,
+                    price,
+                    product_name,
+                    products (
+                        name,
+                        categories (name)
+                    )
+                )
+            `)
+            }
 
             setData({
-                orders: ordersRes.data || [],
+                orders: ordersRes.error ? [] : ordersRes.data || [],
                 finance: financeRes.data || [],
                 products: productsRes.data || []
             })
