@@ -434,13 +434,37 @@ export default function Mahsulotlar() {
             return
         }
         dups.sort((a, b) => b[1].length - a[1].length)
-        let body = `${t('products.duplicateReportIntro')}\n\n`
-        for (const [, arr] of dups) {
-            const codeShow = arr[0].size || ''
-            body += `「${codeShow}」 ×${arr.length}\n`
-            for (const p of arr) {
-                body += `  • ${displayProductTitle(p)} (#${String(p.id).slice(0, 8)}…)\n`
-            }
+        const totalDupProducts = dups.reduce((s, [, arr]) => s + arr.length, 0)
+        const totalDupCodes = dups.length
+
+        let body = `${t('products.duplicateReportIntro')}\n`
+        body += `\nJami: ${totalDupCodes} ta kod · ${totalDupProducts} ta mahsulot\n\n`
+
+        for (const [normCode, arr] of dups) {
+            const rawSizes = Array.from(new Set(arr.map((p) => String(p.size ?? '').trim()).filter(Boolean)))
+            rawSizes.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+
+            body += `Kod: ${normCode}\n`
+            body += `  Takrorlanish: ${arr.length} ta mahsulot\n`
+            if (rawSizes.length > 1) body += `  Size (raw) variantlari: ${rawSizes.join(', ')}\n`
+
+            // Ajratish uchun "ASCII jadval" ko‘rinishi
+            body += `\n  # | Nom | Size(raw) | ID | Kategoriya\n`
+            const sorted = [...arr].sort((a, b) => {
+                const na = displayProductTitle(a)
+                const nb = displayProductTitle(b)
+                const c = na.localeCompare(nb, undefined, { sensitivity: 'base' })
+                if (c !== 0) return c
+                return String(a.id || '').localeCompare(String(b.id || ''))
+            })
+
+            sorted.forEach((p, idx) => {
+                const title = displayProductTitle(p)
+                const sizeRaw = String(p.size ?? '').trim() || '-'
+                const idShort = p?.id ? `#${String(p.id).slice(0, 8)}…` : '-'
+                const catName = p?.categories?.name ? String(p.categories.name) : p?.category?.name ? String(p.category.name) : '-'
+                body += `  ${idx + 1} | ${title} | ${sizeRaw} | ${idShort} | ${catName}\n`
+            })
             body += '\n'
         }
         await showAlert(body, { variant: 'warning', title: t('products.duplicateReportTitle') })
@@ -461,7 +485,16 @@ export default function Mahsulotlar() {
                 (p) => normalizeProductCode(p.size || '') === norm && String(p.id) !== String(editId || '')
             )
             if (conflicting.length > 0) {
-                const lines = conflicting.map((p) => `• ${displayProductTitle(p)} (${p.size || ''})`).join('\n')
+                    const lines = conflicting
+                        .sort((a, b) => displayProductTitle(a).localeCompare(displayProductTitle(b), undefined, { sensitivity: 'base' }))
+                        .map((p) => {
+                            const title = displayProductTitle(p)
+                            const sizeRaw = String(p.size ?? '').trim() || '-'
+                            const idShort = p?.id ? `#${String(p.id).slice(0, 8)}…` : '-'
+                            const catName = p?.categories?.name ? String(p.categories.name) : '-'
+                            return `• ${title} | size(raw): ${sizeRaw} | id: ${idShort} | kategoriya: ${catName}`
+                        })
+                        .join('\n')
                 const ok = await showConfirm(`${t('products.duplicateCodeSaveConfirm')}\n\n${lines}`, {
                     title: t('products.duplicateCodeSaveTitle'),
                     variant: 'warning',

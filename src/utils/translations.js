@@ -274,6 +274,12 @@ export const translations = {
             mergeEmptyLines: 'Tanlangan buyurtmalarda mahsulot qatorlari topilmadi.',
             mergeNotePrefix: 'Birlashtirilgan buyurtmalar',
             mergeOpenedForm: 'Birlashtirilgan jadval yangi buyurtma formasiga yuklandi — tekshirib «Saqlash» bosing.',
+            mergeArchiveSourcesTitle: 'Eski buyurtmalar — karzinka',
+            mergeArchiveSourcesConfirm:
+                'Birlashtirilgan eski buyurtmalar asosiy ro‘yxatdan olib tashlansinmi? «Jami daromad» bitta marta sanaladi (ularni Karzinkadan qaytarish mumkin). «Yo‘q» — uchala buyurtma ham ro‘yxatda qoladi (summa ikki marta qo‘shilishi mumkin).',
+            mergeArchiveSourcesDone: 'Eski buyurtmalar karzinkaga ko‘chirildi.',
+            mergeArchiveSourcesToggle: 'Manba buyurtmalarni karzinkaga ko‘chirish',
+            mergeArchiveSourcesToggleHint: 'Agar olib tashlamasangiz, “Jami daromad” ikki marta sanalib qolishi mumkin.',
             mergeTotalsHint:
                 'Summa: tanlangan har bir buyurtmaning bazadagi umumiy summasi qo‘shildi (jadval qatorlaridan qayta hisoblanmadi).',
             mergeQtyHint:
@@ -814,6 +820,12 @@ export const translations = {
             mergeEmptyLines: 'В выбранных заказах нет позиций.',
             mergeNotePrefix: 'Объединённые заказы',
             mergeOpenedForm: 'Объединённая таблица загружена в форму нового заказа — проверьте и нажмите «Сохранить».',
+            mergeArchiveSourcesTitle: 'Старые заказы в корзину',
+            mergeArchiveSourcesConfirm:
+                'Переместить объединённые старые заказы в корзину? Так общий доход не будет считаться дважды (восстановление из «Корзины»). «Нет» — все заказы останутся в списке (сумма может удвоиться).',
+            mergeArchiveSourcesDone: 'Старые заказы перемещены в корзину.',
+            mergeArchiveSourcesToggle: 'Перемещать исходные заказы в корзину',
+            mergeArchiveSourcesToggleHint: 'Если не перемещать, «Общий доход» может быть посчитан дважды.',
             activeList: 'Заказы',
             statsVisibleCount: 'Видимые заказы',
             trashBin: 'Корзина',
@@ -1349,6 +1361,12 @@ export const translations = {
             mergeEmptyLines: 'Selected orders have no line items.',
             mergeNotePrefix: 'Merged orders',
             mergeOpenedForm: 'Merged table loaded into the new order form — review and click Save.',
+            mergeArchiveSourcesTitle: 'Archive merged source orders',
+            mergeArchiveSourcesConfirm:
+                'Move the original merged orders to trash? Dashboard revenue will not double-count them (you can restore from Trash). No — all orders stay in the list (totals may add up twice).',
+            mergeArchiveSourcesDone: 'Source orders moved to trash.',
+            mergeArchiveSourcesToggle: 'Move source orders to trash',
+            mergeArchiveSourcesToggleHint: 'If you don’t move them, dashboard revenue may be double-counted.',
             mergeTotalsHint:
                 'Amount: sum of each selected order’s stored order total (not recalculated from the table rows).',
             mergeQtyHint:

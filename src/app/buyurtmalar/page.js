@@ -718,11 +718,10 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
         }
     }
     const totalPar = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.totalPieces) || 0), 0)
-    /** Qatorlar bo‘yicha hisob-kitob (bazadagi subtotal/price*qty); `orders.total` bilan farq bo‘lishi mumkin */
     const totalMoney = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.lineMonetary) || 0), 0)
     const savedTotalRaw = item.total != null && item.total !== '' ? Number(item.total) : NaN
     const savedTotal = Number.isFinite(savedTotalRaw) ? savedTotalRaw : null
-    /** Chop etishda mijoz ko‘radigan yig‘indi: avvalo saqlangan buyurtma summasi */
+    /** Chop etishda ko‘rsatiladigan yig‘indi: saqlangan buyurtma summasi (bo‘lmasa qatorlar yig‘indisi) */
     const grandTotal = savedTotal != null ? savedTotal : totalMoney
     const footerPriceCells = showPrices
         ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(grandTotal))}</td>`
@@ -749,16 +748,9 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
       </table>
       ${
           showPrices
-              ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4">
-        <strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}
-        ${
-            savedTotal != null && Math.abs(totalMoney - savedTotal) > 0.01
-                ? `<span style="display:block;margin-top:6px;color:#666;font-size:0.78rem;font-weight:normal">
-        Qatorlar bo‘yicha yig‘indi (hisob-kitob): $${escapeHtml(formatUsd(totalMoney))} — qatorlar va saqlangan umumiy summa farq qilishi mumkin.
-      </span>`
-                : ''
-        }
-      </p>`
+              ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(
+                    formatUsd(grandTotal)
+                )}</p>`
               : ''
       }
     </div>`
@@ -1230,6 +1222,10 @@ export default function Buyurtmalar() {
     const [mergeSelection, setMergeSelection] = useState({})
     /** Birlashtirishdan keyin: jami summa/miqdor tanlangan buyurtmalarning o‘zidagi yig‘indilar (qatorlardan qayta hisoblanmaydi) */
     const [mergeSourceAgg, setMergeSourceAgg] = useState(null)
+    /** Birlashtirish manbasi buyurtma idlari — saqlagach eski buyurtmalarni karzinkaga ko‘chirish uchun (jami daromad takrorlanmasin) */
+    const [mergeSourceOrderIds, setMergeSourceOrderIds] = useState(null)
+    /** Merge paytida manbalarni karzinkaga ko‘chirish (ikki marta daromad sanalmasin) */
+    const [mergeArchiveSources, setMergeArchiveSources] = useState(true)
     /** Faol ro‘yxat yoki karzinka (o‘chirilganlar) */
     const [ordersListView, setOrdersListView] = useState('active')
     const [trashOrders, setTrashOrders] = useState([])
@@ -1885,6 +1881,7 @@ export default function Buyurtmalar() {
                     setEditId(null)
                     setIsAdding(false)
                     setMergeSourceAgg(null)
+                    setMergeSourceOrderIds(null)
                     loadData({ silent: true })
                     return
                 }
@@ -1943,6 +1940,7 @@ export default function Buyurtmalar() {
                 const itemPayloads = mergeOrderItemPayloadsForDb(makeItemPayloads(orderId))
                 if (!itemPayloads.length) {
                     await supabase.from('orders').delete().eq('id', orderId)
+                    setMergeSourceOrderIds(null)
                     await showAlert(t('orders.orderLinesEmpty'), { variant: 'warning' })
                     return
                 }
@@ -1951,8 +1949,38 @@ export default function Buyurtmalar() {
 
                 if (itemError) {
                     await supabase.from('orders').delete().eq('id', orderId)
+                    setMergeSourceOrderIds(null)
                     throw itemError
                 }
+
+                const sourceIdsToArchive = mergeSourceOrderIds
+                const shouldArchive = mergeArchiveSources ? sourceIdsToArchive : null
+                if (shouldArchive?.length >= 2) {
+                    const ts = new Date().toISOString()
+                    const { error: archErr } = await supabase
+                        .from('orders')
+                        .update({ deleted_at: ts })
+                        .in('id', shouldArchive)
+                    if (archErr) {
+                        if (isDeletedAtMissingError(archErr)) {
+                            await showAlert(t('orders.deletedAtMigrationHint'), { variant: 'warning' })
+                        } else {
+                            await showAlert(archErr.message || String(archErr), {
+                                title: t('common.saveError'),
+                                variant: 'error',
+                            })
+                        }
+                    } else {
+                        setMergeSelection((prev) => {
+                            const next = { ...prev }
+                            for (const sid of shouldArchive) delete next[sid]
+                            return next
+                        })
+                        showToast(t('orders.mergeArchiveSourcesDone'), { type: 'success' })
+                        await loadTrashOrdersRef.current?.()
+                    }
+                }
+                setMergeSourceOrderIds(null)
 
                 try {
                     const num = newOrder?.order_number || displayOrderNo
@@ -2075,6 +2103,7 @@ export default function Buyurtmalar() {
         if (seq !== editLoadSeqRef.current) return
 
         setMergeSourceAgg(null)
+        setMergeSourceOrderIds(null)
         const linesRaw = orderItemsToOrderLines(dedupeOrderItemsKeepNewest(rows || []), products)
         const lines = enrichOrderLinesFromDb(linesRaw)
 
@@ -2112,6 +2141,7 @@ export default function Buyurtmalar() {
         clearNewOrderDraft()
         setDraftBanner(false)
         setMergeSourceAgg(null)
+        setMergeSourceOrderIds(null)
         setEditId(null)
         setForm({
             customer_id: '',
@@ -2133,6 +2163,7 @@ export default function Buyurtmalar() {
             return
         }
         setMergeSourceAgg(null)
+        setMergeSourceOrderIds(null)
         setForm(
             d.form || {
                 customer_id: '',
@@ -2173,6 +2204,7 @@ export default function Buyurtmalar() {
             const d = JSON.parse(raw)
             setEditId(null)
             setMergeSourceAgg(null)
+            setMergeSourceOrderIds(null)
             setForm((f) => ({
                 ...f,
                 customer_name: d.customer_name || '',
@@ -2280,6 +2312,7 @@ export default function Buyurtmalar() {
                 return String(a.id || '').localeCompare(String(b.id || ''))
             })
             setMergeSourceAgg(aggregateMergedOrdersTotals(ordersToMerge, cleanedRows))
+            setMergeSourceOrderIds(ordersToMerge.map((o) => o.id))
             const linesRaw = orderItemsToOrderLines(sortedForForm, products)
             const lines = enrichOrderLinesFromDb(linesRaw)
             const labels = ordersToMerge.map((o) =>
@@ -2304,6 +2337,7 @@ export default function Buyurtmalar() {
             })
             setOrderLines(lines.length ? lines : [createEmptyOrderLine()])
             setMergeSelection({})
+            setMergeArchiveSources(true)
             setIsAdding(true)
             showToast(t('orders.mergeOpenedForm'), { type: 'success' })
             requestAnimationFrame(() => {
@@ -2688,6 +2722,7 @@ export default function Buyurtmalar() {
                                     source: 'dokon'
                                 })
                                 setMergeSourceAgg(null)
+                                setMergeSourceOrderIds(null)
                                 setIsAdding(true)
                             }
                         }}
@@ -3132,6 +3167,21 @@ export default function Buyurtmalar() {
                                     <p className="text-xs text-gray-600 leading-snug">{t('orders.mergeTotalsHint')}</p>
                                 ) : null}
                             </div>
+
+                            {mergeSourceAgg ? (
+                                <div className="space-y-2">
+                                    <label className="flex items-start gap-2 text-sm font-bold text-gray-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={mergeArchiveSources}
+                                            onChange={(e) => setMergeArchiveSources(e.target.checked)}
+                                            className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <span>{t('orders.mergeArchiveSourcesToggle')}</span>
+                                    </label>
+                                    <p className="text-xs text-gray-600 leading-snug">{t('orders.mergeArchiveSourcesToggleHint')}</p>
+                                </div>
+                            ) : null}
 
                             {mergeSourceAgg ? (
                                 <div className="space-y-2">
