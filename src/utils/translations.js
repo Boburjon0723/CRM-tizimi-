@@ -2,6 +2,7 @@ export const translations = {
     uz: {
         common: {
             dashboard: 'Dashboard',
+            mediaLibraryMenu: 'Media fayllar',
             products: 'Mahsulotlar',
             warehouse: 'Ombor',
             orders: 'Buyurtmalar',
@@ -144,6 +145,25 @@ export const translations = {
             successAdd: 'Mijoz qo\'shildi!',
             successUpdate: 'Mijoz yangilandi!',
             successDelete: 'Mijoz o\'chirildi!'
+        },
+        mediaLibrary: {
+            menu: 'Media fayllar',
+            title: 'Media kutubxonasi (Storage)',
+            intro:
+                'Supabase `products` va `models` bucketlaridagi barcha fayllar. O‘chirish: fayl storage dan yo‘qoladi; mahsulot / kategoriya / banner / sozlamalar / albom jadvallarida aynan shu URL bo‘lsa — tozalanadi.',
+            refresh: 'Yangilash',
+            allBuckets: 'Barcha bucketlar',
+            imagesOnly: 'Faqat rasmlar',
+            empty: 'Fayl topilmadi yoki filtering bo‘sh.',
+            loadError: 'Ro‘yxatni yuklashda xatolik:',
+            delete: 'Faylni o‘chirish',
+            deleteConfirmDetail:
+                'Tasdiqlang: fayl butunlay o‘chiriladi. Buyurtma qatorlarida eski rasm havolalari saqlanishi mumkin ( tarix ).',
+            deleted: 'Fayl storage dan o‘chirildi.',
+            dbRowsHint: 'Bazada yangilangan yozuvlar:',
+            copy: 'URL',
+            copied: 'URL nusxalandi.',
+            open: 'Ochish',
         },
         orders: {
             title: 'Buyurtmalar',
@@ -553,6 +573,7 @@ export const translations = {
     ru: {
         common: {
             dashboard: 'Дашборд',
+            mediaLibraryMenu: 'Медиа файлы',
             products: 'Продукты',
             warehouse: 'Склад',
             orders: 'Заказы',
@@ -695,6 +716,25 @@ export const translations = {
             successAdd: 'Клиент добавлен!',
             successUpdate: 'Клиент обновлен!',
             successDelete: 'Клиент удален!'
+        },
+        mediaLibrary: {
+            menu: 'Медиа',
+            title: 'Медиатека (Storage)',
+            intro:
+                'Все файлы в bucket `products` и `models`. Удаление убирает файл из хранилища; если этот URL есть в товарах, категориях, баннерах, настройках или альбоме — ссылка очистится.',
+            refresh: 'Обновить',
+            allBuckets: 'Все buckets',
+            imagesOnly: 'Только изображения',
+            empty: 'Файлов нет или фильтр пуст.',
+            loadError: 'Ошибка загрузки списка:',
+            delete: 'Удалить файл',
+            deleteConfirmDetail:
+                'Подтвердите: файл будет удалён навсегда. В строках старых заказов ссылка может остаться.',
+            deleted: 'Файл удалён из хранилища.',
+            dbRowsHint: 'Обновлено записей в БД:',
+            copy: 'URL',
+            copied: 'Ссылка скопирована.',
+            open: 'Открыть',
         },
         orders: {
             title: 'Заказы',
@@ -1099,6 +1139,7 @@ export const translations = {
     en: {
         common: {
             dashboard: 'Dashboard',
+            mediaLibraryMenu: 'Media library',
             products: 'Products',
             warehouse: 'Warehouse',
             orders: 'Orders',
@@ -1241,6 +1282,25 @@ export const translations = {
             successAdd: 'Customer added!',
             successUpdate: 'Customer updated!',
             successDelete: 'Customer deleted!'
+        },
+        mediaLibrary: {
+            menu: 'Media',
+            title: 'Media library (Storage)',
+            intro:
+                'All files in `products` and `models` buckets. Deleting removes the file from storage; exact URL matches in products, categories, banners, settings, or album rows are cleared.',
+            refresh: 'Refresh',
+            allBuckets: 'All buckets',
+            imagesOnly: 'Images only',
+            empty: 'No files or filter is empty.',
+            loadError: 'Failed to load list:',
+            delete: 'Delete file',
+            deleteConfirmDetail:
+                'Confirm: the file will be permanently removed. Old order line image URLs may still point here.',
+            deleted: 'File removed from storage.',
+            dbRowsHint: 'Database rows updated:',
+            copy: 'URL',
+            copied: 'URL copied.',
+            open: 'Open',
         },
         orders: {
             title: 'Orders',

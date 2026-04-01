@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
-import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown } from 'lucide-react'
+import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -47,6 +47,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
 
   const menuItems = [
     { href: '/', icon: Home, label: t('common.dashboard') },
+    { href: '/media-library', icon: ImageIcon, label: t('common.mediaLibraryMenu') },
     { href: '/mahsulotlar', icon: Package, label: t('common.products') },
     { href: '/buyurtmalar', icon: ShoppingCart, label: t('common.orders') },
     { href: '/mijozlar', icon: UserCircle, label: t('common.customers') },
