@@ -14,6 +14,11 @@ body {
   /* Lighter slate background */
 }
 
+html[data-theme='dark'] body {
+  background-color: #0b1220;
+  color: #e5e7eb;
+}
+
 :root {
   --primary: #2563eb;
   --primary-dark: #1d4ed8;
@@ -126,4 +131,60 @@ input,
 select,
 textarea {
   transition: all 0.2s ease-in-out;
+}
+
+/* Dark mode overrides for common Tailwind utility classes */
+html[data-theme='dark'] .bg-white {
+  background-color: #111827 !important;
+}
+
+html[data-theme='dark'] .bg-white\/80 {
+  background-color: rgba(17, 24, 39, 0.85) !important;
+}
+
+html[data-theme='dark'] .bg-gray-50,
+html[data-theme='dark'] .bg-gray-50\/50,
+html[data-theme='dark'] .bg-gray-50\/70,
+html[data-theme='dark'] .bg-gray-50\/80 {
+  background-color: #1f2937 !important;
+}
+
+html[data-theme='dark'] .bg-gray-100 {
+  background-color: #374151 !important;
+}
+
+html[data-theme='dark'] .text-gray-900,
+html[data-theme='dark'] .text-gray-800,
+html[data-theme='dark'] .text-gray-700 {
+  color: #f3f4f6 !important;
+}
+
+html[data-theme='dark'] .text-gray-600,
+html[data-theme='dark'] .text-gray-500,
+html[data-theme='dark'] .text-gray-400 {
+  color: #d1d5db !important;
+}
+
+html[data-theme='dark'] .border-gray-50,
+html[data-theme='dark'] .border-gray-100,
+html[data-theme='dark'] .border-gray-200,
+html[data-theme='dark'] .border-gray-300 {
+  border-color: #374151 !important;
+}
+
+html[data-theme='dark'] .hover\:bg-gray-50:hover,
+html[data-theme='dark'] .hover\:bg-gray-100:hover {
+  background-color: #374151 !important;
+}
+
+html[data-theme='dark'] input,
+html[data-theme='dark'] select,
+html[data-theme='dark'] textarea {
+  background-color: #111827;
+  color: #f3f4f6;
+  border-color: #374151;
+}
+
+html[data-theme='dark'] table tbody tr:hover {
+  background-color: #1f2937;
 }

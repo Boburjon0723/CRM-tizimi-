@@ -221,7 +221,7 @@ export default function Mahsulotlar() {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editId, setEditId] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
-    const [filterCategory, setFilterCategory] = useState('all')
+    const [filterCategoryId, setFilterCategoryId] = useState('all')
     const [uploading, setUploading] = useState(false)
     const [form, setForm] = useState({
         name: '',
@@ -581,16 +581,49 @@ export default function Mahsulotlar() {
         if (!confirm(t('common.deleteConfirm'))) return
 
         try {
-            const { error } = await supabase
-                .from('products')
-                .delete()
-                .eq('id', id)
+            const { count: orderLineCount, error: olErr } = await supabase
+                .from('order_items')
+                .select('id', { count: 'exact', head: true })
+                .eq('product_id', id)
+            if (olErr) throw olErr
+
+            let reviewCount = 0
+            const revRes = await supabase
+                .from('reviews')
+                .select('id', { count: 'exact', head: true })
+                .eq('product_id', id)
+            if (!revRes.error) reviewCount = revRes.count ?? 0
+
+            if ((orderLineCount ?? 0) > 0 || reviewCount > 0) {
+                const lines = [t('products.deleteBlockedByLinkedRows')]
+                if ((orderLineCount ?? 0) > 0) {
+                    lines.push('', `${t('products.deleteBlockedOrderLines')}: ${orderLineCount}`)
+                }
+                if (reviewCount > 0) {
+                    lines.push('', `${t('products.deleteBlockedReviews')}: ${reviewCount}`)
+                }
+                await showAlert(lines.join('\n'), { variant: 'warning', title: t('products.deleteBlockedTitle') })
+                return
+            }
+
+            const { error } = await supabase.from('products').delete().eq('id', id)
 
             if (error) throw error
             loadData({ silent: true })
         } catch (error) {
             console.error('Error deleting product:', error)
-            alert(t('common.deleteError'))
+            const msg = String(error?.message || '')
+            const code = error?.code
+            if (code === '23503' || /foreign key|violates foreign key constraint/i.test(msg)) {
+                await showAlert(t('products.deleteBlockedByLinkedRows'), {
+                    variant: 'warning',
+                    title: t('products.deleteBlockedTitle')
+                })
+            } else {
+                await showAlert(msg ? `${t('common.deleteError')}\n\n${msg}` : t('common.deleteError'), {
+                    variant: 'error'
+                })
+            }
         }
     }
 
@@ -1166,28 +1199,45 @@ export default function Mahsulotlar() {
         }
     }
 
-    const filteredProducts = products.filter(p => {
-        const searchTerms = searchTerm.toLowerCase().split(' ').filter(word => word.length > 0);
-
-        if (searchTerms.length === 0) {
-            return filterCategory === 'all' || p.categories?.name === filterCategory;
+    const categoryFilterOptions = useMemo(() => {
+        const countById = new Map()
+        for (const p of products) {
+            const id = p?.category_id != null ? String(p.category_id) : ''
+            if (!id) continue
+            countById.set(id, (countById.get(id) || 0) + 1)
         }
+        return categories.map((cat) => {
+            const id = String(cat.id)
+            return {
+                id,
+                name: cat.name || '—',
+                count: countById.get(id) || 0
+            }
+        })
+    }, [categories, products])
 
-        const matchesSearch = searchTerms.every(term => {
-            const inName = p.name?.toLowerCase().includes(term);
-            const inNameUz = p.name_uz?.toLowerCase().includes(term);
-            const inNameRu = p.name_ru?.toLowerCase().includes(term);
-            const inNameEn = p.name_en?.toLowerCase().includes(term);
-            const inSize = p.size?.toLowerCase().includes(term);
-            const inColors = p.colors?.some(c => c.toLowerCase().includes(term));
-            const inCategory = p.categories?.name?.toLowerCase().includes(term);
-
-            return inName || inNameUz || inNameRu || inNameEn || inSize || inColors || inCategory;
-        });
-
-        const matchesCategory = filterCategory === 'all' || p.categories?.name === filterCategory;
-        return matchesSearch && matchesCategory;
-    })
+    const filteredProducts = useMemo(() => {
+        const searchTerms = searchTerm
+            .toLowerCase()
+            .split(' ')
+            .filter((word) => word.length > 0)
+        return products.filter((p) => {
+            const pid = p?.category_id != null ? String(p.category_id) : ''
+            const matchesCategory = filterCategoryId === 'all' || pid === filterCategoryId
+            if (!matchesCategory) return false
+            if (searchTerms.length === 0) return true
+            return searchTerms.every((term) => {
+                const inName = p.name?.toLowerCase().includes(term)
+                const inNameUz = p.name_uz?.toLowerCase().includes(term)
+                const inNameRu = p.name_ru?.toLowerCase().includes(term)
+                const inNameEn = p.name_en?.toLowerCase().includes(term)
+                const inSize = p.size?.toLowerCase().includes(term)
+                const inColors = p.colors?.some((c) => c.toLowerCase().includes(term))
+                const inCategory = p.categories?.name?.toLowerCase().includes(term)
+                return inName || inNameUz || inNameRu || inNameEn || inSize || inColors || inCategory
+            })
+        })
+    }, [products, searchTerm, filterCategoryId])
 
     if (loading) {
         return (
@@ -1242,14 +1292,25 @@ export default function Mahsulotlar() {
                 <div className="flex gap-1.5 w-full md:w-auto flex-wrap items-center">
                     <select
                         className="px-2.5 py-2 text-xs sm:text-sm bg-gray-50 border border-gray-100 focus:bg-white focus:border-blue-500 rounded-lg outline-none cursor-pointer transition-all text-gray-700 font-medium min-w-0 max-w-[11rem] sm:max-w-none"
-                        value={filterCategory}
-                        onChange={(e) => setFilterCategory(e.target.value)}
+                        value={filterCategoryId}
+                        onChange={(e) => setFilterCategoryId(e.target.value)}
                     >
-                        <option value="all">{t('products.allCategories')}</option>
-                        {categories.map(cat => (
-                            <option key={cat.id} value={cat.name}>{cat.name}</option>
+                        <option value="all">{t('products.allCategories')} ({products.length})</option>
+                        {categoryFilterOptions.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                                {cat.name} ({cat.count})
+                            </option>
                         ))}
                     </select>
+                    {filterCategoryId !== 'all' ? (
+                        <button
+                            type="button"
+                            onClick={() => setFilterCategoryId('all')}
+                            className="inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        >
+                            Kategoriya filtri: tozalash
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         onClick={handleCleanupOrphanedColors}
@@ -1314,6 +1375,33 @@ export default function Mahsulotlar() {
                         <span className="hidden sm:inline">{t('common.add')}</span>
                     </button>
                 </div>
+            </div>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => setFilterCategoryId('all')}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                        filterCategoryId === 'all'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                    }`}
+                >
+                    Hammasi ({products.length})
+                </button>
+                {categoryFilterOptions.map((cat) => (
+                    <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setFilterCategoryId(cat.id)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                            filterCategoryId === cat.id
+                                ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                    >
+                        {cat.name} ({cat.count})
+                    </button>
+                ))}
             </div>
 
             {/* Bitta kategoriya — tavsif/xususiyat va rang jamoalari uchun */}

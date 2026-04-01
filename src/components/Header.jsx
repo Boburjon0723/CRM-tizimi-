@@ -1,7 +1,8 @@
-import { Bell, Search, User, Menu, X, ShoppingBag, Globe, ChevronDown } from 'lucide-react'
+import { Bell, User, Menu, X, ShoppingBag, Globe, ChevronDown, Moon, Sun } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useNotifications } from '@/context/NotificationContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useTheme } from '@/context/ThemeContext'
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 
@@ -10,6 +11,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
     const toggleSidebar = propToggleSidebar || contextToggleSidebar
     const { notifications, unreadCount, markAsRead, markAllAsRead, clearNotification } = useNotifications()
     const { language, changeLanguage, t } = useLanguage()
+    const { isDark, toggleTheme } = useTheme()
     const [showNotifications, setShowNotifications] = useState(false)
     const [showLangMenu, setShowLangMenu] = useState(false)
     const dropdownRef = useRef(null)
@@ -73,6 +75,13 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={toggleTheme}
+                        className="p-2.5 hover:bg-gray-100 rounded-xl text-gray-600 transition-all"
+                        title={isDark ? 'Light mode' : 'Dark mode'}
+                    >
+                        {isDark ? <Sun size={20} /> : <Moon size={20} />}
+                    </button>
                     {/* Language Switcher - til ro'yxati */}
                     <div className="relative" ref={langRef}>
                         <button

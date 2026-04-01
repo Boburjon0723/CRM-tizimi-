@@ -3,6 +3,7 @@ import { LanguageProvider } from '@/context/LanguageContext'
 import { LayoutProvider } from '@/context/LayoutContext'
 import { NotificationProvider } from '@/context/NotificationContext'
 import { DialogProvider } from '@/context/DialogContext'
+import { ThemeProvider } from '@/context/ThemeContext'
 import AuthWrapper from '@/components/AuthWrapper'
 import './globals.css'
 
@@ -24,15 +25,17 @@ export default function RootLayout({ children }) {
       </head>
       <body className={inter.className}>
         <LanguageProvider>
-          <LayoutProvider>
-            <NotificationProvider>
-              <DialogProvider>
-                <AuthWrapper>
-                  {children}
-                </AuthWrapper>
-              </DialogProvider>
-            </NotificationProvider>
-          </LayoutProvider>
+          <ThemeProvider>
+            <LayoutProvider>
+              <NotificationProvider>
+                <DialogProvider>
+                  <AuthWrapper>
+                    {children}
+                  </AuthWrapper>
+                </DialogProvider>
+              </NotificationProvider>
+            </LayoutProvider>
+          </ThemeProvider>
         </LanguageProvider>
       </body>
     </html>

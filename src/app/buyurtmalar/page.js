@@ -18,9 +18,9 @@ import {
     List,
     Receipt,
     Repeat,
-    Download,
     ScanLine,
     GitMerge,
+    ListTree,
     AlertTriangle,
     ChevronDown,
     ChevronUp,
@@ -184,6 +184,15 @@ function normalizeModelKey(s) {
         .replace(/[\u2013\u2014\u2212]/g, '-')
         .replace(/\s+/g, ' ')
         .toLowerCase()
+}
+
+/**
+ * Buyurtma qatori rangi uchun yagona kalit: null/bo‘sh va «—» bitta (`normalizeModelKey('')` ≠ `normalizeModelKey('—')` bo‘lmasin).
+ * Aks holda dedupe turli kalit, `orderItemsToOrderLines` esa bitta SKUda miqdorni qo‘shib yuborardi — tahrirda 2x.
+ */
+function normalizeOrderItemColorKey(color) {
+    const raw = (color != null ? String(color) : '').trim() || '—'
+    return normalizeModelKey(raw)
 }
 
 /** Supabase qatorida ko‘rinadigan nom (asosiy nom bo‘sh bo‘lsa — lokalizatsiya) */
@@ -403,11 +412,15 @@ function skuBucketKeyForOrderItem(oi, productsList) {
 }
 
 /**
- * Bir xil (product_id + size + rang) uchun bazada 2 ta qator bo‘lsa (takrorlanish xatosi),
+ * Bir xil (product_id + model kodi + rang) uchun bazada 2 ta qator bo‘lsa (takrorlanish xatosi),
  * eng yangi qatorni qoldiramiz — aks holda tahrir qayta ochilganda eski (birinchi) qator ko‘rinadi.
  * `created_at` bo‘lmasa `id` bo‘yicha teskari tartib (UUID uchun taxminiy).
+ *
+ * Model kodi `resolvedOrderItemSizeRaw` bilan olinadi (`skuBucketKeyForOrderItem` / chop etish bilan bir xil).
+ * Aks holda bir qatorda `size` bo‘sh, ikkinchisida to‘ldirilgan bo‘lsa, turli dedupe kaliti + bitta SKU
+ * qopqichida yig‘ilish → jadvalda miqdor 2x ko‘rinardi.
  */
-function dedupeOrderItemsKeepNewest(rows) {
+function dedupeOrderItemsKeepNewest(rows, productsList) {
     if (!rows?.length) return []
     const ts = (r) => {
         const t = r.created_at ?? r.updated_at
@@ -425,10 +438,12 @@ function dedupeOrderItemsKeepNewest(rows) {
     })
     const seen = new Set()
     const out = []
+    const plist = productsList || []
     for (const oi of sorted) {
         const pid = String(oi.product_id ?? '')
-        const sz = normalizeModelKey(oi.size != null ? String(oi.size) : '')
-        const col = normalizeModelKey(oi.color != null ? String(oi.color) : '')
+        const sizeResolved = resolvedOrderItemSizeRaw(oi, plist)
+        const sz = normalizeModelKey(sizeResolved != null ? String(sizeResolved) : '')
+        const col = normalizeOrderItemColorKey(oi.color)
         const key = `${pid}|${sz}|${col}`
         if (seen.has(key)) continue
         seen.add(key)
@@ -446,14 +461,41 @@ function dedupeOrderItemsKeepNewest(rows) {
     return out
 }
 
+/** Yig‘ilgan forma qatori: model kodi — avvalo `codeInput`, bo‘lsa katalog `products.size` (chop etish kaliti bilan mos) */
+function resolvedModelCodeForExpandedRow(r, productsList) {
+    const fromInput = r?.codeInput != null ? String(r.codeInput).trim() : ''
+    if (fromInput) return fromInput
+    const pid = r?.product_id
+    const p =
+        pid && productsList?.length
+            ? productsList.find((x) => String(x.id) === String(pid))
+            : null
+    if (p?.size != null && String(p.size).trim() !== '') return String(p.size).trim()
+    return ''
+}
+
+/** Insert payload: `size` bo‘sh bo‘lsa — katalogdan (DB ga `null` tushishi mumkin, lekin kalit bir xil bo‘lsin) */
+function resolvedModelCodeForItemPayload(p, productsList) {
+    const fromSize = p?.size != null ? String(p.size).trim() : ''
+    if (fromSize) return fromSize
+    const pid = p?.product_id
+    const prod =
+        pid && productsList?.length
+            ? productsList.find((x) => String(x.id) === String(pid))
+            : null
+    if (prod?.size != null && String(prod.size).trim() !== '') return String(prod.size).trim()
+    return ''
+}
+
 /** Saqlashdan oldin: bitta rang uchun takrorlangan yig‘ilgan qatorlarni bitta qilib qo‘shadi */
-function mergeExpandedRowsForSubmit(rows) {
+function mergeExpandedRowsForSubmit(rows, productsList) {
     if (!rows?.length) return []
     const map = new Map()
+    const plist = productsList || []
     for (const r of rows) {
         const pid = String(r.product_id ?? '')
-        const col = normalizeModelKey(r.color != null ? String(r.color) : '')
-        const code = normalizeModelKey(r.codeInput != null ? String(r.codeInput) : '')
+        const col = normalizeOrderItemColorKey(r.color)
+        const code = normalizeModelKey(resolvedModelCodeForExpandedRow(r, plist))
         const key = `${pid}|${col}|${code}`
         const q = parseOrderItemQty(r.quantity)
         const prev = map.get(key)
@@ -471,14 +513,16 @@ function mergeExpandedRowsForSubmit(rows) {
  * Bazaga insertdan oldin: bir xil mahsulot + model kodi (size) + rang — bitta `order_items` qatori.
  * Tahrirda `mergeExpandedRowsForSubmit` va `makeItemPayloads` orasidagi nomuvofiqlik yoki takroriy
  * qatorlar natijasida dublikat qatorlarning oldini oladi.
+ * `productsList` — bo‘sh `size` bilan kelgan qatorlar katalog kodiga qarab bir xil kalitga tushsin (2x DB qatori yo‘q).
  */
-function mergeOrderItemPayloadsForDb(payloads) {
+function mergeOrderItemPayloadsForDb(payloads, productsList) {
     if (!payloads?.length) return []
     const map = new Map()
+    const plist = productsList || []
     for (const p of payloads) {
         const pid = String(p.product_id ?? '')
-        const sz = normalizeModelKey(p.size != null ? String(p.size) : '')
-        const col = normalizeModelKey(p.color != null ? String(p.color) : '')
+        const sz = normalizeModelKey(resolvedModelCodeForItemPayload(p, plist))
+        const col = normalizeOrderItemColorKey(p.color)
         const key = `${pid}|${sz}|${col}`
         const q = parseOrderItemQty(p.quantity)
         const qty = q > 0 ? q : 0
@@ -563,15 +607,17 @@ function groupOrderItemsForPrint(orderItems, productsList) {
         /** Har bir `order_items` qatori bo‘yicha aniq yig‘indi (bazadagi subtotal emas — noto‘g‘ri bo‘lmasin) */
         let sumQtyFromLines = 0
         for (const oi of lines) {
-            const c = (oi.color || '').trim() || '—'
+            const raw = (oi.color || '').trim() || '—'
+            const nk = normalizeOrderItemColorKey(oi.color)
             const q = parseOrderItemQty(oi.quantity)
             sumQtyFromLines += q
-            const prev = parseOrderItemQty(colorMap.get(c))
-            colorMap.set(c, prev + q)
+            const prevEntry = colorMap.get(nk)
+            const nextQty = (prevEntry ? parseOrderItemQty(prevEntry.qty) : 0) + q
+            colorMap.set(nk, { label: prevEntry?.label ?? raw, qty: nextQty })
             const pr = parseOrderItemPrice(oi.price)
             lineMonetary += pr * q
         }
-        const colorPairs = Array.from(colorMap.entries()).map(([col, qq]) => [col, parseOrderItemQty(qq)])
+        const colorPairs = Array.from(colorMap.values()).map(({ label, qty }) => [label, parseOrderItemQty(qty)])
         const totalPiecesFromColors = colorPairs.reduce((s, [, qq]) => s + qq, 0)
         const totalPieces = totalPiecesFromColors === sumQtyFromLines ? totalPiecesFromColors : sumQtyFromLines
         lineMonetary = Math.round(lineMonetary * 100) / 100
@@ -646,7 +692,7 @@ function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
     return { colorsHtml, qtysHtml }
 }
 
-function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
+function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, tableConfig) {
     const customerName = escapeHtml(item.customer_name || item.customers?.name || 'Noma\'lum')
     const phone = escapeHtml(item.customer_phone || item.customers?.phone || '-')
     const date = escapeHtml(new Date(item.created_at).toLocaleDateString())
@@ -654,9 +700,32 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
     const orderNumHtml = item.order_number
         ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>`
         : ''
-    const groupedRaw = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || []), productsList)
+    const groupedRaw = groupOrderItemsForPrint(
+        dedupeOrderItemsKeepNewest(item.order_items || [], productsList),
+        productsList
+    )
     const grouped = sortGroupedBucketsForPrint(groupedRaw)
-    const colSpanAll = showPrices ? 8 : 6
+    const withNote =
+        (!showPrices && !!tableConfig?.includePrintNoteColumn) ||
+        (showPrices && !!tableConfig?.includePrintNoteWithPrices)
+    const withExtra =
+        (!showPrices && !!tableConfig?.includePrintExtraColumn) ||
+        (showPrices && !!tableConfig?.includePrintExtraWithPrices)
+    /** Asosiy: 6 + narx (2) yoki narxsiz; qo‘shimcha bo‘sh ustunlar */
+    const colSpanAll =
+        (showPrices ? 8 : 6) + (withNote ? 1 : 0) + (withExtra ? 1 : 0)
+    const noteTh = escapeHtml(
+        showPrices
+            ? String(tableConfig?.printNoteTitleWithPrices ?? 'Izoh').trim() || 'Izoh'
+            : String(tableConfig?.printNoteTitle ?? 'Izoh').trim() || 'Izoh'
+    )
+    const extraTh = escapeHtml(
+        showPrices
+            ? String(tableConfig?.printExtraTitleWithPrices ?? 'Belgi').trim() || 'Belgi'
+            : String(tableConfig?.printExtraTitle ?? 'Belgi').trim() || 'Belgi'
+    )
+    const noteCell = withNote ? '<td class="print-note-cell"></td>' : ''
+    const extraCell = withExtra ? '<td class="print-extra-cell"></td>' : ''
 
     function oneDataRowHtml(g, displayIndex) {
         const sku = escapeHtml(g.size != null && g.size !== '' ? String(g.size) : '—')
@@ -674,7 +743,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
                 <td class="colors-stack">${colorsHtml}</td>
                 <td class="qty-stack mono">${qtysHtml}</td>
                 <td class="mono">${g.totalPieces}</td>
-                ${priceCells}
+                ${priceCells}${noteCell}${extraCell}
             </tr>`
     }
 
@@ -697,7 +766,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
                 const priceCells = showPrices
                     ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>`
                     : ''
-                rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}</tr>`
+                rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}${noteCell}${extraCell}</tr>`
                 secPieces = 0
                 secMoney = 0
             }
@@ -714,7 +783,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
             const priceCells = showPrices
                 ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>`
                 : ''
-            rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}</tr>`
+            rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}${noteCell}${extraCell}</tr>`
         }
     }
     const totalPar = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.totalPieces) || 0), 0)
@@ -729,9 +798,11 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
     const footerRow = `<tr class="totals-row">
         <td class="totals-label" colspan="5">Jami</td>
         <td class="mono totals-td">${totalPar}</td>
-        ${footerPriceCells}
+        ${footerPriceCells}${noteCell}${extraCell}
       </tr>`
     const theadPrice = showPrices ? '<th class="th-narrow">1 par</th><th class="th-narrow">Qator</th>' : ''
+    const theadNoteCol = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
+    const theadExtraCol = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
     /* Jami alohida jadvalda: asosiy jadval sahifalanganda brauzer tbody oxiridagi qatorni 1-sahifaga "yopishtirmasligi" uchun */
     return `
     <div class="order-block">
@@ -740,7 +811,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
         <div style="text-align:right"><strong>Sana:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div>
       </div>
       <table class="items-table">
-        <thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${theadPrice}</tr></thead>
+        <thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${theadPrice}${theadNoteCol}${theadExtraCol}</tr></thead>
         <tbody>${rowHtml}</tbody>
       </table>
       <table class="items-table order-totals-table">
@@ -756,11 +827,14 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList) {
     </div>`
 }
 
-function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList }) {
+function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {
     const blocks = orders
-        .map((o) => buildOrderBlockHtml(o, showPrices, labelColorFn, productsList))
+        .map((o) => buildOrderBlockHtml(o, showPrices, labelColorFn, productsList, tableConfig))
         .join('<div class="page-break"></div>')
     const listBanner = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
+    const imagePx = imagePxBySize(tableConfig?.imageSize)
+    const imageWrapPx = imagePx + 10
+    const imageCellPx = imagePx + 14
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title>
     <style>
       body{font-family:sans-serif;padding:40px;color:#333}
@@ -797,12 +871,16 @@ function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, 
       .qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.88rem;line-height:1.35}
       .colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.35;min-height:1.25em;font-size:0.85rem}
       .qty-stack .stack-line{font-weight:600}
-      /* Rasm: zebra fonini kesmasin — oq maydon; biroz kattaroq */
+      /* Rasm: zebra fonini kesmasin — oq maydon; chop etishda yaxshi ko‘rinsin */
       /* Rasm ustuni qat’iy kenglik — jadval “yoyilib” ketmasin */
-      .prod-img-cell{width:96px;max-width:96px;min-width:96px;text-align:center;vertical-align:middle;padding:4px!important;overflow:hidden;background:#fff!important}
-      .prod-thumb-wrap{max-width:100%;max-height:92px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
-      .prod-thumb{max-width:88px;max-height:88px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}
+      .prod-img-cell{width:${imageCellPx}px;max-width:${imageCellPx}px;min-width:${imageCellPx}px;text-align:center;vertical-align:middle;padding:6px!important;overflow:hidden;background:#fff!important}
+      .prod-thumb-wrap{max-width:100%;max-height:${imageWrapPx}px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
+      .prod-thumb{max-width:${imagePx}px;max-height:${imagePx}px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}
       .prod-no-img{color:#999;font-size:0.85rem}
+      table.items-table th.th-izoh{background:#ede9fe;color:#1a1a1a;min-width:5rem}
+      .print-note-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #c4b5fd!important}
+      table.items-table th.th-extra{background:#dbeafe;color:#1a1a1a;min-width:5rem}
+      .print-extra-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #93c5fd!important}
       .page-break{page-break-after:always;border:none;margin:24px 0;padding:0;height:0;overflow:hidden}
       .footer{margin-top:32px;text-align:center;color:#666;font-size:0.8em;border-top:1px solid #eee;padding-top:16px}
       @media print{
@@ -876,6 +954,7 @@ function createEmptyOrderLine() {
         color: '',
         image_url: '',
         resolveError: '',
+        local_note: '',
         /** `true` — qator kategoriya bo‘yicha tartiblangan blokda; `false` — «Tayyor»gacha pastda qoladi */
         readyForSort: false,
         /** Bir xil model kodi, turli rang/narx — turli `products` qatorlari */
@@ -885,6 +964,28 @@ function createEmptyOrderLine() {
         /** Ko‘p rang: har bir rang uchun miqdor (0 = shu rangdan yo‘q) */
         colorQtyByColor: {}
     }
+}
+
+const DEFAULT_TABLE_CONFIG = {
+    imageSize: 'md',
+    includePrintNoteColumn: true,
+    includePrintExtraColumn: false,
+    /** Narxli chop etish (`Ro'yxat + narx`) */
+    includePrintNoteWithPrices: false,
+    includePrintExtraWithPrices: false,
+    /** Chop etish sarlavhalari (bo‘sh ustunlar) */
+    printNoteTitle: 'Izoh',
+    printExtraTitle: 'Belgi',
+    printNoteTitleWithPrices: 'Izoh',
+    printExtraTitleWithPrices: 'Belgi',
+    showFormImageColumn: true,
+    showFormColorColumn: true
+}
+
+function imagePxBySize(sizeKey) {
+    if (sizeKey === 'sm') return 72
+    if (sizeKey === 'lg') return 132
+    return 104
 }
 
 /** Kategoriya bo‘yicha surilish: `readyForSort === false` aniq bo‘lsa — hali tayyor emas; `undefined` — bazadan/eski qoralama */
@@ -967,6 +1068,27 @@ function aggregateMergedOrdersTotals(ordersToMerge, itemRows) {
         totalQty += byOrder.get(String(o.id)) || 0
     }
     return { subtotal, totalQty }
+}
+
+function orderCategoryLabels(order, uncategorizedLabel = '—') {
+    const items = dedupeOrderItemsKeepNewest(order?.order_items || [], [])
+    const labels = new Set()
+    for (const oi of items) {
+        const cat = oi?.products?.categories
+        const name = (cat?.name_uz || cat?.name || '').trim()
+        labels.add(name || uncategorizedLabel)
+    }
+    return Array.from(labels)
+}
+
+function filterOrderItemsByCategoryLabel(orderItems, categoryLabel, uncategorizedLabel = '—') {
+    const target = (categoryLabel || '').trim()
+    if (!target || target === 'all') return orderItems || []
+    return (orderItems || []).filter((oi) => {
+        const cat = oi?.products?.categories
+        const name = (cat?.name_uz || cat?.name || '').trim() || uncategorizedLabel
+        return name === target
+    })
 }
 
 /**
@@ -1218,6 +1340,8 @@ export default function Buyurtmalar() {
     const [searchTerm, setSearchTerm] = useState('')
     /** `all` bo‘lishi shart — `Hammasi` bilan hech qachon `matchesStatus` true bo‘lmaydi */
     const [filterStatus, setFilterStatus] = useState('all')
+    /** Buyurtmalar ro‘yxatida mahsulot kategoriyasi bo‘yicha filter */
+    const [filterCategory, setFilterCategory] = useState('all')
     /** Bir nechta buyurtmani bitta yangi buyurtmaga birlashtirish uchun tanlov */
     const [mergeSelection, setMergeSelection] = useState({})
     /** Birlashtirishdan keyin: jami summa/miqdor tanlangan buyurtmalarning o‘zidagi yig‘indilar (qatorlardan qayta hisoblanmaydi) */
@@ -1235,6 +1359,7 @@ export default function Buyurtmalar() {
     const loadTrashOrdersRef = useRef(async () => {})
     /** Buyurtmalar jadvalidagi mahsulotlar ro‘yxatini yoyish/yig‘ish */
     const [orderListExpandedById, setOrderListExpandedById] = useState({})
+    const [tableConfig, setTableConfig] = useState(DEFAULT_TABLE_CONFIG)
     /** Yangi buyurtma: bir nechta qator — model kodi orqali mahsulot, soni qo‘lda */
     const [orderLines, setOrderLines] = useState([createEmptyOrderLine()])
     const [form, setForm] = useState({
@@ -1282,7 +1407,24 @@ export default function Buyurtmalar() {
         if (d && draftHasMeaningfulContent(d) && !isAddingRef.current) {
             setDraftBanner(true)
         }
+        try {
+            const raw = localStorage.getItem('crm_orders_table_config_v1')
+            if (raw) {
+                const parsed = JSON.parse(raw)
+                setTableConfig({ ...DEFAULT_TABLE_CONFIG, ...(parsed || {}) })
+            }
+        } catch (e) {
+            console.warn('table config load', e)
+        }
     }, [])
+
+    useEffect(() => {
+        try {
+            localStorage.setItem('crm_orders_table_config_v1', JSON.stringify(tableConfig))
+        } catch (e) {
+            console.warn('table config save', e)
+        }
+    }, [tableConfig])
 
     useEffect(() => {
         if (!isAdding || editId) return
@@ -1751,7 +1893,10 @@ export default function Buyurtmalar() {
                     await showAlert(t('orders.orderLinesUnresolved'), { variant: 'warning' })
                     return
                 }
-                const expandedRows = mergeExpandedRowsForSubmit(linesForSave.flatMap(expandOrderLineForSubmit))
+                const expandedRows = mergeExpandedRowsForSubmit(
+                    linesForSave.flatMap(expandOrderLineForSubmit),
+                    products
+                )
                 if (expandedRows.length === 0) {
                     await showAlert(t('orders.orderLinesEmpty'), { variant: 'warning' })
                     return
@@ -1853,7 +1998,7 @@ export default function Buyurtmalar() {
 
                 if (editId) {
                     const orderIdStr = String(editId)
-                    const itemPayloadsEdit = mergeOrderItemPayloadsForDb(makeItemPayloads(orderIdStr))
+                    const itemPayloadsEdit = mergeOrderItemPayloadsForDb(makeItemPayloads(orderIdStr), products)
                     if (!itemPayloadsEdit.length) {
                         await showAlert(t('orders.orderLinesEmpty'), { variant: 'warning' })
                         return
@@ -1937,7 +2082,7 @@ export default function Buyurtmalar() {
 
                 const orderId = newOrder.id
 
-                const itemPayloads = mergeOrderItemPayloadsForDb(makeItemPayloads(orderId))
+                const itemPayloads = mergeOrderItemPayloadsForDb(makeItemPayloads(orderId), products)
                 if (!itemPayloads.length) {
                     await supabase.from('orders').delete().eq('id', orderId)
                     setMergeSourceOrderIds(null)
@@ -2104,7 +2249,7 @@ export default function Buyurtmalar() {
 
         setMergeSourceAgg(null)
         setMergeSourceOrderIds(null)
-        const linesRaw = orderItemsToOrderLines(dedupeOrderItemsKeepNewest(rows || []), products)
+        const linesRaw = orderItemsToOrderLines(dedupeOrderItemsKeepNewest(rows || [], products), products)
         const lines = enrichOrderLinesFromDb(linesRaw)
 
         setForm({
@@ -2301,8 +2446,20 @@ export default function Buyurtmalar() {
                 await showAlert(t('orders.mergeEmptyLines'), { variant: 'warning' })
                 return
             }
+            const byOrderId = new Map()
+            for (const oi of cleanedRows) {
+                const oid = oi?.order_id
+                if (oid == null || oid === '') continue
+                const k = String(oid)
+                if (!byOrderId.has(k)) byOrderId.set(k, [])
+                byOrderId.get(k).push(oi)
+            }
+            const mergeRowsDeduped = []
+            for (const o of ordersToMerge) {
+                mergeRowsDeduped.push(...dedupeOrderItemsKeepNewest(byOrderId.get(String(o.id)) || [], products))
+            }
             const orderRank = new Map(ordersToMerge.map((o, i) => [String(o.id), i]))
-            const sortedForForm = [...cleanedRows].sort((a, b) => {
+            const sortedForForm = [...mergeRowsDeduped].sort((a, b) => {
                 const ra = orderRank.get(String(a.order_id)) ?? 999
                 const rb = orderRank.get(String(b.order_id)) ?? 999
                 if (ra !== rb) return ra - rb
@@ -2311,7 +2468,7 @@ export default function Buyurtmalar() {
                 if (la !== lb) return la - lb
                 return String(a.id || '').localeCompare(String(b.id || ''))
             })
-            setMergeSourceAgg(aggregateMergedOrdersTotals(ordersToMerge, cleanedRows))
+            setMergeSourceAgg(aggregateMergedOrdersTotals(ordersToMerge, mergeRowsDeduped))
             setMergeSourceOrderIds(ordersToMerge.map((o) => o.id))
             const linesRaw = orderItemsToOrderLines(sortedForForm, products)
             const lines = enrichOrderLinesFromDb(linesRaw)
@@ -2364,11 +2521,11 @@ export default function Buyurtmalar() {
             orderForPrint = {
                 ...item,
                 ...orderRow,
-                order_items: dedupeOrderItemsKeepNewest(rows || [])
+                order_items: dedupeOrderItemsKeepNewest(rows || [], products)
             }
         } catch (e) {
             console.error('handlePrintOrder refetch:', e)
-            orderForPrint = { ...item, order_items: dedupeOrderItemsKeepNewest(item.order_items || []) }
+            orderForPrint = { ...item, order_items: dedupeOrderItemsKeepNewest(item.order_items || [], products) }
         }
         const html = buildPrintDocumentHtml({
             documentTitle: `Buyurtma-${String(item.id).slice(0, 8)}`,
@@ -2376,7 +2533,8 @@ export default function Buyurtmalar() {
             orders: [orderForPrint],
             showPrices,
             labelColorFn,
-            productsList: products
+            productsList: products,
+            tableConfig
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.', {
@@ -2404,13 +2562,13 @@ export default function Buyurtmalar() {
             }
             ordersForPrint = list.map((o) => ({
                 ...o,
-                order_items: dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [])
+                order_items: dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [], products)
             }))
         } catch (e) {
             console.error('handlePrintOrderList refetch:', e)
             ordersForPrint = list.map((o) => ({
                 ...o,
-                order_items: dedupeOrderItemsKeepNewest(o.order_items || [])
+                order_items: dedupeOrderItemsKeepNewest(o.order_items || [], products)
             }))
         }
         const html = buildPrintDocumentHtml({
@@ -2419,7 +2577,66 @@ export default function Buyurtmalar() {
             orders: ordersForPrint,
             showPrices,
             labelColorFn,
-            productsList: products
+            productsList: products,
+            tableConfig
+        })
+        if (!openPrintTab(html)) {
+            showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })
+        }
+    }
+
+    async function handlePrintCategoryOnly(list, categoryLabel) {
+        if (!list?.length) {
+            await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
+            return
+        }
+        if (!categoryLabel || categoryLabel === 'all') {
+            await showAlert('Avval kategoriya tanlang.', { variant: 'info' })
+            return
+        }
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const ids = list.map((o) => o.id).filter(Boolean)
+        let ordersForPrint = list
+        try {
+            const { data: allRows, error } = await fetchOrderItemsForOrderIds(ids)
+            if (error) throw error
+            const byOrder = new Map()
+            for (const oi of allRows || []) {
+                const oid = oi.order_id
+                if (!byOrder.has(oid)) byOrder.set(oid, [])
+                byOrder.get(oid).push(oi)
+            }
+            ordersForPrint = list
+                .map((o) => {
+                    const rows = dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [], products)
+                    const categoryRows = filterOrderItemsByCategoryLabel(rows, categoryLabel, '—')
+                    return { ...o, order_items: categoryRows }
+                })
+                .filter((o) => (o.order_items || []).length > 0)
+        } catch (e) {
+            console.error('handlePrintCategoryOnly refetch:', e)
+            ordersForPrint = list
+                .map((o) => {
+                    const rows = dedupeOrderItemsKeepNewest(o.order_items || [], products)
+                    const categoryRows = filterOrderItemsByCategoryLabel(rows, categoryLabel, '—')
+                    return { ...o, order_items: categoryRows }
+                })
+                .filter((o) => (o.order_items || []).length > 0)
+        }
+
+        if (!ordersForPrint.length) {
+            await showAlert('Tanlangan kategoriya bo‘yicha chop etiladigan mahsulot topilmadi.', { variant: 'info' })
+            return
+        }
+
+        const html = buildPrintDocumentHtml({
+            documentTitle: `Buyurtmalar-${categoryLabel}`,
+            listTitle: `Kategoriya: ${categoryLabel} | ${t('orders.listPrintCount')}: ${ordersForPrint.length}`,
+            orders: ordersForPrint,
+            showPrices: false,
+            labelColorFn,
+            productsList: products,
+            tableConfig
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })
@@ -2429,6 +2646,12 @@ export default function Buyurtmalar() {
     const orderLinesSubtotal = useMemo(() => computeOrderLinesSubtotal(orderLines), [orderLines])
     const displayFormSubtotal =
         mergeSourceAgg != null ? mergeSourceAgg.subtotal : orderLinesSubtotal
+    const formImageCellClass =
+        tableConfig.imageSize === 'sm'
+            ? 'w-16 h-16 min-w-[4rem] max-w-[4rem] min-h-[4rem] max-h-[4rem]'
+            : tableConfig.imageSize === 'lg'
+              ? 'w-28 h-28 min-w-[7rem] max-w-[7rem] min-h-[7rem] max-h-[7rem]'
+              : 'w-24 h-24 min-w-[6rem] max-w-[6rem] min-h-[6rem] max-h-[6rem]'
     const orderFormTableRows = useMemo(
         () => buildOrderFormTableRows(orderLines, products, language, t('orders.categoryUncategorized')),
         [orderLines, products, language, t]
@@ -2439,6 +2662,18 @@ export default function Buyurtmalar() {
             orderFormTableRows.find((r) => r.type === 'line')?.line?.id,
         [orderFormTableRows]
     )
+    const ordersForList = ordersListView === 'active' ? orders : trashOrders
+    const orderCategoryOptions = useMemo(() => {
+        const countByLabel = new Map()
+        for (const o of ordersForList) {
+            for (const label of orderCategoryLabels(o, '—')) {
+                countByLabel.set(label, (countByLabel.get(label) || 0) + 1)
+            }
+        }
+        return Array.from(countByLabel.entries())
+            .sort((a, b) => a[0].localeCompare(b[0], 'uz'))
+            .map(([label, count]) => ({ label, count }))
+    }, [ordersForList])
 
     function orderMatchesListFilters(b) {
         const customerName = b.customer_name || b.customers?.name || t('common.unknown') || 'Noma\'lum'
@@ -2456,6 +2691,8 @@ export default function Buyurtmalar() {
                 .toLowerCase()
                 .includes(q)
         const st = b.status
+        const labels = orderCategoryLabels(b, '—')
+        const matchesCategory = filterCategory === 'all' || labels.includes(filterCategory)
         const matchesStatus =
             filterStatus === 'all' ||
             filterStatus === 'Hammasi' ||
@@ -2464,10 +2701,9 @@ export default function Buyurtmalar() {
             (filterStatus === 'completed' && (st === 'completed' || st === 'Tugallandi' || st === 'Tugallangan')) ||
             (filterStatus === 'cancelled' &&
                 (st === 'cancelled' || st === 'Bekor qilingan' || st === 'Bekor qilindi'))
-        return matchesSearch && matchesStatus
+        return matchesSearch && matchesStatus && matchesCategory
     }
 
-    const ordersForList = ordersListView === 'active' ? orders : trashOrders
     /** Jadval va yuqori 4 karta bir xil `filteredOrders` dan — jami va statuslar mos keladi */
     const filteredOrders = ordersForList.filter(orderMatchesListFilters)
     const totalSumma = filteredOrders.reduce((sum, b) => sum + (Number(b.total) || 0), 0)
@@ -2604,19 +2840,18 @@ export default function Buyurtmalar() {
                 </div>
             ) : null}
 
-            <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-2 mb-6 bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border border-gray-100">
-                <div className="relative w-full lg:max-w-sm lg:flex-1">
+            <div className="mb-6 bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border border-gray-100">
+                <div className="relative w-full">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                     <input
                         type="text"
                         placeholder={t('orders.searchPlaceholder')}
-                        className="w-full pl-9 pr-3 py-2 text-sm bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-lg outline-none transition-all"
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-lg outline-none transition-all"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-
-                <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto justify-start lg:justify-end">
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 w-full justify-start">
                     <button
                         type="button"
                         onClick={repeatLastOrder}
@@ -2625,15 +2860,6 @@ export default function Buyurtmalar() {
                     >
                         <Repeat size={15} />
                         <span className="hidden sm:inline">{t('orders.repeatLast')}</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => exportOrdersToCsv(filteredOrders, `buyurtmalar-${new Date().toISOString().slice(0, 10)}.csv`)}
-                        className="inline-flex items-center justify-center gap-1 bg-white hover:bg-gray-50 text-gray-800 border border-gray-200 px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs"
-                        title={t('orders.exportCsvTitle')}
-                    >
-                        <Download size={15} />
-                        <span className="hidden sm:inline">CSV</span>
                     </button>
                     {ordersListView === 'active' ? (
                         <>
@@ -2682,6 +2908,21 @@ export default function Buyurtmalar() {
                             <option value="cancelled">{t('orders.statusCancelled')}</option>
                         </select>
                     </div>
+                    <div className="flex items-center gap-1.5 bg-gray-50 px-2 rounded-lg border border-gray-100">
+                        <ListTree size={15} className="text-gray-500 shrink-0" />
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            className="bg-transparent py-1.5 pr-1 outline-none text-gray-700 text-xs font-medium cursor-pointer max-w-[12rem]"
+                        >
+                            <option value="all">Barcha kategoriya</option>
+                            {orderCategoryOptions.map((cat) => (
+                                <option key={cat.label} value={cat.label}>
+                                    {cat.label} ({cat.count})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
 
                     <button
                         type="button"
@@ -2700,6 +2941,20 @@ export default function Buyurtmalar() {
                     >
                         <List size={15} />
                         <span className="hidden sm:inline">{t('orders.listPrintShortNoPrices')}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handlePrintCategoryOnly(filteredOrders, filterCategory)}
+                        disabled={filterCategory === 'all'}
+                        className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs ${
+                            filterCategory !== 'all'
+                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                        title="Tanlangan kategoriya mahsulotlarini chop etish"
+                    >
+                        <ListTree size={15} />
+                        <span className="hidden sm:inline">Kategoriya chop</span>
                     </button>
 
                     <button
@@ -2831,6 +3086,163 @@ export default function Buyurtmalar() {
                                                 {t('orders.modelCodeFormatHint')}
                                             </p>
                                         </div>
+                                        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3">
+                                            <div className="text-xs font-bold text-gray-700 mb-2">Jadval sozlamalari</div>
+                                            <div className="flex flex-wrap items-center gap-3 text-xs">
+                                                <label className="flex items-center gap-2">
+                                                    <span className="text-gray-600">Rasm hajmi</span>
+                                                    <select
+                                                        value={tableConfig.imageSize}
+                                                        onChange={(e) =>
+                                                            setTableConfig((prev) => ({ ...prev, imageSize: e.target.value }))
+                                                        }
+                                                        className="px-2 py-1 border border-gray-200 rounded-md bg-white"
+                                                    >
+                                                        <option value="sm">Kichik</option>
+                                                        <option value="md">O'rta</option>
+                                                        <option value="lg">Katta</option>
+                                                    </select>
+                                                </label>
+                                                <label className="inline-flex items-center gap-1.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={tableConfig.showFormImageColumn}
+                                                        onChange={(e) =>
+                                                            setTableConfig((prev) => ({ ...prev, showFormImageColumn: e.target.checked }))
+                                                        }
+                                                    />
+                                                    <span>Rasm ustuni</span>
+                                                </label>
+                                                <label className="inline-flex items-center gap-1.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={tableConfig.showFormColorColumn}
+                                                        onChange={(e) =>
+                                                            setTableConfig((prev) => ({ ...prev, showFormColorColumn: e.target.checked }))
+                                                        }
+                                                    />
+                                                    <span>Rang ustuni</span>
+                                                </label>
+                                                <label className="inline-flex items-center gap-1.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={tableConfig.includePrintNoteColumn}
+                                                        onChange={(e) =>
+                                                            setTableConfig((prev) => ({ ...prev, includePrintNoteColumn: e.target.checked }))
+                                                        }
+                                                    />
+                                                    <span>Narxsiz chopda Izoh ustuni</span>
+                                                </label>
+                                                <label className="inline-flex items-center gap-1.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={tableConfig.includePrintExtraColumn}
+                                                        onChange={(e) =>
+                                                            setTableConfig((prev) => ({ ...prev, includePrintExtraColumn: e.target.checked }))
+                                                        }
+                                                    />
+                                                    <span>Narxsiz chopda qo‘shimcha ustun (Belgi)</span>
+                                                </label>
+                                                <label className="inline-flex items-center gap-1.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!tableConfig.includePrintNoteWithPrices}
+                                                        onChange={(e) =>
+                                                            setTableConfig((prev) => ({
+                                                                ...prev,
+                                                                includePrintNoteWithPrices: e.target.checked
+                                                            }))
+                                                        }
+                                                    />
+                                                    <span>Narxli chopda bo‘sh ustun (Izoh)</span>
+                                                </label>
+                                                <label className="inline-flex items-center gap-1.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!tableConfig.includePrintExtraWithPrices}
+                                                        onChange={(e) =>
+                                                            setTableConfig((prev) => ({
+                                                                ...prev,
+                                                                includePrintExtraWithPrices: e.target.checked
+                                                            }))
+                                                        }
+                                                    />
+                                                    <span>Narxli chopda qo‘shimcha bo‘sh ustun</span>
+                                                </label>
+                                            </div>
+                                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                                <div className="space-y-1">
+                                                    <div className="font-semibold text-gray-600">Narxsiz chop sarlavhalari</div>
+                                                    <div className="flex flex-wrap gap-2 items-center">
+                                                        <label className="flex items-center gap-1">
+                                                            <span className="text-gray-500 whitespace-nowrap">1-ustun</span>
+                                                            <input
+                                                                type="text"
+                                                                value={tableConfig.printNoteTitle ?? ''}
+                                                                onChange={(e) =>
+                                                                    setTableConfig((prev) => ({
+                                                                        ...prev,
+                                                                        printNoteTitle: e.target.value
+                                                                    }))
+                                                                }
+                                                                className="px-2 py-1 border border-gray-200 rounded-md bg-white w-32 max-w-full"
+                                                                placeholder="Izoh"
+                                                            />
+                                                        </label>
+                                                        <label className="flex items-center gap-1">
+                                                            <span className="text-gray-500 whitespace-nowrap">2-ustun</span>
+                                                            <input
+                                                                type="text"
+                                                                value={tableConfig.printExtraTitle ?? ''}
+                                                                onChange={(e) =>
+                                                                    setTableConfig((prev) => ({
+                                                                        ...prev,
+                                                                        printExtraTitle: e.target.value
+                                                                    }))
+                                                                }
+                                                                className="px-2 py-1 border border-gray-200 rounded-md bg-white w-32 max-w-full"
+                                                                placeholder="Belgi"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="font-semibold text-gray-600">Narxli chop sarlavhalari</div>
+                                                    <div className="flex flex-wrap gap-2 items-center">
+                                                        <label className="flex items-center gap-1">
+                                                            <span className="text-gray-500 whitespace-nowrap">1-ustun</span>
+                                                            <input
+                                                                type="text"
+                                                                value={tableConfig.printNoteTitleWithPrices ?? ''}
+                                                                onChange={(e) =>
+                                                                    setTableConfig((prev) => ({
+                                                                        ...prev,
+                                                                        printNoteTitleWithPrices: e.target.value
+                                                                    }))
+                                                                }
+                                                                className="px-2 py-1 border border-gray-200 rounded-md bg-white w-32 max-w-full"
+                                                                placeholder="Izoh"
+                                                            />
+                                                        </label>
+                                                        <label className="flex items-center gap-1">
+                                                            <span className="text-gray-500 whitespace-nowrap">2-ustun</span>
+                                                            <input
+                                                                type="text"
+                                                                value={tableConfig.printExtraTitleWithPrices ?? ''}
+                                                                onChange={(e) =>
+                                                                    setTableConfig((prev) => ({
+                                                                        ...prev,
+                                                                        printExtraTitleWithPrices: e.target.value
+                                                                    }))
+                                                                }
+                                                                className="px-2 py-1 border border-gray-200 rounded-md bg-white w-32 max-w-full"
+                                                                placeholder="Belgi"
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                         <div className="border border-gray-200 rounded-xl overflow-hidden">
                                             <div className="overflow-x-auto">
                                                 <table className="w-full text-base min-w-[720px]">
@@ -2838,8 +3250,11 @@ export default function Buyurtmalar() {
                                                         <tr className="bg-gray-50 text-left text-sm uppercase text-gray-500 font-bold">
                                                             <th className="px-3 py-2 w-36">{t('orders.modelCode')}</th>
                                                             <th className="px-3 py-2 w-28" />
+                                                            {tableConfig.showFormImageColumn ? <th className="px-3 py-2 w-28">Rasm</th> : null}
                                                             <th className="px-3 py-2">{t('orders.lineProduct')}</th>
-                                                            <th className="px-3 py-2 min-w-[200px]">{t('orders.lineColor')}</th>
+                                                            {tableConfig.showFormColorColumn ? (
+                                                                <th className="px-3 py-2 min-w-[200px]">{t('orders.lineColor')}</th>
+                                                            ) : null}
                                                             <th className="px-3 py-2 w-24">{t('orders.lineUnitPrice')}</th>
                                                             <th className="px-3 py-2 w-20">{t('orders.quantity')}</th>
                                                             <th className="px-3 py-2 w-24">{t('orders.lineSubtotal')}</th>
@@ -2848,11 +3263,15 @@ export default function Buyurtmalar() {
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
                                                         {orderFormTableRows.map((row) => {
+                                                            const formColumnCount =
+                                                                6 +
+                                                                (tableConfig.showFormImageColumn ? 1 : 0) +
+                                                                (tableConfig.showFormColorColumn ? 1 : 0)
                                                             if (row.type === 'catHeader') {
                                                                 return (
                                                                     <tr key={row.key} className="bg-emerald-50/90">
                                                                         <td
-                                                                            colSpan={8}
+                                                                            colSpan={formColumnCount}
                                                                             className="px-3 py-2 text-sm font-bold text-emerald-900 border-t border-emerald-100"
                                                                         >
                                                                             {t('products.category')}: {row.label}
@@ -2861,10 +3280,14 @@ export default function Buyurtmalar() {
                                                                 )
                                                             }
                                                             if (row.type === 'catSubtotal') {
+                                                                const subtotalLeftCols =
+                                                                    4 +
+                                                                    (tableConfig.showFormImageColumn ? 1 : 0) +
+                                                                    (tableConfig.showFormColorColumn ? 1 : 0)
                                                                 return (
                                                                     <tr key={row.key} className="bg-indigo-50/80">
                                                                         <td
-                                                                            colSpan={6}
+                                                                            colSpan={subtotalLeftCols}
                                                                             className="px-3 py-2 text-right text-sm font-bold text-indigo-900"
                                                                         >
                                                                             {t('orders.categorySubtotal')}
@@ -2942,6 +3365,25 @@ export default function Buyurtmalar() {
                                                                             {t('orders.codeFetchButton')}
                                                                         </button>
                                                                     </td>
+                                                                    {tableConfig.showFormImageColumn ? (
+                                                                        <td className="px-3 py-2 align-top">
+                                                                            {line.image_url ? (
+                                                                                <div
+                                                                                    className={`rounded-lg bg-white flex items-center justify-center overflow-hidden ring-1 ring-gray-200/60 ${formImageCellClass}`}
+                                                                                >
+                                                                                    <img
+                                                                                        src={line.image_url}
+                                                                                        alt=""
+                                                                                        className="max-h-full max-w-full object-contain object-center mix-blend-multiply"
+                                                                                    />
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div
+                                                                                    className={`rounded-lg border border-dashed border-gray-200/90 bg-white ${formImageCellClass}`}
+                                                                                />
+                                                                            )}
+                                                                        </td>
+                                                                    ) : null}
                                                                     <td className="px-3 py-2 align-top text-gray-800">
                                                                         {line.product_id ? (
                                                                             <span className="font-medium">{line.product_name}</span>
@@ -2949,8 +3391,9 @@ export default function Buyurtmalar() {
                                                                             <span className="text-gray-400">—</span>
                                                                         )}
                                                                     </td>
-                                                                    <td className="px-3 py-2 align-top text-sm min-w-[200px]">
-                                                                        {line.variants?.length >= 2 ? (
+                                                                    {tableConfig.showFormColorColumn ? (
+                                                                        <td className="px-3 py-2 align-top text-sm min-w-[200px]">
+                                                                            {line.variants?.length >= 2 ? (
                                                                             <select
                                                                                 className="w-full px-2 py-1.5 border rounded-lg text-sm bg-white"
                                                                                 value={line.product_id ? String(line.product_id) : ''}
@@ -3020,7 +3463,8 @@ export default function Buyurtmalar() {
                                                                                     : '—'}
                                                                             </span>
                                                                         )}
-                                                                    </td>
+                                                                        </td>
+                                                                    ) : null}
                                                                     <td className="px-3 py-2 align-top text-sm">
                                                                         {line.product_id ? (
                                                                             <div className="space-y-1">
@@ -3327,7 +3771,7 @@ export default function Buyurtmalar() {
                                             {item.order_items && item.order_items.length > 0 ? (
                                                 (() => {
                                                     const ois = normalizeOrderItemsForList(
-                                                        dedupeOrderItemsKeepNewest(item.order_items || [])
+                                                        dedupeOrderItemsKeepNewest(item.order_items || [], products)
                                                     )
                                                     const expanded = !!orderListExpandedById[item.id]
                                                     const hasMore = ois.length > ORDER_LIST_ITEMS_PREVIEW
@@ -3342,7 +3786,7 @@ export default function Buyurtmalar() {
                                                                 >
                                                                     <div className="flex items-start gap-2.5 min-w-0">
                                                                         {oi.image_url ? (
-                                                                            <div className="shrink-0 w-20 h-20 min-w-[5rem] max-w-[5rem] min-h-[5rem] max-h-[5rem] rounded-lg bg-white flex items-center justify-center overflow-hidden ring-1 ring-gray-200/60">
+                                                                            <div className={`shrink-0 rounded-lg bg-white flex items-center justify-center overflow-hidden ring-1 ring-gray-200/60 ${formImageCellClass}`}>
                                                                                 <img
                                                                                     src={oi.image_url}
                                                                                     alt=""
@@ -3350,7 +3794,7 @@ export default function Buyurtmalar() {
                                                                                 />
                                                                             </div>
                                                                         ) : (
-                                                                            <div className="shrink-0 w-20 h-20 min-w-[5rem] max-w-[5rem] min-h-[5rem] max-h-[5rem] rounded-lg border border-dashed border-gray-200/90 bg-white" />
+                                                                            <div className={`shrink-0 rounded-lg border border-dashed border-gray-200/90 bg-white ${formImageCellClass}`} />
                                                                         )}
                                                                         <div className="min-w-0 flex-1">
                                                                             <div className="font-medium text-gray-800 line-clamp-1">

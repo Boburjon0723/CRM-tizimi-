@@ -339,7 +339,12 @@ export const translations = {
             duplicateReportTitle: 'Takroriy mahsulot kodlari',
             duplicateReportNone: 'Takroriy kod topilmadi (barcha kiritilgan kodlar noyob yoki kod umuman yo‘q).',
             duplicateReportIntro: 'Quyidagi kodlar bir nechta mahsulotda takrorlanadi. Bittasini qoldirib, qolganlarini tahrirlang yoki o‘chiring.',
-            tableCode: 'Kod'
+            tableCode: 'Kod',
+            deleteBlockedTitle: 'Mahsulotni o‘chirib bo‘lmaydi',
+            deleteBlockedByLinkedRows:
+                'Bu mahsulot bazada boshqa jadvallarga bog‘langan (asosan CRM buyurtmalaridagi mahsulot qatorlari — order_items, ba’zan veb-sayt sharhlari). Shuning uchun PostgreSQL uni o‘chirishga ruxsat bermaydi; bu buyurtma tarixini buzmaslik uchun.\n\nKatalogdan yashirish: mahsulotni «Nofaol» qiling. Butunlay o‘chirish kerak bo‘lsa, avval ushbu mahsulot ishlatilgan buyurtma qatorlarini tahrirlang yoki o‘chiring; sharhlar bo‘lsa — veb-sayt bo‘limidan sharhlarni yo‘qing.',
+            deleteBlockedOrderLines: 'Buyurtma qatorlari (taxminiy soni)',
+            deleteBlockedReviews: 'Veb-sharhlar (taxminiy soni)'
         },
         warehouse: {
             title: 'Ombor Boshqaruvi',
@@ -880,7 +885,12 @@ export const translations = {
             duplicateReportTitle: 'Повторяющиеся коды товаров',
             duplicateReportNone: 'Дубликатов кодов не найдено.',
             duplicateReportIntro: 'Эти коды встречаются у нескольких товаров. Оставьте один и исправьте остальные.',
-            tableCode: 'Код'
+            tableCode: 'Код',
+            deleteBlockedTitle: 'Товар нельзя удалить',
+            deleteBlockedByLinkedRows:
+                'Этот товар связан с другими таблицами (чаще всего строками заказов в CRM — order_items, иногда отзывами на сайте). PostgreSQL не даёт удалить запись, чтобы не нарушить историю заказов.\n\nСкрыть из каталога: переведите товар в статус «Неактивен». Полное удаление: сначала уберите или измените строки заказов с этим товаром; если есть отзывы — удалите их во вкладке сайта.',
+            deleteBlockedOrderLines: 'Строк в заказах (примерно)',
+            deleteBlockedReviews: 'Отзывов на сайте (примерно)'
         },
         warehouse: {
             title: 'Управление складом',
@@ -1426,7 +1436,12 @@ export const translations = {
             duplicateReportTitle: 'Duplicate product codes',
             duplicateReportNone: 'No duplicate codes found.',
             duplicateReportIntro: 'These codes appear on more than one product. Keep one and fix or delete the rest.',
-            tableCode: 'Code'
+            tableCode: 'Code',
+            deleteBlockedTitle: 'Cannot delete this product',
+            deleteBlockedByLinkedRows:
+                'This product is linked to other rows in the database (usually order line items in CRM — order_items, sometimes website reviews). PostgreSQL blocks deletion so order history stays consistent.\n\nTo hide it from the catalog, set it to Inactive. To delete it completely, first remove or change order lines that reference it; if there are reviews, delete them in the Website section.',
+            deleteBlockedOrderLines: 'Order line rows (approx.)',
+            deleteBlockedReviews: 'Website reviews (approx.)'
         },
         warehouse: {
             title: 'Warehouse Management',
