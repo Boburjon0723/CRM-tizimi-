@@ -49,6 +49,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
     { href: '/', icon: Home, label: t('common.dashboard') },
     { href: '/media-library', icon: ImageIcon, label: t('common.mediaLibraryMenu') },
     { href: '/mahsulotlar', icon: Package, label: t('common.products') },
+    { href: '/ombor', icon: Warehouse, label: t('common.warehouse') },
     { href: '/buyurtmalar', icon: ShoppingCart, label: t('common.orders') },
     { href: '/mijozlar', icon: UserCircle, label: t('common.customers') },
     { href: '/xabarlar', icon: MessageSquare, label: t('common.messages') },
@@ -57,6 +58,11 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
     { href: '/statistika', icon: BarChart3, label: t('common.statistics') },
     { href: '/vebsayt', icon: Globe, label: t('common.website') },
   ]
+  function isMenuActive(href) {
+    if (href === '/') return pathname === '/'
+    return pathname === href || pathname.startsWith(`${href}/`)
+  }
+
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut()
     if (!error) {
@@ -97,7 +103,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
 
         <nav className="space-y-1.5 flex-1 overflow-y-auto pr-2 custom-scrollbar pb-6">
           {menuItems.map((item) => {
-            const isActive = pathname === item.href
+            const isActive = isMenuActive(item.href)
             const Icon = item.icon
 
             return (

@@ -1,12 +1,20 @@
-import { Bell, User, Menu, X, ShoppingBag, Globe, ChevronDown, Moon, Sun } from 'lucide-react'
+'use client'
+
+import { Bell, User, Menu, X, ShoppingBag, Globe, ChevronDown, Moon, Sun, MessageSquare } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useNotifications } from '@/context/NotificationContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useTheme } from '@/context/ThemeContext'
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+
+function notificationHref(notification) {
+    return notification?.type === 'message' ? '/xabarlar' : '/buyurtmalar'
+}
 
 export default function Header({ title, toggleSidebar: propToggleSidebar }) {
+    const router = useRouter()
     const { toggleSidebar: contextToggleSidebar } = useLayout()
     const toggleSidebar = propToggleSidebar || contextToggleSidebar
     const { notifications, unreadCount, markAsRead, markAllAsRead, clearNotification } = useNotifications()
@@ -161,12 +169,18 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                                 onClick={() => {
                                                     markAsRead(notification.id)
                                                     setShowNotifications(false)
-                                                    window.location.href = '/buyurtmalar'
+                                                    router.push(notificationHref(notification))
                                                 }}
                                             >
                                                 <div className="flex items-start gap-3">
-                                                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                                        <ShoppingBag size={20} className="text-blue-600" />
+                                                    <div
+                                                        className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${notification.type === 'message' ? 'bg-emerald-100' : 'bg-blue-100'}`}
+                                                    >
+                                                        {notification.type === 'message' ? (
+                                                            <MessageSquare size={20} className="text-emerald-700" />
+                                                        ) : (
+                                                            <ShoppingBag size={20} className="text-blue-600" />
+                                                        )}
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-start justify-between gap-2">
@@ -197,13 +211,22 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                 </div>
 
                                 {notifications.length > 0 && (
-                                    <Link
-                                        href="/buyurtmalar"
-                                        onClick={() => setShowNotifications(false)}
-                                        className="block w-full py-3 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
-                                    >
-                                        {t('common.viewAllOrders')}
-                                    </Link>
+                                    <div className="grid grid-cols-2 border-t border-gray-100">
+                                        <Link
+                                            href="/buyurtmalar"
+                                            onClick={() => setShowNotifications(false)}
+                                            className="py-3 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors border-r border-gray-100"
+                                        >
+                                            {t('common.viewAllOrders')}
+                                        </Link>
+                                        <Link
+                                            href="/xabarlar"
+                                            onClick={() => setShowNotifications(false)}
+                                            className="py-3 text-center text-sm font-medium text-emerald-700 hover:bg-emerald-50 transition-colors"
+                                        >
+                                            {t('common.viewAllMessages')}
+                                        </Link>
+                                    </div>
                                 )}
                             </div>
                         )}

@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useState, useMemo, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification } from '@/utils/telegram'
 import Header from '@/components/Header'
@@ -1326,7 +1327,8 @@ function orderItemsToOrderLines(orderItems, productsList) {
     return out.length ? out : [createEmptyOrderLine()]
 }
 
-export default function Buyurtmalar() {
+function BuyurtmalarPageContent() {
+    const searchParams = useSearchParams()
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
     const { showAlert, showConfirm, showToast } = useDialog()
@@ -2268,14 +2270,24 @@ export default function Buyurtmalar() {
 
     async function handleStatusChange(id, newStatus) {
         try {
-            const { error } = await supabase
+            const stamp = new Date().toISOString()
+            let { error } = await supabase
                 .from('orders')
-                .update({ status: newStatus })
+                .update({ status: newStatus, updated_at: stamp })
                 .eq('id', id)
+
+            if (
+                error &&
+                /updated_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))
+            ) {
+                ;({ error } = await supabase.from('orders').update({ status: newStatus }).eq('id', id))
+            }
 
             if (error) throw error
             setOrders((prev) =>
-                prev.map((o) => (o.id === id ? { ...o, status: newStatus } : o))
+                prev.map((o) =>
+                    o.id === id ? { ...o, status: newStatus, updated_at: stamp } : o
+                )
             )
         } catch (error) {
             console.error('Error updating status:', error)
@@ -2717,6 +2729,24 @@ export default function Buyurtmalar() {
                 b.status === 'Tugallangan'
         ).length,
     }
+
+    const highlightOrderId = searchParams.get('highlight')
+
+    useEffect(() => {
+        if (loading || !highlightOrderId || ordersListView !== 'active') return
+        const inList = filteredOrders.some((o) => String(o.id) === highlightOrderId)
+        if (!inList) return
+        const tmr = window.setTimeout(() => {
+            const el = document.getElementById(`order-row-${highlightOrderId}`)
+            if (!el) return
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            el.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2', 'bg-blue-50/90')
+            window.setTimeout(() => {
+                el.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2', 'bg-blue-50/90')
+            }, 4500)
+        }, 400)
+        return () => window.clearTimeout(tmr)
+    }, [loading, highlightOrderId, ordersListView, filteredOrders])
 
     if (loading) {
         return (
@@ -3741,7 +3771,11 @@ export default function Buyurtmalar() {
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {filteredOrders.map((item) => (
-                                    <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
+                                    <tr
+                                        key={item.id}
+                                        id={`order-row-${item.id}`}
+                                        className="hover:bg-blue-50/30 transition-colors scroll-mt-24"
+                                    >
                                         {ordersListView === 'active' ? (
                                             <td className="px-3 py-4 align-top text-center">
                                                 <input
@@ -3984,5 +4018,19 @@ export default function Buyurtmalar() {
                 )}
             </div>
         </div>
+    )
+}
+
+export default function Buyurtmalar() {
+    return (
+        <Suspense
+            fallback={
+                <div className="flex min-h-[50vh] items-center justify-center p-8">
+                    <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
+                </div>
+            }
+        >
+            <BuyurtmalarPageContent />
+        </Suspense>
     )
 }

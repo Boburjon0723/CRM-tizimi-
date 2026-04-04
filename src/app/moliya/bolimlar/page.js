@@ -10,6 +10,12 @@ import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
 import { pickLocalizedName } from '@/utils/localizedName'
+import {
+    directDeptTotalsByCurrency,
+    formatFinAmount,
+    normalizeFinCurrency,
+    rollupDepartmentTotals,
+} from '@/utils/financeCurrency'
 
 function deptPathLabels(stack, departments, language) {
     return stack.map((id) => {
@@ -32,7 +38,7 @@ export default function MoliyaBolimlarPage() {
     const [departments, setDepartments] = useState([])
     const [expenseEntries, setExpenseEntries] = useState([])
     const [rawMaterials, setRawMaterials] = useState([])
-    const [deptTotals, setDeptTotals] = useState({})
+    const [deptTotals, setDeptTotals] = useState({ UZS: {}, USD: {} })
     const [loading, setLoading] = useState(true)
     const [stack, setStack] = useState([])
 
@@ -46,6 +52,7 @@ export default function MoliyaBolimlarPage() {
         material_name: '',
         quantity: '',
         amount: '',
+        currency: 'UZS',
         expense_date: new Date().toISOString().split('T')[0],
         note: '',
     })
@@ -107,40 +114,17 @@ export default function MoliyaBolimlarPage() {
     }, [])
 
     const refreshDeptTotals = useCallback(async (depts) => {
-        const { data, error } = await supabase.from('material_movements').select('department_id, total_cost')
+        const { data, error } = await supabase.from('material_movements').select('department_id, total_cost, currency')
         if (error) {
             console.error(error)
             return
         }
 
-        const direct = {}
-        for (const row of data || []) {
-            const id = row.department_id
-            if (!id) continue
-            direct[id] = (direct[id] || 0) + Number(row.total_cost || 0)
-        }
-
-        // Rollup: ota bo'limlarda ham bolalar xarajatlari yig'indisi bo'lsin.
-        const children = {}
-        for (const d of depts || []) {
-            const pid = d.parent_id
-            if (pid == null || pid === undefined) continue
-            if (!children[pid]) children[pid] = []
-            children[pid].push(d.id)
-        }
-
-        const memo = {}
-        function rollup(id) {
-            if (memo[id] !== undefined) return memo[id]
-            let s = direct[id] || 0
-            const ch = children[id] || []
-            for (const c of ch) s += rollup(c)
-            memo[id] = s
-            return s
-        }
-
-        for (const d of depts || []) rollup(d.id)
-        setDeptTotals(memo)
+        const { UZS: directUzs, USD: directUsd } = directDeptTotalsByCurrency(data || [])
+        setDeptTotals({
+            UZS: rollupDepartmentTotals(depts || [], directUzs),
+            USD: rollupDepartmentTotals(depts || [], directUsd),
+        })
     }, [])
 
     const loadExpenseEntries = useCallback(
@@ -151,7 +135,9 @@ export default function MoliyaBolimlarPage() {
             }
             const { data, error } = await supabase
                 .from('material_movements')
-                .select('id, raw_material_id, unit_price_snapshot, quantity, total_cost, movement_date, note, created_at')
+                .select(
+                    'id, raw_material_id, unit_price_snapshot, quantity, total_cost, movement_date, note, created_at, currency'
+                )
                 .eq('department_id', deptId)
                 .order('movement_date', { ascending: false })
                 .order('created_at', { ascending: false })
@@ -172,6 +158,7 @@ export default function MoliyaBolimlarPage() {
                     expense_date: m.movement_date,
                     quantity: Number(m.quantity || 0),
                     amount: Number(m.total_cost || 0),
+                    currency: normalizeFinCurrency(m.currency),
                     created_at: m.created_at,
                 }))
             )
@@ -217,7 +204,16 @@ export default function MoliyaBolimlarPage() {
         return set
     }, [departments])
 
-    const expenseTotal = useMemo(() => expenseEntries.reduce((s, e) => s + Number(e.amount || 0), 0), [expenseEntries])
+    const expenseTotalsByCurrency = useMemo(() => {
+        let uz = 0
+        let us = 0
+        for (const e of expenseEntries) {
+            const a = Number(e.amount || 0)
+            if (normalizeFinCurrency(e.currency) === 'USD') us += a
+            else uz += a
+        }
+        return { UZS: uz, USD: us }
+    }, [expenseEntries])
 
     const groupedExpenseEntries = useMemo(() => {
         const toEpoch = (e) => {
@@ -286,8 +282,8 @@ export default function MoliyaBolimlarPage() {
             const { error } = await supabase.from('departments').delete().eq('id', id)
             if (error) throw error
             setStack((s) => s.filter((x) => x !== id))
-            await loadDepartments()
-            await refreshDeptTotals()
+            const loadedDepts = await loadDepartments()
+            await refreshDeptTotals(loadedDepts)
         } catch (err) {
             console.error(err)
             await showAlert(t('common.deleteError'), { variant: 'error' })
@@ -361,6 +357,7 @@ export default function MoliyaBolimlarPage() {
                         total_cost: amt,
                         movement_date: expForm.expense_date,
                         note: expForm.note.trim() || null,
+                        currency: normalizeFinCurrency(expForm.currency),
                     })
                     .eq('id', expEditId)
                 if (error) throw error
@@ -374,6 +371,7 @@ export default function MoliyaBolimlarPage() {
                         total_cost: amt,
                         movement_date: expForm.expense_date,
                         note: expForm.note.trim() || null,
+                        currency: normalizeFinCurrency(expForm.currency),
                     },
                 ])
                 if (error) throw error
@@ -385,6 +383,7 @@ export default function MoliyaBolimlarPage() {
                 material_name: '',
                 quantity: '',
                 amount: '',
+                currency: 'UZS',
                 expense_date: new Date().toISOString().split('T')[0],
                 note: '',
             })
@@ -417,6 +416,7 @@ export default function MoliyaBolimlarPage() {
             material_name: materialName,
             quantity: String(en.quantity ?? ''),
             amount: String(en.amount ?? ''),
+            currency: normalizeFinCurrency(en.currency),
             expense_date: en.expense_date || new Date().toISOString().split('T')[0],
             note: en.note || '',
         })
@@ -503,9 +503,23 @@ export default function MoliyaBolimlarPage() {
                         </button>
                     </div>
 
-                    <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 flex flex-wrap items-baseline justify-between gap-2">
+                    <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between gap-2">
                         <span className="text-sm font-medium text-emerald-900">{t('finances.expensesTotalLabel')}</span>
-                        <span className="text-2xl font-bold tabular-nums text-emerald-800">${expenseTotal.toLocaleString()}</span>
+                        <div className="flex flex-col items-end gap-1 text-right">
+                            {expenseTotalsByCurrency.UZS > 0.01 ? (
+                                <span className="text-lg sm:text-2xl font-bold tabular-nums text-emerald-800">
+                                    {formatFinAmount(expenseTotalsByCurrency.UZS, 'UZS')}
+                                </span>
+                            ) : null}
+                            {expenseTotalsByCurrency.USD > 0.01 ? (
+                                <span className="text-lg sm:text-2xl font-bold tabular-nums text-emerald-800">
+                                    {formatFinAmount(expenseTotalsByCurrency.USD, 'USD')}
+                                </span>
+                            ) : null}
+                            {expenseTotalsByCurrency.UZS < 0.01 && expenseTotalsByCurrency.USD < 0.01 ? (
+                                <span className="text-lg font-semibold text-emerald-700/80">—</span>
+                            ) : null}
+                        </div>
                     </div>
 
                     <div className="max-h-[min(55vh,420px)] overflow-auto rounded-xl border border-gray-100">
@@ -516,7 +530,7 @@ export default function MoliyaBolimlarPage() {
                                     <th className="px-3 py-3 font-semibold">Vaqt</th>
                                     <th className="px-3 py-3 font-semibold">{t('finances.materialLabel')}</th>
                                     <th className="px-3 py-3 font-semibold">{t('finances.quantityLabel')}</th>
-                                    <th className="px-3 py-3 font-semibold">{t('finances.amount')}</th>
+                                    <th className="px-3 py-3 font-semibold">{t('finances.amountWithCurrency')}</th>
                                     <th className="px-3 py-3 font-semibold">{t('finances.costNote')}</th>
                                     <th className="px-3 py-3 w-20" />
                                 </tr>
@@ -548,7 +562,9 @@ export default function MoliyaBolimlarPage() {
                                                     {group.material}
                                                 </td>
                                                 <td className="px-3 py-2.5 font-medium tabular-nums">{Number(en.quantity || 0).toLocaleString()}</td>
-                                                <td className="px-3 py-2.5 font-medium tabular-nums">${Number(en.amount || 0).toLocaleString()}</td>
+                                                <td className="px-3 py-2.5 font-medium tabular-nums whitespace-nowrap">
+                                                    {formatFinAmount(en.amount, en.currency)}
+                                                </td>
                                                 <td className="px-3 py-2.5 text-gray-600 max-w-[200px] sm:max-w-[280px] truncate" title={en.note || ''}>
                                                     {en.note || '—'}
                                                 </td>
@@ -697,10 +713,18 @@ export default function MoliyaBolimlarPage() {
                                 >
                                     <span className="block text-center leading-tight break-words">{name}</span>
                                     <span
-                                        className="block text-center text-[11px] font-semibold text-white/90 mt-1 tabular-nums"
+                                        className="block text-center text-[10px] font-semibold text-white/90 mt-1 tabular-nums leading-tight space-y-0.5"
                                         title={t('finances.expensesTotalLabel')}
                                     >
-                                        ${(deptTotals[d.id] ?? 0).toLocaleString()}
+                                        {(deptTotals.UZS?.[d.id] ?? 0) > 0.01 ? (
+                                            <span className="block">{formatFinAmount(deptTotals.UZS[d.id], 'UZS')}</span>
+                                        ) : null}
+                                        {(deptTotals.USD?.[d.id] ?? 0) > 0.01 ? (
+                                            <span className="block">{formatFinAmount(deptTotals.USD[d.id], 'USD')}</span>
+                                        ) : null}
+                                        {(deptTotals.UZS?.[d.id] ?? 0) < 0.01 && (deptTotals.USD?.[d.id] ?? 0) < 0.01 ? (
+                                            <span className="block">—</span>
+                                        ) : null}
                                     </span>
                                 </button>
 
@@ -807,7 +831,24 @@ export default function MoliyaBolimlarPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">{t('finances.amount')}</label>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">{t('finances.currencyLabel')}</label>
+                                <div className="flex flex-wrap gap-3 py-1">
+                                    {['UZS', 'USD'].map((c) => (
+                                        <label key={c} className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="exp-currency"
+                                                checked={normalizeFinCurrency(expForm.currency) === c}
+                                                onChange={() => setExpForm((f) => ({ ...f, currency: c }))}
+                                                className="rounded-full border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                            />
+                                            {c === 'UZS' ? t('finances.finCurrencyUzs') : t('finances.finCurrencyUsd')}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">{t('finances.amountInSelectedCurrency')}</label>
                                 <input
                                     type="number"
                                     step="any"

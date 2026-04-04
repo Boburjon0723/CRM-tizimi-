@@ -5,9 +5,25 @@ import {
     useCallback,
     useContext,
     useEffect,
+    useLayoutEffect,
     useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+
+const DIALOG_ROOT_ID = 'crm-dialog-portal-root'
+
+function getDialogPortalNode() {
+    if (typeof document === 'undefined') return null
+    let el = document.getElementById(DIALOG_ROOT_ID)
+    if (!el) {
+        el = document.createElement('div')
+        el.id = DIALOG_ROOT_ID
+        el.setAttribute('data-portal', 'dialog')
+        el.style.cssText = 'position:relative;z-index:2147483647;isolation:isolate;'
+        document.body.appendChild(el)
+    }
+    return el
+}
 import { AlertTriangle, Info, CheckCircle, XCircle, X } from 'lucide-react'
 import { useLanguage } from '@/context/LanguageContext'
 
@@ -51,62 +67,74 @@ function ModalLayer({ modal }) {
             ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm'
             : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
 
+    /** Ogohlantirish alertida «Tushundim» — ilova asosiy tugmasi bilan bir xil (sariq blok emas) */
+    const alertOkBtnClass =
+        variant === 'error'
+            ? 'bg-red-600 hover:bg-red-700 text-white shadow-sm'
+            : variant === 'warning'
+              ? 'bg-slate-900 hover:bg-slate-800 text-white shadow-sm'
+              : variant === 'success'
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                : 'bg-slate-900 hover:bg-slate-800 text-white shadow-sm'
+
     const titleText =
         modal.title ||
         (isConfirm ? t('common.dialogConfirmTitle') : t('common.dialogAlertTitle'))
 
     return (
         <div
-            className="fixed inset-0 z-[10001] flex items-center justify-center p-4 sm:p-6"
+            className="fixed inset-0 flex items-center justify-center p-4 sm:p-6"
+            style={{ zIndex: 2147483647 }}
             role="dialog"
             aria-modal="true"
             aria-labelledby="app-dialog-title"
         >
             <button
                 type="button"
-                className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]"
+                className="absolute inset-0 bg-slate-950/55 backdrop-blur-[3px]"
                 aria-label={t('common.close')}
                 onClick={() => (isConfirm ? modal.onCancel() : modal.onClose())}
             />
             <div
-                className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-2xl shadow-slate-900/15"
+                className="relative z-10 mx-auto shrink-0 overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-[0_25px_50px_-12px_rgba(15,23,42,0.35)] ring-1 ring-slate-900/5"
+                style={{ width: 'min(22rem, calc(100vw - 2rem))', maxWidth: '100%' }}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-start gap-4 p-5 sm:p-6">
+                <div className="flex items-start gap-3 p-4 sm:p-5 pb-3 sm:pb-4">
                     {iconWrap}
-                    <div className="min-w-0 flex-1 pt-0.5">
+                    <div className="min-w-0 flex-1 pt-0.5 overflow-hidden">
                         <h2
                             id="app-dialog-title"
-                            className="text-lg font-bold leading-snug text-gray-900"
+                            className="text-base sm:text-lg font-bold leading-snug text-gray-900 tracking-tight"
                         >
                             {titleText}
                         </h2>
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-600">
                             {modal.message}
                         </p>
                     </div>
                     <button
                         type="button"
-                        className="-m-1 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        className="-m-1 shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                         onClick={() => (isConfirm ? modal.onCancel() : modal.onClose())}
                         aria-label={t('common.close')}
                     >
                         <X className="h-5 w-5" />
                     </button>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 bg-gray-50/80 px-5 py-4 sm:px-6">
+                <div className="flex flex-wrap items-stretch sm:items-center justify-end gap-2 border-t border-gray-100 bg-gray-50/90 px-4 py-3 sm:px-5 sm:py-4">
                     {isConfirm ? (
                         <>
                             <button
                                 type="button"
-                                className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                                className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 min-h-[44px]"
                                 onClick={modal.onCancel}
                             >
                                 {modal.cancelLabel || t('common.no')}
                             </button>
                             <button
                                 type="button"
-                                className={`rounded-xl px-4 py-2.5 text-sm font-bold ${confirmBtnClass}`}
+                                className={`rounded-xl px-4 py-2.5 text-sm font-bold min-h-[44px] ${confirmBtnClass}`}
                                 onClick={modal.onConfirm}
                             >
                                 {modal.confirmLabel || t('common.yes')}
@@ -115,7 +143,7 @@ function ModalLayer({ modal }) {
                     ) : (
                         <button
                             type="button"
-                            className={`rounded-xl px-5 py-2.5 text-sm font-bold ${confirmBtnClass}`}
+                            className={`w-full rounded-xl px-4 py-2.5 text-sm font-bold min-h-[44px] ${alertOkBtnClass}`}
                             onClick={modal.onClose}
                         >
                             {t('common.ok')}
@@ -130,7 +158,8 @@ function ModalLayer({ modal }) {
 function ToastStack({ items, onDismiss }) {
     return (
         <div
-            className="pointer-events-none fixed top-4 right-4 z-[10000] flex max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-2"
+            className="pointer-events-none fixed top-4 right-4 flex max-w-[min(22rem,calc(100vw-2rem))] flex-col gap-2"
+            style={{ zIndex: 2147483646 }}
             aria-live="polite"
         >
             {items.map((toast) => {
@@ -228,15 +257,17 @@ export function DialogProvider({ children }) {
         return () => window.removeEventListener('keydown', onKey)
     }, [modal])
 
-    const mounted = typeof document !== 'undefined'
+    const [portalEl, setPortalEl] = useState(null)
+    useLayoutEffect(() => {
+        setPortalEl(getDialogPortalNode())
+    }, [])
 
     return (
         <DialogContext.Provider value={{ showAlert, showConfirm, showToast }}>
             {children}
-            {mounted &&
-                modal &&
-                createPortal(<ModalLayer modal={modal} />, document.body)}
-            {mounted && toasts.length > 0 &&
+            {portalEl && modal && createPortal(<ModalLayer modal={modal} />, portalEl)}
+            {portalEl &&
+                toasts.length > 0 &&
                 createPortal(
                     <ToastStack
                         items={toasts}
@@ -244,7 +275,7 @@ export function DialogProvider({ children }) {
                             setToasts((prev) => prev.filter((x) => x.id !== id))
                         }
                     />,
-                    document.body
+                    portalEl
                 )}
         </DialogContext.Provider>
     )

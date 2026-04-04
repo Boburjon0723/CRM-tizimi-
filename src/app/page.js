@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import StatCard from '@/components/StatCard'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
-import { Package, Users, ShoppingCart, DollarSign, TrendingUp, TrendingDown } from 'lucide-react'
+import { Package, Users, ShoppingCart, DollarSign, TrendingUp } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { isDeletedAtMissingError } from '@/lib/orderTrash'
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState([])
   const [recentOrders, setRecentOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
     loadData()
@@ -41,6 +43,7 @@ export default function Dashboard() {
   }, [])
 
   async function loadData() {
+    setLoadError(null)
     try {
       let ordersRes = await supabase
         .from('orders')
@@ -56,13 +59,13 @@ export default function Dashboard() {
           .limit(5)
       }
 
-      const [productsRes, employeesRes, transactionsRes] = await Promise.all([
-        supabase.from('products').select('stock'),
+      const [productsCountRes, employeesRes, transactionsRes] = await Promise.all([
+        supabase.from('products').select('id', { count: 'exact', head: true }),
         supabase.from('employees').select('id'),
         supabase.from('transactions').select('type, amount, date')
       ])
 
-      const totalStock = productsRes.data?.reduce((sum, p) => sum + (p.stock || 0), 0) || 0
+      const totalProducts = productsCountRes.count ?? 0
       const totalEmployees = employeesRes.data?.length || 0
 
       let countRes = await supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null)
@@ -71,12 +74,20 @@ export default function Dashboard() {
       }
       const totalOrders = countRes.count || 0
 
+      const errParts = []
+      if (ordersRes.error) errParts.push(ordersRes.error.message || String(ordersRes.error))
+      if (productsCountRes.error) errParts.push(productsCountRes.error.message || String(productsCountRes.error))
+      if (employeesRes.error) errParts.push(employeesRes.error.message || String(employeesRes.error))
+      if (transactionsRes.error) errParts.push(transactionsRes.error.message || String(transactionsRes.error))
+      if (countRes.error) errParts.push(countRes.error.message || String(countRes.error))
+      if (errParts.length) setLoadError(errParts.filter(Boolean).join(' · '))
+
       const income = transactionsRes.data?.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
       const expense = transactionsRes.data?.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
       const profit = income - expense
 
       setStats({
-        mahsulotlar: totalStock,
+        mahsulotlar: totalProducts,
         xodimlar: totalEmployees,
         buyurtmalar: totalOrders,
         foyda: profit
@@ -116,6 +127,7 @@ export default function Dashboard() {
       setChartData(Object.values(weeklyData))
     } catch (error) {
       console.error('Data loading error:', error)
+      setLoadError(error?.message || String(error))
     } finally {
       setLoading(false)
     }
@@ -139,34 +151,50 @@ export default function Dashboard() {
     <div className="max-w-7xl mx-auto">
       <Header title={t('common.dashboard')} toggleSidebar={toggleSidebar} />
 
+      {loadError ? (
+        <div className="mx-4 md:mx-6 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p>
+            <span className="font-semibold">{t('dashboard.loadErrorTitle')}</span>{' '}
+            <span className="text-amber-900/90 break-words">{loadError}</span>
+          </p>
+          <button
+            type="button"
+            onClick={() => void loadData()}
+            className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
+          >
+            {t('dashboard.retryLoad')}
+          </button>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8 px-4 md:px-6">
         <StatCard
           icon={Package}
           title={t('dashboard.products')}
           value={stats.mahsulotlar}
           color="bg-blue-500"
-          trend={12}
+          href="/mahsulotlar"
         />
         <StatCard
           icon={Users}
           title={t('dashboard.employees')}
           value={stats.xodimlar}
           color="bg-green-500"
-          trend={5}
+          href="/xodimlar"
         />
         <StatCard
           icon={ShoppingCart}
           title={t('common.orders')}
           value={stats.buyurtmalar}
           color="bg-purple-500"
-          trend={-3}
+          href="/buyurtmalar"
         />
         <StatCard
           icon={DollarSign}
           title={t('dashboard.profit')}
           value={`${(stats.foyda / 1000000).toFixed(1)}M`}
           color="bg-amber-500"
-          trend={18}
+          href="/moliya"
         />
       </div>
 
@@ -211,7 +239,11 @@ export default function Dashboard() {
               </div>
             ) : (
               recentOrders.map(order => (
-                <div key={order.id} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-xl transition-colors border border-transparent hover:border-gray-100 group">
+                <Link
+                  key={order.id}
+                  href={`/buyurtmalar?highlight=${encodeURIComponent(String(order.id))}`}
+                  className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-xl transition-colors border border-transparent hover:border-gray-100 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm">
                       {order.mijoz?.charAt(0) || 'U'}
@@ -230,13 +262,16 @@ export default function Dashboard() {
                       {order.status}
                     </span>
                   </div>
-                </div>
+                </Link>
               ))
             )}
           </div>
-          <button className="w-full mt-6 py-2.5 text-sm font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all">
+          <Link
+            href="/buyurtmalar"
+            className="block w-full mt-6 py-2.5 text-center text-sm font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+          >
             {t('dashboard.viewAll')}
-          </button>
+          </Link>
         </div>
       </div>
 

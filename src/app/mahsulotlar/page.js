@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { withTimeout } from '@/lib/withTimeout'
 import Header from '@/components/Header'
@@ -1276,6 +1277,15 @@ export default function Mahsulotlar() {
     return (
         <div className="max-w-7xl mx-auto px-6">
             <Header title={t('common.products')} toggleSidebar={toggleSidebar} />
+
+            <p className="mb-3 text-sm text-gray-600">
+                <Link
+                    href="/ombor"
+                    className="font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                >
+                    {t('dashboard.crossLinkToWarehouse')} →
+                </Link>
+            </p>
 
             {/* Actions Bar */}
             <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-2 mb-5 bg-white p-2.5 sm:p-3 rounded-xl shadow-sm border border-gray-100">

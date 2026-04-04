@@ -21,6 +21,20 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: false, // SWC ni o'chirish
+  /** Windows: buzilgan .next / Watchpack C:\\ skaneri xatolarini kamaytirish */
+  webpack: (config, { dev }) => {
+    if (dev && process.platform === 'win32') {
+      config.watchOptions = {
+        ...config.watchOptions,
+        ignored: [
+          '**/node_modules/**',
+          '**/.git/**',
+          '**/.next/**',
+        ],
+      }
+    }
+    return config
+  },
   async headers() {
     return [
       {
