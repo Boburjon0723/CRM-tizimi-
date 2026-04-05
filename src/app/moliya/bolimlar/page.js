@@ -24,6 +24,22 @@ function deptPathLabels(stack, departments, language) {
     })
 }
 
+/** O‘g‘il bo‘limlar idlari (fizik o‘chirish material_movements RESTRICT sabab 409 beradi — nofaollashtirish uchun). */
+function collectDepartmentSubtreeIds(rootId, allDepts) {
+    const ids = new Set([rootId])
+    let growing = true
+    while (growing) {
+        growing = false
+        for (const d of allDepts) {
+            if (d?.id && d.parent_id != null && ids.has(d.parent_id) && !ids.has(d.id)) {
+                ids.add(d.id)
+                growing = true
+            }
+        }
+    }
+    return [...ids]
+}
+
 export default function MoliyaBolimlarPage() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
@@ -50,7 +66,7 @@ export default function MoliyaBolimlarPage() {
     const [expEditId, setExpEditId] = useState(null)
     const [expForm, setExpForm] = useState({
         material_name: '',
-        quantity: '',
+        quantity: '1',
         amount: '',
         currency: 'UZS',
         expense_date: new Date().toISOString().split('T')[0],
@@ -279,14 +295,21 @@ export default function MoliyaBolimlarPage() {
     async function deleteDepartment(id) {
         if (!(await showConfirm(t('finances.departmentDeleteConfirm'), { variant: 'warning' }))) return
         try {
-            const { error } = await supabase.from('departments').delete().eq('id', id)
+            const ids = collectDepartmentSubtreeIds(id, departments)
+            const { error } = await supabase.from('departments').update({ is_active: false }).in('id', ids)
             if (error) throw error
-            setStack((s) => s.filter((x) => x !== id))
+            setStack((s) => s.filter((x) => !ids.includes(x)))
             const loadedDepts = await loadDepartments()
             await refreshDeptTotals(loadedDepts)
+            if (currentDeptId && ids.includes(currentDeptId)) setExpenseEntries([])
+            await showAlert(t('finances.departmentHiddenSuccess'), { variant: 'success' })
         } catch (err) {
             console.error(err)
-            await showAlert(t('common.deleteError'), { variant: 'error' })
+            const msg = err?.message || String(err)
+            const hint = /409|RESTRICT|foreign key|violate/i.test(msg)
+                ? `\n\n${t('finances.departmentDeleteConflictHint')}`
+                : ''
+            await showAlert(`${t('common.deleteError')}${hint}`, { variant: 'error' })
         }
     }
 
@@ -304,15 +327,15 @@ export default function MoliyaBolimlarPage() {
         e.preventDefault()
         if (!currentDeptId) return
 
-        const qty = parseFloat(expForm.quantity)
         const amt = parseFloat(expForm.amount)
         const materialName = (expForm.material_name || '').trim()
+        const qtyParsed = parseFloat(expForm.quantity)
+        const qty =
+            expEditId && Number.isFinite(qtyParsed) && qtyParsed > 0
+                ? qtyParsed
+                : 1
 
         if (!materialName) {
-            await showAlert(t('common.saveError'), { variant: 'warning' })
-            return
-        }
-        if (Number.isNaN(qty) || qty <= 0) {
             await showAlert(t('common.saveError'), { variant: 'warning' })
             return
         }
@@ -381,7 +404,7 @@ export default function MoliyaBolimlarPage() {
             setExpEditId(null)
             setExpForm({
                 material_name: '',
-                quantity: '',
+                quantity: '1',
                 amount: '',
                 currency: 'UZS',
                 expense_date: new Date().toISOString().split('T')[0],
@@ -495,7 +518,18 @@ export default function MoliyaBolimlarPage() {
                         </div>
                         <button
                             type="button"
-                            onClick={() => setExpenseModalOpen(true)}
+                            onClick={() => {
+                                setExpEditId(null)
+                                setExpForm({
+                                    material_name: '',
+                                    quantity: '1',
+                                    amount: '',
+                                    currency: 'UZS',
+                                    expense_date: new Date().toISOString().split('T')[0],
+                                    note: '',
+                                })
+                                setExpenseModalOpen(true)
+                            }}
                             className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 shrink-0"
                         >
                             <Plus size={16} />
@@ -798,37 +832,22 @@ export default function MoliyaBolimlarPage() {
                             {expEditId ? t('common.edit') : t('finances.addExpenseTitle')}
                         </h3>
                         <form onSubmit={saveExpenseEntry} className="space-y-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('finances.materialLabel')}</label>
-                                    <input
-                                        list="material-suggestions"
-                                        value={expForm.material_name}
-                                        onChange={(e) => setExpForm((f) => ({ ...f, material_name: e.target.value }))}
-                                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none text-sm"
-                                        placeholder={t('finances.selectPlaceholder')}
-                                        required
-                                    />
-                                    <datalist id="material-suggestions">
-                                        {rawMaterials.map((rm) => (
-                                            <option key={rm.id} value={pickLocalizedName(rm, language)} />
-                                        ))}
-                                    </datalist>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('finances.quantityLabel')}</label>
-                                    <input
-                                        type="number"
-                                        step="any"
-                                        min="0"
-                                        autoFocus
-                                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none"
-                                        value={expForm.quantity}
-                                        onChange={(e) => setExpForm((f) => ({ ...f, quantity: e.target.value }))}
-                                        required
-                                    />
-                                </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">{t('finances.materialLabel')}</label>
+                                <input
+                                    list="material-suggestions"
+                                    value={expForm.material_name}
+                                    onChange={(e) => setExpForm((f) => ({ ...f, material_name: e.target.value }))}
+                                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 outline-none text-sm"
+                                    placeholder={t('finances.selectPlaceholder')}
+                                    autoFocus
+                                    required
+                                />
+                                <datalist id="material-suggestions">
+                                    {rawMaterials.map((rm) => (
+                                        <option key={rm.id} value={pickLocalizedName(rm, language)} />
+                                    ))}
+                                </datalist>
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">{t('finances.currencyLabel')}</label>

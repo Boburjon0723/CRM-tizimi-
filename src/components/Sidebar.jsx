@@ -86,7 +86,14 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
         <div className="flex justify-between items-center mb-8 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center shadow-lg backdrop-blur-sm border border-white/10">
-              <img src="/favicon.svg" alt="CRM Logo" className="w-8 h-8 object-contain" />
+              <img
+                src="/favicon.svg"
+                alt="CRM Logo"
+                className="h-8 w-8 rounded-full object-cover object-center ring-1 ring-white/20"
+                width={32}
+                height={32}
+                decoding="async"
+              />
             </div>
             <div className="min-w-0">
               <h1 className="text-xl font-bold tracking-tight truncate">{siteName}</h1>

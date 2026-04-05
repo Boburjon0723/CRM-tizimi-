@@ -1,28 +1,101 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <defs>
-    <linearGradient id="cyanTealGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#22d3ee;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#0d9488;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  
-  <!-- Outer Ring Base -->
-  <circle cx="50" cy="50" r="48" fill="#0f172a" />
+<svg viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
 
-  <!-- Circular Arrows -->
-  <g fill="none" stroke-width="4" stroke-linecap="round">
-    <!-- Right side arc -->
-    <path d="M 50,10 A 40,40 0 0,1 50,90" stroke="#0d9488" />
-    <!-- Left side arc -->
-    <path d="M 50,90 A 40,40 0 0,1 50,10" stroke="#22d3ee" />
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#0f4c5c"/>
+      <stop offset="100%" stop-color="#031c24"/>
+    </radialGradient>
+
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="400" cy="400" r="380" fill="url(#bg)" />
+
+  <!-- Outer glowing ring -->
+  <circle cx="400" cy="400" r="260"
+          stroke="url(#ring)"
+          stroke-width="8"
+          fill="none"
+          filter="url(#glow)" />
+
+  <!-- Center circle -->
+  <circle cx="400" cy="400" r="110" fill="#082a36"/>
+  <text x="400" y="410" text-anchor="middle"
+        fill="#22d3ee"
+        font-size="60"
+        font-family="Arial"
+        font-weight="bold">
+    ERP
+  </text>
+
+  <!-- Nodes -->
+  <g font-family="Arial" text-anchor="middle" fill="white">
+
+    <!-- Node template positions -->
+    <g>
+      <circle cx="400" cy="120" r="50" fill="#14b8a6"/>
+      <text x="400" y="125">ÜRETİM</text>
+    </g>
+
+    <g>
+      <circle cx="600" cy="200" r="50" fill="#3b82f6"/>
+      <text x="600" y="205">CRM</text>
+    </g>
+
+    <g>
+      <circle cx="680" cy="400" r="50" fill="#f59e0b"/>
+      <text x="680" y="405">HR</text>
+    </g>
+
+    <g>
+      <circle cx="600" cy="600" r="50" fill="#ef4444"/>
+      <text x="600" y="605">Delivery</text>
+    </g>
+
+    <g>
+      <circle cx="400" cy="680" r="50" fill="#a855f7"/>
+      <text x="400" y="685">Logistics</text>
+    </g>
+
+    <g>
+      <circle cx="200" cy="600" r="50" fill="#6366f1"/>
+      <text x="200" y="605">Inventory</text>
+    </g>
+
+    <g>
+      <circle cx="120" cy="400" r="50" fill="#0ea5e9"/>
+      <text x="120" y="405">Finance</text>
+    </g>
+
+    <g>
+      <circle cx="200" cy="200" r="50" fill="#22c55e"/>
+      <text x="200" y="205">Planning</text>
+    </g>
+
   </g>
-  
-  <!-- Arrow Heads (matching the arcs) -->
-  <!-- Top Head (Left Arrow finishing at top) -->
-  <path d="M 50,10 L 55,16 L 45,16 Z" fill="#22d3ee" />
-  <!-- Bottom Head (Right Arrow finishing at bottom) -->
-  <path d="M 50,90 L 45,84 L 55,84 Z" fill="#0d9488" />
-  
-  <!-- CRM Text -->
-  <text x="50" y="58" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-1">CRM</text>
+
+  <!-- Connecting lines -->
+  <g stroke="#22d3ee" stroke-width="2" opacity="0.5">
+    <line x1="400" y1="400" x2="400" y2="120"/>
+    <line x1="400" y1="400" x2="600" y2="200"/>
+    <line x1="400" y1="400" x2="680" y2="400"/>
+    <line x1="400" y1="400" x2="600" y2="600"/>
+    <line x1="400" y1="400" x2="400" y2="680"/>
+    <line x1="400" y1="400" x2="200" y2="600"/>
+    <line x1="400" y1="400" x2="120" y2="400"/>
+    <line x1="400" y1="400" x2="200" y2="200"/>
+  </g>
+
 </svg>

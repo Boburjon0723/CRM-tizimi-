@@ -43,7 +43,14 @@ export default function LoginPage() {
             <div className="bg-white/10 backdrop-blur-lg p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20">
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/10 mb-4 shadow-xl backdrop-blur-md border border-white/10 transition-transform hover:scale-105 duration-300">
-                        <img src="/favicon.svg" alt="Logo" className="w-12 h-12 object-contain" />
+                        <img
+                            src="/favicon.svg"
+                            alt="Logo"
+                            className="h-12 w-12 rounded-full object-cover object-center shadow-md"
+                            width={48}
+                            height={48}
+                            decoding="async"
+                        />
                     </div>
                     <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">CRM Boshqaruv</h1>
                     <p className="text-blue-200 text-sm">Tizimga kirish uchun ma'lumotlaringizni kiriting</p>

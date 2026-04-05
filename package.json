@@ -9,7 +9,10 @@
     "dev:3000": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 4000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "icons:apple": "node scripts/generate-apple-touch.cjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
@@ -22,12 +25,14 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/react": "19.2.7",
     "autoprefixer": "^10.4.17",
     "cross-env": "^7.0.3",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.22",
     "postcss": "^8.4.35",
+    "sharp": "^0.33.5",
     "tailwindcss": "^3.4.1"
   }
 }

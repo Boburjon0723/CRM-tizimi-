@@ -28,6 +28,8 @@ import {
     Edit,
     Archive,
     RotateCcw,
+    Copy,
+    Timer,
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -59,6 +61,23 @@ function parseOrderItemQty(v) {
 function parseOrderItemPrice(v) {
     const n = Number(v)
     return Number.isFinite(n) ? n : 0
+}
+
+/** API / jadvalda: `line_note` (bazadan) yoki eski variant */
+function orderItemLineNoteText(oi) {
+    if (!oi || typeof oi !== 'object') return ''
+    const v = oi.line_note ?? oi.lineNote
+    return String(v ?? '').trim()
+}
+
+/** Bir nechta qatorlarni birlashtirganda qator izohlarini saqlash */
+function mergeLineNotes(a, b) {
+    const s1 = String(a ?? '').trim()
+    const s2 = String(b ?? '').trim()
+    if (!s1) return s2
+    if (!s2) return s1
+    if (s1 === s2) return s1
+    return `${s1}; ${s2}`
 }
 
 /** PostgREST: line_index yo‘q yoki categories bog‘lanishi bo‘lmasa so‘rov yiqiladi */
@@ -273,6 +292,7 @@ function expandOrderLineForSubmit(line) {
     const pr = Number(line.product_price) || 0
     const img = line.image_url || ''
     const name = line.product_name || ''
+    const noteTrim = String(line.local_note ?? '').trim()
     if (line.colorChoices?.length > 1) {
         /** Bir xil rang kaliti (takrorlangan `colorChoices` yoki yozuv farqi) bitta DB qatorida yig‘iladi */
         const byNorm = new Map()
@@ -297,7 +317,8 @@ function expandOrderLineForSubmit(line) {
                 product_price: pr,
                 color: label,
                 quantity: String(qty),
-                image_url: img
+                image_url: img,
+                line_note: noteTrim
             })
         }
         return rows
@@ -312,7 +333,8 @@ function expandOrderLineForSubmit(line) {
             product_price: pr,
             color: line.color || '',
             quantity: String(q),
-            image_url: img
+            image_url: img,
+            line_note: noteTrim
         }
     ]
 }
@@ -353,7 +375,9 @@ function clearNewOrderDraft() {
 
 function draftHasMeaningfulContent(d) {
     if (!d?.orderLines?.length) return false
-    const anyLine = d.orderLines.some((l) => (l.codeInput && l.codeInput.trim()) || l.product_id)
+    const anyLine = d.orderLines.some(
+        (l) => (l.codeInput && l.codeInput.trim()) || l.product_id || (l.local_note && String(l.local_note).trim())
+    )
     const formBusy =
         (d.form?.customer_name || '').trim() ||
         (d.form?.customer_phone || '').trim() ||
@@ -505,7 +529,11 @@ function mergeExpandedRowsForSubmit(rows, productsList) {
             continue
         }
         const pq = parseOrderItemQty(prev.quantity)
-        map.set(key, { ...prev, quantity: String(pq + q) })
+        map.set(key, {
+            ...prev,
+            quantity: String(pq + q),
+            line_note: mergeLineNotes(prev.line_note, r.line_note)
+        })
     }
     return Array.from(map.values())
 }
@@ -547,7 +575,8 @@ function mergeOrderItemPayloadsForDb(payloads, productsList) {
                 ...prev,
                 quantity: nq,
                 price: newPrice,
-                subtotal: sumMoney
+                subtotal: sumMoney,
+                line_note: mergeLineNotes(prev.line_note, p.line_note)
             })
         }
     }
@@ -625,6 +654,12 @@ function groupOrderItemsForPrint(orderItems, productsList) {
         const lineMonetaryFinal = lineMonetary
         const unitPrice =
             totalPieces > 0 ? Math.round((lineMonetaryFinal / totalPieces) * 100) / 100 : parseOrderItemPrice(first.price)
+        const lineNoteParts = []
+        for (const oi of lines) {
+            const n = orderItemLineNoteText(oi)
+            if (n && !lineNoteParts.includes(n)) lineNoteParts.push(n)
+        }
+        const lineNoteJoined = lineNoteParts.join('; ')
         return {
             product_name: first.product_name || first.products?.name || '-',
             size: resolvedOrderItemSizeRaw(first, productsList || []) || first.size,
@@ -633,7 +668,8 @@ function groupOrderItemsForPrint(orderItems, productsList) {
             colorPairs,
             totalPieces,
             lineMonetary: lineMonetaryFinal,
-            unitPrice
+            unitPrice,
+            lineNote: lineNoteJoined
         }
     })
 }
@@ -725,7 +761,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, table
             ? String(tableConfig?.printExtraTitleWithPrices ?? 'Belgi').trim() || 'Belgi'
             : String(tableConfig?.printExtraTitle ?? 'Belgi').trim() || 'Belgi'
     )
-    const noteCell = withNote ? '<td class="print-note-cell"></td>' : ''
+    const noteCellEmpty = withNote ? '<td class="print-note-cell"></td>' : ''
     const extraCell = withExtra ? '<td class="print-extra-cell"></td>' : ''
 
     function oneDataRowHtml(g, displayIndex) {
@@ -737,6 +773,9 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, table
         const priceCells = showPrices
             ? `<td class="mono">$${escapeHtml(formatUsd(g.unitPrice))}</td><td class="mono">$${escapeHtml(formatUsd(g.lineMonetary))}</td>`
             : ''
+        const noteCellRow = withNote
+            ? `<td class="print-note-cell">${g.lineNote ? escapeHtml(g.lineNote) : ''}</td>`
+            : ''
         return `<tr>
                 <td>${displayIndex}</td>
                 <td class="prod-img-cell">${imgHtml ? `<div class="prod-thumb-wrap">${imgHtml}</div>` : '<span class="prod-no-img">—</span>'}</td>
@@ -744,7 +783,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, table
                 <td class="colors-stack">${colorsHtml}</td>
                 <td class="qty-stack mono">${qtysHtml}</td>
                 <td class="mono">${g.totalPieces}</td>
-                ${priceCells}${noteCell}${extraCell}
+                ${priceCells}${noteCellRow}${extraCell}
             </tr>`
     }
 
@@ -767,7 +806,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, table
                 const priceCells = showPrices
                     ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>`
                     : ''
-                rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}${noteCell}${extraCell}</tr>`
+                rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}${noteCellEmpty}${extraCell}</tr>`
                 secPieces = 0
                 secMoney = 0
             }
@@ -784,7 +823,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, table
             const priceCells = showPrices
                 ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>`
                 : ''
-            rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}${noteCell}${extraCell}</tr>`
+            rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${priceCells}${noteCellEmpty}${extraCell}</tr>`
         }
     }
     const totalPar = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.totalPieces) || 0), 0)
@@ -799,7 +838,7 @@ function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, table
     const footerRow = `<tr class="totals-row">
         <td class="totals-label" colspan="5">Jami</td>
         <td class="mono totals-td">${totalPar}</td>
-        ${footerPriceCells}${noteCell}${extraCell}
+        ${footerPriceCells}${noteCellEmpty}${extraCell}
       </tr>`
     const theadPrice = showPrices ? '<th class="th-narrow">1 par</th><th class="th-narrow">Qator</th>' : ''
     const theadNoteCol = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
@@ -1004,6 +1043,96 @@ function orderLinesHasDuplicateProduct(orderLines, productId, excludeLineId) {
     return (orderLines || []).some(
         (l) => l.id !== excludeLineId && l.product_id != null && String(l.product_id) === pid
     )
+}
+
+/** Takror: shu `product_id` bo‘lgan birinchi qator `id` (joriy qatordan tashqari) */
+function findFirstDuplicateProductLineId(orderLines, productId, excludeLineId) {
+    if (productId == null || productId === '') return null
+    const pid = String(productId)
+    for (const l of orderLines || []) {
+        if (l.id === excludeLineId) continue
+        if (l.product_id != null && String(l.product_id) === pid) return l.id
+    }
+    return null
+}
+
+/**
+ * Takror mahsulot: `sourceLine` dagi miqdorlarni `targetId` qatoriga qo‘shadi, `sourceLine` ni olib tashlaydi.
+ */
+function mergeDuplicateSourceLineIntoTarget(orderLines, targetId, sourceLine, product) {
+    const target = orderLines.find((l) => l.id === targetId)
+    if (!target || !sourceLine || !product || targetId === sourceLine.id) return orderLines
+
+    const colorOpts = normalizeColorsArray(product)
+    const targetMatrix = (target.colorChoices?.length || 0) > 1
+    const sourceMatrix = (sourceLine.colorChoices?.length || 0) > 1
+    const productMulti = colorOpts.length > 1
+
+    let nextTarget = { ...target }
+    const noteMerged = mergeLineNotes(target.local_note, sourceLine.local_note)
+
+    function mergeSourceMatrixInto(baseTarget) {
+        const tq = { ...(baseTarget.colorQtyByColor || {}) }
+        for (const c of baseTarget.colorChoices || []) {
+            if (tq[c] == null) tq[c] = '0'
+        }
+        for (const c of sourceLine.colorChoices || []) {
+            const add = parseInt(String(sourceLine.colorQtyByColor?.[c] ?? '0'), 10) || 0
+            if (add <= 0) continue
+            const nk = normalizeModelKey(String(c))
+            const matchKey = baseTarget.colorChoices.find((k) => normalizeModelKey(String(k)) === nk)
+            const destKey = matchKey || baseTarget.colorChoices[0]
+            if (!destKey) continue
+            tq[destKey] = String((parseInt(String(tq[destKey] ?? '0'), 10) || 0) + add)
+        }
+        return { ...baseTarget, colorQtyByColor: tq, local_note: noteMerged }
+    }
+
+    if (targetMatrix) {
+        if (sourceMatrix) {
+            nextTarget = mergeSourceMatrixInto(nextTarget)
+        } else {
+            const tq = { ...(nextTarget.colorQtyByColor || {}) }
+            const add = parseInt(String(sourceLine.quantity ?? '0'), 10) || 0
+            const sc = (sourceLine.color || '').trim()
+            const key =
+                nextTarget.colorChoices.find((c) => normalizeModelKey(String(c)) === normalizeModelKey(sc)) ||
+                nextTarget.colorChoices[0]
+            if (key && add) {
+                tq[key] = String((parseInt(String(tq[key] ?? '0'), 10) || 0) + add)
+            }
+            nextTarget = { ...nextTarget, colorQtyByColor: tq, local_note: noteMerged }
+        }
+    } else if (sourceMatrix && productMulti) {
+        nextTarget = {
+            ...target,
+            colorChoices: [...colorOpts],
+            colorQtyByColor: seedColorQtyForMatrix(target, colorOpts),
+            quantity: '0',
+            color: '',
+            product_id: product.id,
+            product_name: displayProductName(product),
+            product_price: Number(product.sale_price) || 0,
+            image_url: product.image_url || target.image_url || ''
+        }
+        nextTarget = mergeSourceMatrixInto(nextTarget)
+    } else if (sourceMatrix && !productMulti) {
+        let sum = 0
+        for (const c of sourceLine.colorChoices || []) {
+            sum += parseInt(String(sourceLine.colorQtyByColor?.[c] ?? '0'), 10) || 0
+        }
+        const qt = parseInt(String(nextTarget.quantity ?? '0'), 10) || 0
+        nextTarget = { ...nextTarget, quantity: String(qt + sum), local_note: noteMerged }
+    } else {
+        const qt = parseInt(String(nextTarget.quantity ?? '0'), 10) || 0
+        const qs = parseInt(String(sourceLine.quantity ?? '0'), 10) || 0
+        nextTarget = { ...nextTarget, quantity: String(qt + qs), local_note: noteMerged }
+    }
+
+    const rest = orderLines
+        .filter((l) => l.id !== sourceLine.id)
+        .map((l) => (l.id === targetId ? nextTarget : l))
+    return rest.length ? rest : [createEmptyOrderLine()]
 }
 
 /** Bir xil `id` bilan kelgan qatorlarni bitta qilib oladi (API/join dublikatlari) */
@@ -1219,6 +1348,7 @@ function orderItemToFormLine(oi, productsList) {
             product_price,
             color: '',
             image_url: oi.image_url || prod?.image_url || '',
+            local_note: String(oi.line_note || '').trim(),
             resolveError: '',
             variants: [],
             colorChoices: colorOpts,
@@ -1245,6 +1375,7 @@ function orderItemToFormLine(oi, productsList) {
         product_price,
         color: (oi.color || '').trim() || (prod?.color ? String(prod.color) : ''),
         image_url: oi.image_url || prod?.image_url || '',
+        local_note: String(oi.line_note || '').trim(),
         resolveError: '',
         variants: [],
         colorChoices: [],
@@ -1306,6 +1437,9 @@ function orderItemsToOrderLines(orderItems, productsList) {
         const qtyForSingleRow =
             colorOpts.length === 1 ? String(Math.max(0, totalPiecesMerged)) : '1'
         const singleColorDisplay = colorOpts.length === 1 ? colorOpts[0] : ''
+        const lineNoteMerged = [...new Set(group.map((x) => String(x.line_note || '').trim()).filter(Boolean))].join(
+            '; '
+        )
 
         out.push({
             ...createEmptyOrderLine(),
@@ -1317,6 +1451,7 @@ function orderItemsToOrderLines(orderItems, productsList) {
             product_price,
             color: singleColorDisplay,
             image_url: first.image_url || prod?.image_url || '',
+            local_note: lineNoteMerged,
             resolveError: '',
             variants: [],
             colorChoices: colorOpts,
@@ -1707,35 +1842,66 @@ function BuyurtmalarPageContent() {
 
     async function applyVariantToLine(lineId, productIdStr) {
         const snapshot = orderLinesRef.current
-        if (
-            productIdStr &&
-            orderLinesHasDuplicateProduct(snapshot, productIdStr, lineId) &&
-            !(await showConfirm(t('orders.duplicateProductConfirm'), { variant: 'warning' }))
-        ) {
-            return
-        }
-        setOrderLines((prev) =>
-            prev.map((line) => {
-                if (line.id !== lineId) return line
-                if (!productIdStr) {
+        const line = snapshot.find((l) => l.id === lineId)
+        if (!line) return
+
+        if (!productIdStr) {
+            setOrderLines((prev) =>
+                prev.map((l) => {
+                    if (l.id !== lineId) return l
                     return {
-                        ...line,
+                        ...l,
                         product_id: null,
-                        product_name: displayProductName(line.variants?.[0]) || '',
+                        product_name: displayProductName(l.variants?.[0]) || '',
                         product_price: 0,
                         color: '',
                         image_url: '',
                         colorChoices: [],
                         colorQtyByColor: {},
-                        resolveError: line.variants?.length ? t('orders.pickColorVariant') : '',
+                        resolveError: l.variants?.length ? t('orders.pickColorVariant') : '',
                         readyForSort: false
                     }
+                })
+            )
+            return
+        }
+
+        const pool = line.variants?.length ? line.variants : products
+        const p = pool.find((x) => String(x.id) === String(productIdStr))
+        if (!p) return
+
+        if (orderLinesHasDuplicateProduct(snapshot, productIdStr, lineId)) {
+            const merge = await showConfirm(t('orders.duplicateProductMergePrompt'), {
+                variant: 'warning',
+                confirmLabel: t('orders.duplicateMergeYes'),
+                cancelLabel: t('orders.duplicateMergeNo')
+            })
+            if (merge) {
+                const targetId = findFirstDuplicateProductLineId(snapshot, productIdStr, lineId)
+                if (targetId) {
+                    const resolvedLine = {
+                        ...line,
+                        product_id: p.id,
+                        product_name: displayProductName(p),
+                        product_price: Number(p.sale_price) || 0,
+                        color: p.color || '',
+                        image_url: p.image_url || '',
+                        colorChoices: [],
+                        colorQtyByColor: {},
+                        resolveError: '',
+                        readyForSort: false
+                    }
+                    setOrderLines(mergeDuplicateSourceLineIntoTarget(snapshot, targetId, resolvedLine, p))
                 }
-                const pool = line.variants?.length ? line.variants : products
-                const p = pool.find((x) => String(x.id) === String(productIdStr))
-                if (!p) return line
+                return
+            }
+        }
+
+        setOrderLines((prev) =>
+            prev.map((l) => {
+                if (l.id !== lineId) return l
                 return {
-                    ...line,
+                    ...l,
                     product_id: p.id,
                     product_name: displayProductName(p),
                     product_price: Number(p.sale_price) || 0,
@@ -1780,12 +1946,6 @@ function BuyurtmalarPageContent() {
 
         if (list.length === 1) {
             const product = list[0]
-            if (
-                orderLinesHasDuplicateProduct(prevSnapshot, product.id, lineId) &&
-                !(await showConfirm(t('orders.duplicateProductConfirm'), { variant: 'warning' }))
-            ) {
-                return
-            }
             const colorOpts = normalizeColorsArray(product)
             let nextLine
             if (colorOpts.length > 1) {
@@ -1817,6 +1977,22 @@ function BuyurtmalarPageContent() {
                     readyForSort: false
                 }
             }
+
+            if (orderLinesHasDuplicateProduct(prevSnapshot, product.id, lineId)) {
+                const merge = await showConfirm(t('orders.duplicateProductMergePrompt'), {
+                    variant: 'warning',
+                    confirmLabel: t('orders.duplicateMergeYes'),
+                    cancelLabel: t('orders.duplicateMergeNo')
+                })
+                if (merge) {
+                    const targetId = findFirstDuplicateProductLineId(prevSnapshot, product.id, lineId)
+                    if (targetId) {
+                        setOrderLines(mergeDuplicateSourceLineIntoTarget(prevSnapshot, targetId, nextLine, product))
+                    }
+                    return
+                }
+            }
+
             setOrderLines((p) => p.map((l) => (l.id === lineId ? nextLine : l)))
             return
         }
@@ -1984,6 +2160,10 @@ function BuyurtmalarPageContent() {
                                 : prod?.size != null && String(prod.size).trim() !== ''
                                   ? String(prod.size).trim()
                                   : null
+                        const lineNoteDb =
+                            line.line_note != null && String(line.line_note).trim() !== ''
+                                ? String(line.line_note).trim()
+                                : null
                         return {
                             order_id: orderId,
                             product_id: line.product_id,
@@ -1994,6 +2174,7 @@ function BuyurtmalarPageContent() {
                             size: sizeForDb,
                             color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
                             image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null,
+                            line_note: lineNoteDb,
                             line_index: idx
                         }
                     })
@@ -2074,7 +2255,8 @@ function BuyurtmalarPageContent() {
                                 color: l.color,
                                 image_url: l.image_url,
                                 colorChoices: l.colorChoices || [],
-                                colorQtyByColor: l.colorQtyByColor || {}
+                                colorQtyByColor: l.colorQtyByColor || {},
+                                local_note: l.local_note || ''
                             }))
                     }
                     localStorage.setItem(LS_LAST_ORDER, JSON.stringify(snap))
@@ -2266,6 +2448,53 @@ function BuyurtmalarPageContent() {
         setOrderLines(lines)
         setEditId(orderId)
         setIsAdding(true)
+    }
+
+    async function handleDuplicateOrder(item) {
+        editLoadSeqRef.current += 1
+        const seq = editLoadSeqRef.current
+        const orderId = item.id
+
+        const { data: rows, error } = await fetchOrderItemsForOrderId(orderId)
+
+        if (error) {
+            console.error('handleDuplicateOrder order_items:', error)
+            await showAlert(t('common.saveError'), { variant: 'error' })
+            return
+        }
+        if (seq !== editLoadSeqRef.current) return
+
+        setMergeSourceAgg(null)
+        setMergeSourceOrderIds(null)
+        const linesRaw = orderItemsToOrderLines(dedupeOrderItemsKeepNewest(rows || [], products), products)
+        const linesEnriched = enrichOrderLinesFromDb(linesRaw)
+        const lines = linesEnriched.map((l) => {
+            const base = createEmptyOrderLine()
+            const { id: _omitId, ...rest } = l
+            return { ...base, ...rest, id: base.id }
+        })
+
+        const refNo =
+            item.order_number != null && String(item.order_number).trim() !== ''
+                ? String(item.order_number).trim()
+                : String(item.id).slice(0, 8)
+        const dupLine = `${t('orders.duplicateFromOrder')} ${refNo}`
+        const origNote = (item.note || '').trim()
+        const noteCombined = origNote ? `${origNote}\n\n${dupLine}` : dupLine
+
+        setForm({
+            customer_id: item.customer_id || '',
+            customer_name: item.customer_name || item.customers?.name || '',
+            customer_phone: item.customer_phone || item.customers?.phone || '',
+            total: item.total != null ? String(item.total) : '',
+            status: 'new',
+            note: noteCombined,
+            source: normalizeSourceForForm(item.source)
+        })
+        setOrderLines(lines.length ? lines : [createEmptyOrderLine()])
+        setEditId(null)
+        setIsAdding(true)
+        showToast(t('orders.duplicateOrderOpened'), { type: 'success' })
     }
 
     async function handleStatusChange(id, newStatus) {
@@ -2716,18 +2945,24 @@ function BuyurtmalarPageContent() {
         return matchesSearch && matchesStatus && matchesCategory
     }
 
-    /** Jadval va yuqori 4 karta bir xil `filteredOrders` dan — jami va statuslar mos keladi */
+    /** Jadval va yuqori kartalar bir xil `filteredOrders` dan — jami va statuslar mos keladi */
     const filteredOrders = ordersForList.filter(orderMatchesListFilters)
     const totalSumma = filteredOrders.reduce((sum, b) => sum + (Number(b.total) || 0), 0)
-    const statusCounts = {
-        Yangi: filteredOrders.filter((b) => b.status === 'Yangi' || b.status === 'new').length,
-        Jarayonda: filteredOrders.filter((b) => b.status === 'Jarayonda' || b.status === 'pending').length,
-        Tugallandi: filteredOrders.filter(
+    const sumOrderListTotals = (list) =>
+        Math.round(list.reduce((s, b) => s + (Number(b.total) || 0), 0) * 100) / 100
+    const statusPick = (pred) => {
+        const list = filteredOrders.filter(pred)
+        return { count: list.length, sum: sumOrderListTotals(list) }
+    }
+    const statusStats = {
+        new: statusPick((b) => b.status === 'Yangi' || b.status === 'new'),
+        pending: statusPick((b) => b.status === 'Jarayonda' || b.status === 'pending'),
+        completed: statusPick(
             (b) =>
                 b.status === 'Tugallandi' ||
                 b.status === 'completed' ||
                 b.status === 'Tugallangan'
-        ).length,
+        )
     }
 
     const highlightOrderId = searchParams.get('highlight')
@@ -2760,7 +2995,7 @@ function BuyurtmalarPageContent() {
 
 
     return (
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="w-full max-w-none xl:max-w-[min(100%,112rem)] 2xl:max-w-[min(100%,120rem)] mx-auto">
             <Header title={t('common.orders')} toggleSidebar={toggleSidebar} />
 
             {ordersListView === 'trash' ? (
@@ -2801,49 +3036,114 @@ function BuyurtmalarPageContent() {
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
-                    <div className="flex justify-between items-start">
-                        <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5 mb-8">
+                <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-5 sm:p-6 rounded-2xl shadow-lg shadow-blue-200">
+                    <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0">
                             <p className="text-sm font-medium text-blue-100">{t('orders.statsVisibleCount')}</p>
-                            <p className="text-3xl font-bold mt-2">{filteredOrders.length}</p>
+                            <p className="text-3xl font-bold mt-2 tabular-nums">{filteredOrders.length}</p>
                         </div>
-                        <div className="p-3 bg-white/20 rounded-xl">
+                        <div className="p-3 bg-white/20 rounded-xl shrink-0">
                             <ShoppingCart className="text-white" size={24} />
                         </div>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-start">
-                        <div>
+                <div className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-500">{t('orders.statusNew')}</p>
-                            <p className="text-3xl font-bold mt-2 text-blue-600">{statusCounts.Yangi}</p>
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wide">
+                                        {t('orders.statsCountShort')}
+                                    </p>
+                                    <p className="text-2xl font-bold tabular-nums text-blue-600">
+                                        {statusStats.new.count}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wide">
+                                        {t('orders.statsSumShort')}
+                                    </p>
+                                    <p className="text-lg font-bold tabular-nums font-mono text-gray-900 leading-tight">
+                                        ${formatUsd(statusStats.new.sum)}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
+                        <div className="p-3 bg-blue-50 rounded-xl text-blue-600 shrink-0">
                             <Clock size={24} />
                         </div>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <p className="text-sm font-medium text-gray-500">{t('orders.statusCompleted')}</p>
-                            <p className="text-3xl font-bold mt-2 text-green-600">{statusCounts.Tugallandi}</p>
+                <div className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-500">{t('orders.statusProcessing')}</p>
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wide">
+                                        {t('orders.statsCountShort')}
+                                    </p>
+                                    <p className="text-2xl font-bold tabular-nums text-amber-600">
+                                        {statusStats.pending.count}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wide">
+                                        {t('orders.statsSumShort')}
+                                    </p>
+                                    <p className="text-lg font-bold tabular-nums font-mono text-gray-900 leading-tight">
+                                        ${formatUsd(statusStats.pending.sum)}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <div className="p-3 bg-green-50 rounded-xl text-green-600">
+                        <div className="p-3 bg-amber-50 rounded-xl text-amber-600 shrink-0">
+                            <Timer size={24} />
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-500">{t('orders.statusCompleted')}</p>
+                            <div className="mt-3 grid grid-cols-2 gap-3">
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wide">
+                                        {t('orders.statsCountShort')}
+                                    </p>
+                                    <p className="text-2xl font-bold tabular-nums text-green-600">
+                                        {statusStats.completed.count}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] uppercase font-bold text-gray-400 tracking-wide">
+                                        {t('orders.statsSumShort')}
+                                    </p>
+                                    <p className="text-lg font-bold tabular-nums font-mono text-gray-900 leading-tight">
+                                        ${formatUsd(statusStats.completed.sum)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-3 bg-green-50 rounded-xl text-green-600 shrink-0">
                             <CheckCircle size={24} />
                         </div>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-start">
-                        <div>
+                <div className="bg-white p-5 sm:p-6 rounded-2xl shadow-sm border border-gray-100 sm:col-span-2 lg:col-span-1 xl:col-span-1">
+                    <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-500">{t('dashboard.totalRevenue')}</p>
-                            <p className="text-3xl font-bold mt-2 text-gray-800">${formatUsd(totalSumma)}</p>
+                            <p className="text-3xl font-bold mt-2 text-gray-800 font-mono tabular-nums">
+                                ${formatUsd(totalSumma)}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                                {t('orders.statsFilteredHint')}
+                            </p>
                         </div>
-                        <div className="p-3 bg-amber-50 rounded-xl text-amber-600 font-bold text-xl">
-                            $
-                        </div>
+                        <div className="p-3 bg-amber-50 rounded-xl text-amber-600 font-bold text-xl shrink-0">$</div>
                     </div>
                 </div>
             </div>
@@ -3101,6 +3401,18 @@ function BuyurtmalarPageContent() {
                                 </div>
                             </div>
 
+                            <div className="md:col-span-2 lg:col-span-3 space-y-2">
+                                <label className="block text-sm font-bold text-gray-700">{t('orders.note')}</label>
+                                <textarea
+                                    value={form.note}
+                                    onChange={(e) => setForm({ ...form, note: e.target.value })}
+                                    placeholder={t('orders.notePlaceholder')}
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all min-h-[4.5rem]"
+                                    rows={3}
+                                />
+                                <p className="text-xs text-gray-500">{t('orders.noteHintCreate')}</p>
+                            </div>
+
                             <div className="space-y-3 md:col-span-2 lg:col-span-3">
                                 <label className="block text-sm font-bold text-gray-700">{t('common.products')}</label>
                                 <>
@@ -3282,6 +3594,9 @@ function BuyurtmalarPageContent() {
                                                             <th className="px-3 py-2 w-28" />
                                                             {tableConfig.showFormImageColumn ? <th className="px-3 py-2 w-28">Rasm</th> : null}
                                                             <th className="px-3 py-2">{t('orders.lineProduct')}</th>
+                                                            <th className="px-3 py-2 min-w-[8rem] max-w-[16rem]">
+                                                                {t('orders.lineItemNote')}
+                                                            </th>
                                                             {tableConfig.showFormColorColumn ? (
                                                                 <th className="px-3 py-2 min-w-[200px]">{t('orders.lineColor')}</th>
                                                             ) : null}
@@ -3294,7 +3609,7 @@ function BuyurtmalarPageContent() {
                                                     <tbody className="divide-y divide-gray-100">
                                                         {orderFormTableRows.map((row) => {
                                                             const formColumnCount =
-                                                                6 +
+                                                                8 +
                                                                 (tableConfig.showFormImageColumn ? 1 : 0) +
                                                                 (tableConfig.showFormColorColumn ? 1 : 0)
                                                             if (row.type === 'catHeader') {
@@ -3311,7 +3626,7 @@ function BuyurtmalarPageContent() {
                                                             }
                                                             if (row.type === 'catSubtotal') {
                                                                 const subtotalLeftCols =
-                                                                    4 +
+                                                                    6 +
                                                                     (tableConfig.showFormImageColumn ? 1 : 0) +
                                                                     (tableConfig.showFormColorColumn ? 1 : 0)
                                                                 return (
@@ -3372,6 +3687,7 @@ function BuyurtmalarPageContent() {
                                                                                     product_price: 0,
                                                                                     color: '',
                                                                                     image_url: '',
+                                                                                    local_note: '',
                                                                                     readyForSort: false
                                                                                 })
                                                                             }
@@ -3420,6 +3736,19 @@ function BuyurtmalarPageContent() {
                                                                         ) : (
                                                                             <span className="text-gray-400">—</span>
                                                                         )}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 align-top min-w-[8rem] max-w-[16rem]">
+                                                                        <textarea
+                                                                            rows={2}
+                                                                            className="w-full min-h-[2.75rem] min-w-[7rem] px-2 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-800 placeholder:text-gray-400 resize-y max-h-28"
+                                                                            placeholder={t('orders.lineItemNotePlaceholder')}
+                                                                            value={line.local_note ?? ''}
+                                                                            onChange={(e) =>
+                                                                                updateOrderLine(line.id, {
+                                                                                    local_note: e.target.value
+                                                                                })
+                                                                            }
+                                                                        />
                                                                     </td>
                                                                     {tableConfig.showFormColorColumn ? (
                                                                         <td className="px-3 py-2 align-top text-sm min-w-[200px]">
@@ -3695,15 +4024,6 @@ function BuyurtmalarPageContent() {
                                     <option value="telefon">{t('orders.sourcePhone')}</option>
                                 </select>
                             </div>
-                            <div className="md:col-span-2 lg:col-span-3 space-y-2">
-                                <label className="block text-sm font-bold text-gray-700">{t('orders.note')}</label>
-                                <textarea
-                                    value={form.note}
-                                    onChange={(e) => setForm({ ...form, note: e.target.value })}
-                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                    rows="2"
-                                />
-                            </div>
                         </div>
                         <div className="flex justify-end gap-3">
                             <button
@@ -3741,12 +4061,12 @@ function BuyurtmalarPageContent() {
                         </p>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
+                    <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0">
+                        <table className="w-full min-w-[860px] text-left border-collapse table-auto">
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
                                     {ordersListView === 'active' ? (
-                                        <th className="w-12 px-3 py-4 rounded-tl-2xl text-center" title={t('orders.mergeSelectColumn')}>
+                                        <th className="w-10 shrink-0 px-2 py-3 sm:px-3 rounded-tl-2xl text-center" title={t('orders.mergeSelectColumn')}>
                                             <input
                                                 type="checkbox"
                                                 className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
@@ -3759,14 +4079,18 @@ function BuyurtmalarPageContent() {
                                             />
                                         </th>
                                     ) : null}
-                                    <th className={`px-6 py-4 ${ordersListView === 'trash' ? 'rounded-tl-2xl' : ''}`}>{t('orders.idDate')}</th>
-                                    <th className="px-6 py-4">{t('orders.customer')}</th>
-                                    <th className="px-6 py-4">{t('orders.products')}</th>
-                                    <th className="px-6 py-4">{t('orders.total')}</th>
-                                    <th className="px-6 py-4">{t('orders.payment')}</th>
-                                    <th className="px-6 py-4">{t('orders.status')}</th>
-                                    <th className="px-6 py-4">{t('orders.source')}</th>
-                                    <th className="px-6 py-4 rounded-tr-2xl text-right">{t('customers.actions')}</th>
+                                    <th className={`w-[11%] min-w-[7.5rem] px-3 py-3 sm:px-4 ${ordersListView === 'trash' ? 'rounded-tl-2xl' : ''}`}>
+                                        {t('orders.idDate')}
+                                    </th>
+                                    <th className="w-[14%] min-w-[9rem] px-3 py-3 sm:px-4">{t('orders.customer')}</th>
+                                    <th className="min-w-[12rem] px-3 py-3 sm:px-4 xl:min-w-[16rem]">{t('orders.products')}</th>
+                                    <th className="w-[7%] min-w-[4.5rem] whitespace-nowrap px-2 py-3 sm:px-3">{t('orders.total')}</th>
+                                    <th className="w-[9%] min-w-[5.5rem] px-2 py-3 sm:px-3">{t('orders.payment')}</th>
+                                    <th className="w-[10%] min-w-[6.5rem] px-2 py-3 sm:px-3">{t('orders.status')}</th>
+                                    <th className="w-[7%] min-w-[4rem] px-2 py-3 sm:px-3">{t('orders.source')}</th>
+                                    <th className="min-w-[13.5rem] px-2 py-3 sm:px-3 rounded-tr-2xl text-right xl:min-w-[15rem]">
+                                        {t('customers.actions')}
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
@@ -3777,7 +4101,7 @@ function BuyurtmalarPageContent() {
                                         className="hover:bg-blue-50/30 transition-colors scroll-mt-24"
                                     >
                                         {ordersListView === 'active' ? (
-                                            <td className="px-3 py-4 align-top text-center">
+                                            <td className="px-2 py-3 sm:px-3 sm:py-4 align-top text-center">
                                                 <input
                                                     type="checkbox"
                                                     className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mt-1"
@@ -3787,7 +4111,7 @@ function BuyurtmalarPageContent() {
                                                 />
                                             </td>
                                         ) : null}
-                                        <td className="px-6 py-4">
+                                        <td className="px-3 py-3 sm:px-4 sm:py-4 align-top">
                                             {item.order_number ? (
                                                 <div className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded inline-block mb-1">
                                                     № {item.order_number}
@@ -3796,12 +4120,12 @@ function BuyurtmalarPageContent() {
                                             <div className="font-mono text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded inline-block mb-1">#{String(item.id).slice(0, 8)}</div>
                                             <div className="text-sm font-medium text-gray-700">{new Date(item.created_at).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}</div>
                                         </td>
-                                        <td className="px-6 py-4 font-medium text-gray-900">
+                                        <td className="px-3 py-3 sm:px-4 sm:py-4 font-medium text-gray-900 align-top min-w-0">
                                             <div className="font-bold">{item.customer_name || item.customers?.name || 'Noma\'lum'}</div>
                                             <div className="text-xs text-gray-500 font-mono mt-0.5">{item.customer_phone || item.customers?.phone}</div>
                                             {item.note && <div className="text-xs text-amber-600 italic mt-1 bg-amber-50 px-2 py-0.5 rounded inline-block">{item.note}</div>}
                                         </td>
-                                        <td className="px-6 py-4 text-gray-600 max-w-[300px]">
+                                        <td className="px-3 py-3 sm:px-4 sm:py-4 text-gray-600 align-top min-w-0 max-w-md xl:max-w-xl 2xl:max-w-2xl">
                                             {item.order_items && item.order_items.length > 0 ? (
                                                 (() => {
                                                     const ois = normalizeOrderItemsForList(
@@ -3852,6 +4176,14 @@ function BuyurtmalarPageContent() {
                                                                                     )}
                                                                                 </div>
                                                                             </div>
+                                                                            {orderItemLineNoteText(oi) ? (
+                                                                                <div className="mt-1.5 w-full text-xs text-violet-900 leading-snug break-words border-l-2 border-violet-300 pl-2 py-0.5 bg-violet-50/80 rounded-r">
+                                                                                    <span className="font-semibold text-violet-700">
+                                                                                        {t('orders.lineItemNoteShort')}
+                                                                                    </span>{' '}
+                                                                                    {orderItemLineNoteText(oi)}
+                                                                                </div>
+                                                                            ) : null}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -3895,10 +4227,10 @@ function BuyurtmalarPageContent() {
                                                 <span className="text-gray-400 italic text-xs">Bo'sh</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 font-bold text-gray-900 font-mono">
+                                        <td className="px-2 py-3 sm:px-3 sm:py-4 font-bold text-gray-900 font-mono align-top whitespace-nowrap tabular-nums">
                                             ${formatUsd(item.total)}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-2 py-3 sm:px-3 sm:py-4 align-top">
                                             <div className="flex flex-col gap-1 text-xs">
                                                 <span className="font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded inline-block text-center">
                                                     {item.payment_method_detail || t('orders.cash')}
@@ -3916,7 +4248,7 @@ function BuyurtmalarPageContent() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-2 py-3 sm:px-3 sm:py-4 align-top">
                                             <select
                                                 value={normalizeStatusForSelect(item.status)}
                                                 onChange={(e) => handleStatusChange(item.id, e.target.value)}
@@ -3932,7 +4264,7 @@ function BuyurtmalarPageContent() {
                                                 <option value="cancelled">{t('orders.statusCancelled')}</option>
                                             </select>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-2 py-3 sm:px-3 sm:py-4 align-top">
                                             <span
                                                 className={`text-[10px] uppercase font-bold px-2 py-1 rounded-lg ${
                                                     item.source === 'website'
@@ -3949,12 +4281,12 @@ function BuyurtmalarPageContent() {
                                                       : t('orders.sourceStoreShort')}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-1 flex-wrap justify-end">
+                                        <td className="px-2 py-3 sm:px-3 sm:py-4 text-right align-top">
+                                            <div className="flex items-center justify-end gap-0.5 sm:gap-1 flex-nowrap sm:flex-wrap justify-end">
                                                 <button
                                                     type="button"
                                                     onClick={() => handlePrintOrder(item, true)}
-                                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                    className="shrink-0 p-1.5 sm:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                                                     title={t('orders.printWithPrices')}
                                                 >
                                                     <Receipt size={18} />
@@ -3962,7 +4294,7 @@ function BuyurtmalarPageContent() {
                                                 <button
                                                     type="button"
                                                     onClick={() => handlePrintOrder(item, false)}
-                                                    className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                                                    className="shrink-0 p-1.5 sm:p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
                                                     title={t('orders.printNoPrices')}
                                                 >
                                                     <List size={18} />
@@ -3971,17 +4303,26 @@ function BuyurtmalarPageContent() {
                                                     <>
                                                         <button
                                                             type="button"
+                                                            onClick={() => void handleDuplicateOrder(item)}
+                                                            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2 py-1.5 sm:px-2.5 sm:py-2 text-[11px] sm:text-xs font-bold text-violet-900 transition-colors hover:bg-violet-100"
+                                                            title={t('orders.duplicateOrderTitle')}
+                                                        >
+                                                            <Copy size={15} className="shrink-0 sm:w-4 sm:h-4" />
+                                                            <span className="hidden lg:inline">{t('orders.duplicateOrder')}</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
                                                             onClick={() => handleEdit(item)}
-                                                            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-600/25 transition-colors hover:bg-blue-700"
+                                                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-2 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-xs font-bold text-white shadow-md shadow-blue-600/25 transition-colors hover:bg-blue-700"
                                                             title={t('orders.editOrder')}
                                                         >
-                                                            <Edit size={16} className="shrink-0" />
-                                                            <span>{t('common.edit')}</span>
+                                                            <Edit size={15} className="shrink-0 sm:w-4 sm:h-4" />
+                                                            <span className="hidden sm:inline">{t('common.edit')}</span>
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => handleDelete(item.id)}
-                                                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                            className="shrink-0 p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                             title={t('orders.moveToTrashTitle')}
                                                         >
                                                             <Trash2 size={18} />
@@ -3992,16 +4333,16 @@ function BuyurtmalarPageContent() {
                                                         <button
                                                             type="button"
                                                             onClick={() => handleRestoreOrder(item.id)}
-                                                            className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-green-600/25 transition-colors hover:bg-green-700"
+                                                            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-green-600 px-2 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-xs font-bold text-white shadow-md shadow-green-600/25 transition-colors hover:bg-green-700"
                                                             title={t('orders.restoreOrderTitle')}
                                                         >
-                                                            <RotateCcw size={16} className="shrink-0" />
-                                                            <span>{t('orders.restoreOrder')}</span>
+                                                            <RotateCcw size={15} className="shrink-0 sm:w-4 sm:h-4" />
+                                                            <span className="hidden sm:inline">{t('orders.restoreOrder')}</span>
                                                         </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => handlePermanentDelete(item.id)}
-                                                            className="p-2 text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                                                            className="shrink-0 p-1.5 sm:p-2 text-red-700 hover:bg-red-50 rounded-lg transition-colors"
                                                             title={t('orders.permanentDeleteTitle')}
                                                         >
                                                             <Trash2 size={18} />
