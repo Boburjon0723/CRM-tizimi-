@@ -15,7 +15,8 @@ import {
     Wallet,
     Lock,
     Unlock,
-    CheckCircle2
+    CheckCircle2,
+    Printer
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -62,6 +63,15 @@ function activityDateInReportMonth(dateStr, periodYm) {
 function employeeMapKey(id) {
     if (id == null || id === '') return ''
     return String(id).trim().toLowerCase()
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
 }
 
 export default function Xodimlar() {
@@ -861,6 +871,105 @@ export default function Xodimlar() {
 
     const isReportMonthClosed = closedPeriodYms.includes(reportPeriodYm)
 
+    async function printEmployeesPayrollTable() {
+        const rows = filteredEmployees.map((xodim) => {
+            const empKey = employeeMapKey(xodim.id)
+            const contractTotal = (Number(xodim.monthly_salary) || 0) + (Number(xodim.bonus_percent) || 0)
+            const advList = advancesByEmployee[empKey] || []
+            const advSum = advList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+            const salList = salaryPaymentsByEmployee[empKey] || []
+            const salSum = salList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+            const totalOut = salaryPaymentsTableMissing ? advSum : Math.max(advSum, salSum)
+            const remaining = Math.max(0, contractTotal - totalOut)
+            return `
+                <tr>
+                    <td>${escapeHtml(xodim.name || '')}</td>
+                    <td>${escapeHtml(xodim.position || '')}</td>
+                    <td>${escapeHtml(formatUzs(contractTotal))}</td>
+                    <td>${escapeHtml(formatUzs(advSum))}</td>
+                    <td>${escapeHtml(salaryPaymentsTableMissing ? '—' : formatUzs(salSum))}</td>
+                    <td>${escapeHtml(formatUzs(totalOut))}</td>
+                    <td>${escapeHtml(formatUzs(remaining))}</td>
+                </tr>
+            `
+        })
+        const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(t('common.employees'))}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .sub { margin: 0 0 4px; color: #475569; font-size: 13px; }
+    .cards { margin: 10px 0 16px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border: 1px solid #e2e8f0; padding: 7px 8px; text-align: left; vertical-align: top; }
+    th { background: #f8fafc; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(t('common.employees'))}</h1>
+  <p class="sub">${escapeHtml(statsMonthLabel)}</p>
+  <p class="sub">${escapeHtml(new Date().toLocaleString())}</p>
+  <div class="cards">
+    <div>${escapeHtml(t('employees.statsCardAdvancesTotal'))}: ${escapeHtml(formatUzs(monthAdvancesNetDisplay))}</div>
+    <div>${escapeHtml(t('employees.statsCardSalaryClosedTotal'))}: ${escapeHtml(salaryPaymentsTableMissing ? '—' : formatUzs(monthSalaryPaidGrandTotalRaw))}</div>
+    <div>${escapeHtml(t('employees.monthTotalPaidOutCard'))}: ${escapeHtml(formatUzs(monthTotalPaidOutGrandTotal))}</div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>${escapeHtml(t('employees.name'))}</th>
+        <th>${escapeHtml(t('employees.position'))}</th>
+        <th>${escapeHtml(t('employees.salaryModalContractLabel'))}</th>
+        <th>${escapeHtml(t('employees.salaryModalPaidAdvanceLabel'))}</th>
+        <th>${escapeHtml(t('employees.salaryModalPaidSalaryLabel'))}</th>
+        <th>${escapeHtml(t('employees.rowTotalPaidOutLabel'))}</th>
+        <th>${escapeHtml(t('employees.salaryModalRemainingLabel'))}</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.length ? rows.join('') : `<tr><td colspan="7">${escapeHtml(t('employees.noEmployees'))}</td></tr>`}
+    </tbody>
+  </table>
+</body>
+</html>`
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=820')
+        if (popup) {
+            popup.document.write(html)
+            popup.document.close()
+            popup.focus()
+            popup.print()
+            return
+        }
+
+        // Popup bloklansa ham shu oynada print qilish uchun fallback.
+        const iframe = document.createElement('iframe')
+        iframe.style.position = 'fixed'
+        iframe.style.right = '0'
+        iframe.style.bottom = '0'
+        iframe.style.width = '0'
+        iframe.style.height = '0'
+        iframe.style.border = '0'
+        document.body.appendChild(iframe)
+        const doc = iframe.contentWindow?.document
+        if (!doc) {
+            iframe.remove()
+            window.print()
+            return
+        }
+        doc.open()
+        doc.write(html)
+        doc.close()
+        setTimeout(() => {
+            iframe.contentWindow?.focus()
+            iframe.contentWindow?.print()
+            setTimeout(() => iframe.remove(), 1500)
+        }, 120)
+    }
+
     if (loading) {
         return (
             <div className="p-8">
@@ -1039,13 +1148,23 @@ export default function Xodimlar() {
                     />
                 </div>
 
-                <button
-                    onClick={() => setIsAdding(!isAdding)}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
-                >
-                    {isAdding ? <X size={20} /> : <UserPlus size={20} />}
-                    <span className="hidden sm:inline">{isAdding ? t('common.cancel') : t('employees.addEmployee')}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => void printEmployeesPayrollTable()}
+                        className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-3 rounded-xl transition-all border border-slate-200 font-bold"
+                    >
+                        <Printer size={18} />
+                        <span className="hidden sm:inline">{t('common.print')}</span>
+                    </button>
+                    <button
+                        onClick={() => setIsAdding(!isAdding)}
+                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 font-bold"
+                    >
+                        {isAdding ? <X size={20} /> : <UserPlus size={20} />}
+                        <span className="hidden sm:inline">{isAdding ? t('common.cancel') : t('employees.addEmployee')}</span>
+                    </button>
+                </div>
             </div>
 
             {isAdding && (

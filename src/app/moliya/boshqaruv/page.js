@@ -23,6 +23,7 @@ import {
     X,
     Upload,
     Trash2,
+    Pencil,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
@@ -241,7 +242,7 @@ export default function MoliyaBoshqaruvPage() {
         note: '',
     })
 
-    const [entryModal, setEntryModal] = useState({ open: false, type: 'supply' })
+    const [entryModal, setEntryModal] = useState({ open: false, type: 'supply', editingEntryId: null })
     const [entryForm, setEntryForm] = useState({
         amount_uzs: '',
         currency: 'UZS',
@@ -259,6 +260,16 @@ export default function MoliyaBoshqaruvPage() {
     const supplyExcelModeRef = useRef('replace')
     const [deletePinModal, setDeletePinModal] = useState(null)
     const [deletePinValue, setDeletePinValue] = useState('')
+
+    const emptyEntryForm = useCallback(() => ({
+        amount_uzs: '',
+        currency: 'UZS',
+        entry_date: new Date().toISOString().split('T')[0],
+        description: '',
+        warehouse_note: '',
+        responsible_name: '',
+        lines: [{ ...EMPTY_SUPPLY_LINE }],
+    }), [])
 
     const [reportModalOpen, setReportModalOpen] = useState(false)
     const [reportFilter, setReportFilter] = useState({
@@ -651,6 +662,7 @@ export default function MoliyaBoshqaruvPage() {
     async function saveEntry(e) {
         e.preventDefault()
         if (!selectedId) return
+        const editingEntryId = entryModal.editingEntryId || null
         const ref = genReferenceCode()
         try {
             if (entryIsSingleAmount(entryModal.type)) {
@@ -660,20 +672,38 @@ export default function MoliyaBoshqaruvPage() {
                     return
                 }
                 const entryTypeSaved = entryModal.type === 'payment_in' ? 'payment_in' : 'payment'
-                const { error } = await supabase.from('partner_finance_entries').insert([
-                    {
-                        partner_id: selectedId,
-                        entry_type: entryTypeSaved,
-                        amount_uzs: amt,
-                        currency: normalizeFinCurrency(entryForm.currency),
-                        entry_date: entryForm.entry_date,
-                        description: entryForm.description.trim() || null,
-                        reference_code: ref,
-                        warehouse_note: null,
-                        responsible_name: null,
-                    },
-                ])
-                if (error) throw error
+                if (editingEntryId) {
+                    const { error } = await supabase
+                        .from('partner_finance_entries')
+                        .update({
+                            partner_id: selectedId,
+                            entry_type: entryTypeSaved,
+                            amount_uzs: amt,
+                            currency: normalizeFinCurrency(entryForm.currency),
+                            entry_date: entryForm.entry_date,
+                            description: entryForm.description.trim() || null,
+                            warehouse_note: null,
+                            responsible_name: null,
+                        })
+                        .eq('id', editingEntryId)
+                    if (error) throw error
+                    await supabase.from('partner_finance_entry_lines').delete().eq('entry_id', editingEntryId)
+                } else {
+                    const { error } = await supabase.from('partner_finance_entries').insert([
+                        {
+                            partner_id: selectedId,
+                            entry_type: entryTypeSaved,
+                            amount_uzs: amt,
+                            currency: normalizeFinCurrency(entryForm.currency),
+                            entry_date: entryForm.entry_date,
+                            description: entryForm.description.trim() || null,
+                            reference_code: ref,
+                            warehouse_note: null,
+                            responsible_name: null,
+                        },
+                    ])
+                    if (error) throw error
+                }
             } else {
                 const lineMode = entryModal.type === 'sale_out' ? 'sale_out' : 'supply'
                 const cleaned = cleanPartnerFinanceLines(entryForm.lines)
@@ -686,25 +716,48 @@ export default function MoliyaBoshqaruvPage() {
                     await showAlert(t('finances.partnersInvalidAmount'), { variant: 'warning' })
                     return
                 }
-                const { data: inserted, error: insErr } = await supabase
-                    .from('partner_finance_entries')
-                    .insert([
-                        {
+                let entryId = editingEntryId
+                if (editingEntryId) {
+                    const { error } = await supabase
+                        .from('partner_finance_entries')
+                        .update({
                             partner_id: selectedId,
                             entry_type: lineMode === 'sale_out' ? 'sale_out' : 'supply',
                             amount_uzs: sum,
                             currency: normalizeFinCurrency(entryForm.currency),
                             entry_date: entryForm.entry_date,
                             description: entryForm.description.trim() || null,
-                            reference_code: ref,
                             warehouse_note: entryForm.warehouse_note.trim() || null,
                             responsible_name: entryForm.responsible_name.trim() || null,
-                        },
-                    ])
-                    .select('id')
-                    .single()
-                if (insErr) throw insErr
-                const entryId = inserted?.id
+                        })
+                        .eq('id', editingEntryId)
+                    if (error) throw error
+                    const { error: delLinesErr } = await supabase
+                        .from('partner_finance_entry_lines')
+                        .delete()
+                        .eq('entry_id', editingEntryId)
+                    if (delLinesErr) throw delLinesErr
+                } else {
+                    const { data: inserted, error: insErr } = await supabase
+                        .from('partner_finance_entries')
+                        .insert([
+                            {
+                                partner_id: selectedId,
+                                entry_type: lineMode === 'sale_out' ? 'sale_out' : 'supply',
+                                amount_uzs: sum,
+                                currency: normalizeFinCurrency(entryForm.currency),
+                                entry_date: entryForm.entry_date,
+                                description: entryForm.description.trim() || null,
+                                reference_code: ref,
+                                warehouse_note: entryForm.warehouse_note.trim() || null,
+                                responsible_name: entryForm.responsible_name.trim() || null,
+                            },
+                        ])
+                        .select('id')
+                        .single()
+                    if (insErr) throw insErr
+                    entryId = inserted?.id
+                }
                 if (entryId && cleaned.length) {
                     // Faqat bazada har doim bo‘ladigan ustunlar (product_id / raw_material_id ixtiyoriy migratsiyalar — yo‘q bo‘lsa xato)
                     const rows = cleaned.map((ln, i) => ({
@@ -722,17 +775,9 @@ export default function MoliyaBoshqaruvPage() {
                     }
                 }
             }
-            setEntryModal({ ...entryModal, open: false })
+            setEntryModal({ open: false, type: 'supply', editingEntryId: null })
             setSupplyStep(1)
-            setEntryForm({
-                amount_uzs: '',
-                currency: 'UZS',
-                entry_date: new Date().toISOString().split('T')[0],
-                description: '',
-                warehouse_note: '',
-                responsible_name: '',
-                lines: [{ ...EMPTY_SUPPLY_LINE }],
-            })
+            setEntryForm(emptyEntryForm())
             await showAlert(t('finances.entrySaved'), { variant: 'success' })
             await loadAll()
         } catch (err) {
@@ -742,21 +787,13 @@ export default function MoliyaBoshqaruvPage() {
     }
 
     function openEntry(type) {
-        setEntryModal({ open: true, type })
+        setEntryModal({ open: true, type, editingEntryId: null })
         setSupplyStep(1)
-        setEntryForm({
-            amount_uzs: '',
-            currency: 'UZS',
-            entry_date: new Date().toISOString().split('T')[0],
-            description: '',
-            warehouse_note: '',
-            responsible_name: '',
-            lines: [{ ...EMPTY_SUPPLY_LINE }],
-        })
+        setEntryForm(emptyEntryForm())
     }
 
     function closeEntryModal() {
-        setEntryModal((m) => ({ ...m, open: false }))
+        setEntryModal((m) => ({ ...m, open: false, editingEntryId: null }))
         setSupplyStep(1)
     }
 
@@ -869,6 +906,53 @@ export default function MoliyaBoshqaruvPage() {
         })
     }
 
+    function beginEditEntry(row) {
+        if (!row) return
+        const type = row.entry_type === 'sale_out' ? 'sale_out' : row.entry_type === 'supply' ? 'supply' : row.entry_type === 'payment_in' ? 'payment_in' : 'payment'
+        const rawLines = [...(linesByEntryId[row.id] || [])].sort((a, b) => (a.line_index || 0) - (b.line_index || 0))
+        const formLines =
+            type === 'sale_out' || type === 'supply'
+                ? (rawLines.length ? rawLines : []).map((ln) => ({
+                      item_name: String(ln.item_name || '').trim(),
+                      quantity_display: String(ln.quantity_display || '').trim(),
+                      unit_price_uzs:
+                          Number.isFinite(Number(ln.unit_price_uzs)) && Number(ln.unit_price_uzs) >= 0
+                              ? String(Number(ln.unit_price_uzs))
+                              : '',
+                      line_total_uzs:
+                          Number.isFinite(Number(ln.line_total_uzs)) && Number(ln.line_total_uzs) > 0
+                              ? String(Number(ln.line_total_uzs))
+                              : '',
+                  }))
+                : []
+        setEntryModal({ open: true, type, editingEntryId: row.id })
+        setSupplyStep(1)
+        setEntryForm({
+            amount_uzs: Number.isFinite(Number(row.amount_uzs)) ? String(Number(row.amount_uzs)) : '',
+            currency: normalizeFinCurrency(row.currency),
+            entry_date: entryDateKey(row) || new Date().toISOString().split('T')[0],
+            description: String(row.description || ''),
+            warehouse_note: String(row.warehouse_note || ''),
+            responsible_name: String(row.responsible_name || ''),
+            lines: formLines.length ? formLines : [{ ...EMPTY_SUPPLY_LINE }],
+        })
+    }
+
+    function openEditEntryGate(row, ev) {
+        ev?.stopPropagation?.()
+        ev?.preventDefault?.()
+        if (!MOLIYA_DELETE_PIN) {
+            void showAlert(t('finances.deletePinNotConfigured'), { variant: 'warning' })
+            return
+        }
+        setDeletePinValue('')
+        setDeletePinModal({
+            kind: 'editEntry',
+            entry: row,
+            subtitle: `${displayRefCode(row)} · ${row.entry_date} · ${formatFinAmount(row.amount_uzs, row.currency)}`,
+        })
+    }
+
     function closeDeletePinModal() {
         setDeletePinModal(null)
         setDeletePinValue('')
@@ -890,7 +974,7 @@ export default function MoliyaBoshqaruvPage() {
                 if (error) throw error
                 setSelectedId(null)
                 setDetailModal(null)
-            } else {
+            } else if (deletePinModal.kind === 'entry') {
                 const entryId = deletePinModal.entryId
                 if (deletePinModal.entryType === 'sale_out') {
                     const toRestore = linesByEntryId[entryId] || []
@@ -908,10 +992,14 @@ export default function MoliyaBoshqaruvPage() {
                     .eq('id', entryId)
                 if (error) throw error
                 setDetailModal((dm) => (dm?.entry?.id === entryId ? null : dm))
+            } else if (deletePinModal.kind === 'editEntry') {
+                beginEditEntry(deletePinModal.entry)
             }
             closeDeletePinModal()
-            await showAlert(t('finances.deleteSuccess'), { variant: 'success' })
-            await loadAll()
+            if (deletePinModal.kind !== 'editEntry') {
+                await showAlert(t('finances.deleteSuccess'), { variant: 'success' })
+                await loadAll()
+            }
         } catch (err) {
             console.error(err)
             await showAlert(`${t('finances.deleteError')}: ${err.message || err}`, { variant: 'error' })
@@ -1306,8 +1394,8 @@ export default function MoliyaBoshqaruvPage() {
                                                 {t('finances.amountWithCurrency')}
                                             </th>
                                             <th className="px-4 py-3">{t('finances.costNote')}</th>
-                                            <th className="px-2 py-3 w-12 text-center" aria-label={t('common.delete')}>
-                                                <span className="sr-only">{t('common.delete')}</span>
+                                            <th className="px-2 py-3 w-20 text-center" aria-label={t('common.actions')}>
+                                                <span className="sr-only">{t('common.actions')}</span>
                                             </th>
                                         </tr>
                                     </thead>
@@ -1355,20 +1443,36 @@ export default function MoliyaBoshqaruvPage() {
                                                         {row.description || '—'}
                                                     </td>
                                                     <td className="px-1 py-2 text-center align-middle">
-                                                        <button
-                                                            type="button"
-                                                            disabled={!MOLIYA_DELETE_PIN}
-                                                            title={
-                                                                MOLIYA_DELETE_PIN
-                                                                    ? t('finances.deleteEntry')
-                                                                    : t('finances.deletePinNotConfigured')
-                                                            }
-                                                            onClick={(ev) => openDeleteEntryGate(row, ev)}
-                                                            className="inline-flex p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                            aria-label={t('finances.deleteEntry')}
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
+                                                        <div className="inline-flex items-center gap-1">
+                                                            <button
+                                                                type="button"
+                                                                disabled={!MOLIYA_DELETE_PIN}
+                                                                title={
+                                                                    MOLIYA_DELETE_PIN
+                                                                        ? t('common.edit')
+                                                                        : t('finances.deletePinNotConfigured')
+                                                                }
+                                                                onClick={(ev) => openEditEntryGate(row, ev)}
+                                                                className="inline-flex p-2 rounded-lg text-blue-600 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                aria-label={t('common.edit')}
+                                                            >
+                                                                <Pencil size={17} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={!MOLIYA_DELETE_PIN}
+                                                                title={
+                                                                    MOLIYA_DELETE_PIN
+                                                                        ? t('finances.deleteEntry')
+                                                                        : t('finances.deletePinNotConfigured')
+                                                                }
+                                                                onClick={(ev) => openDeleteEntryGate(row, ev)}
+                                                                className="inline-flex p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                aria-label={t('finances.deleteEntry')}
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))
@@ -2138,6 +2242,20 @@ export default function MoliyaBoshqaruvPage() {
                                         disabled={!MOLIYA_DELETE_PIN}
                                         title={
                                             MOLIYA_DELETE_PIN
+                                                ? t('common.edit')
+                                                : t('finances.deletePinNotConfigured')
+                                        }
+                                        onClick={() => openEditEntryGate(detailModal.entry)}
+                                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-blue-200 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        <Pencil size={18} />
+                                        {t('common.edit')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={!MOLIYA_DELETE_PIN}
+                                        title={
+                                            MOLIYA_DELETE_PIN
                                                 ? t('finances.deleteEntry')
                                                 : t('finances.deletePinNotConfigured')
                                         }
@@ -2346,13 +2464,17 @@ export default function MoliyaBoshqaruvPage() {
                         <p className="text-sm font-semibold text-gray-800 mt-2">
                             {deletePinModal.kind === 'partner'
                                 ? t('finances.deletePartner')
-                                : t('finances.deleteEntry')}
+                                : deletePinModal.kind === 'editEntry'
+                                  ? t('common.edit')
+                                  : t('finances.deleteEntry')}
                         </p>
                         <p className="text-sm text-gray-600 mt-1 break-words">{deletePinModal.subtitle}</p>
                         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-3">
                             {deletePinModal.kind === 'partner'
                                 ? t('finances.deletePartnerConfirmText')
-                                : t('finances.deleteEntryConfirmText')}
+                                : deletePinModal.kind === 'editEntry'
+                                  ? t('finances.deletePinHint')
+                                  : t('finances.deleteEntryConfirmText')}
                         </p>
                         <p className="text-xs text-gray-500 mt-2">{t('finances.deletePinHint')}</p>
                         <form onSubmit={confirmDeleteWithPassword} className="mt-4 space-y-4">
@@ -2375,9 +2497,13 @@ export default function MoliyaBoshqaruvPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+                                    className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${
+                                        deletePinModal.kind === 'editEntry'
+                                            ? 'bg-blue-600 hover:bg-blue-700'
+                                            : 'bg-red-600 hover:bg-red-700'
+                                    }`}
                                 >
-                                    {t('common.delete')}
+                                    {deletePinModal.kind === 'editEntry' ? t('common.edit') : t('common.delete')}
                                 </button>
                             </div>
                         </form>

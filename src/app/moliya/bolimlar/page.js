@@ -5,10 +5,11 @@ import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import MoliyaTopNav from '@/components/MoliyaTopNav'
 import { MoliyaCardSkeleton } from '@/components/MoliyaSkeletons'
-import { Building2, Plus, Trash2, Pencil, X, ChevronRight, ArrowLeft } from 'lucide-react'
+import { Building2, Plus, Trash2, Pencil, X, ChevronRight, ArrowLeft, Printer } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
+import { getEmployeesActionPin } from '@/lib/employeesSectionPin'
 import { pickLocalizedName } from '@/utils/localizedName'
 import {
     directDeptTotalsByCurrency,
@@ -40,10 +41,20 @@ function collectDepartmentSubtreeIds(rootId, allDepts) {
     return [...ids]
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+}
+
 export default function MoliyaBolimlarPage() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
     const { showAlert, showConfirm } = useDialog()
+    const deletePin = getEmployeesActionPin()
 
     const withTimeout = (promise, ms, label) =>
         Promise.race([
@@ -410,6 +421,14 @@ export default function MoliyaBolimlarPage() {
     }
 
     async function deleteExpenseEntry(id) {
+        if (deletePin) {
+            const entered = window.prompt(`${t('finances.deletePinHint')}\n\n${t('finances.deletePinLabel')}:`, '')
+            if (entered == null) return
+            if (String(entered).trim() !== deletePin) {
+                await showAlert(t('finances.deletePinWrong'), { variant: 'error' })
+                return
+            }
+        }
         if (!(await showConfirm(t('finances.deleteConfirm'), { variant: 'warning' }))) return
         try {
             const { error } = await supabase.from('material_movements').delete().eq('id', id)
@@ -438,6 +457,102 @@ export default function MoliyaBolimlarPage() {
 
     const crumbs = deptPathLabels(stack, departments, language)
     const pathTitle = crumbs.length ? crumbs.join(' › ') : null
+
+    async function printExpenseTable() {
+        if (!currentDeptId) return
+        const deptName = pickLocalizedName(departments.find((d) => d.id === currentDeptId), language) || '—'
+        const totalUzs = expenseTotalsByCurrency.UZS > 0.01 ? formatFinAmount(expenseTotalsByCurrency.UZS, 'UZS') : '—'
+        const totalUsd = expenseTotalsByCurrency.USD > 0.01 ? formatFinAmount(expenseTotalsByCurrency.USD, 'USD') : '—'
+        const rows = sortedExpenseEntries.map((en) => {
+            const material =
+                en.raw_material_id && rawMaterialById[en.raw_material_id]
+                    ? pickLocalizedName(rawMaterialById[en.raw_material_id], language)
+                    : '—'
+            const time = en.created_at
+                ? new Date(en.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '—'
+            return `
+                <tr>
+                    <td>${escapeHtml(en.expense_date || '—')}</td>
+                    <td>${escapeHtml(time)}</td>
+                    <td>${escapeHtml(material)}</td>
+                    <td>${escapeHtml(Number(en.quantity || 0).toLocaleString())}</td>
+                    <td>${escapeHtml(formatFinAmount(en.amount, en.currency))}</td>
+                    <td>${escapeHtml(en.note || '—')}</td>
+                </tr>
+            `
+        })
+        const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(t('finances.expensesBlockTitle'))}</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .sub { margin: 0 0 4px; color: #475569; font-size: 13px; }
+    .totals { margin: 10px 0 14px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border: 1px solid #e2e8f0; padding: 7px 8px; text-align: left; vertical-align: top; }
+    th { background: #f8fafc; }
+    @media print { body { padding: 0; } }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(t('finances.expensesBlockTitle'))}</h1>
+  <p class="sub">${escapeHtml(deptName)}</p>
+  <p class="sub">${escapeHtml(new Date().toLocaleString())}</p>
+  <div class="totals"><strong>${escapeHtml(t('finances.expensesTotalLabel'))}:</strong> ${escapeHtml(totalUzs)} / ${escapeHtml(totalUsd)}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>${escapeHtml(t('finances.date'))}</th>
+        <th>Vaqt</th>
+        <th>${escapeHtml(t('finances.materialLabel'))}</th>
+        <th>${escapeHtml(t('finances.quantityLabel'))}</th>
+        <th>${escapeHtml(t('finances.amountWithCurrency'))}</th>
+        <th>${escapeHtml(t('finances.costNote'))}</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows.length ? rows.join('') : `<tr><td colspan="6">${escapeHtml(t('finances.noExpenseEntries'))}</td></tr>`}
+    </tbody>
+  </table>
+</body>
+</html>`
+        const popup = window.open('', '_blank', 'noopener,noreferrer,width=1100,height=800')
+        if (popup) {
+            popup.document.write(html)
+            popup.document.close()
+            popup.focus()
+            popup.print()
+            return
+        }
+
+        // Popup bloklansa ham shu oynada print qilish uchun fallback.
+        const iframe = document.createElement('iframe')
+        iframe.style.position = 'fixed'
+        iframe.style.right = '0'
+        iframe.style.bottom = '0'
+        iframe.style.width = '0'
+        iframe.style.height = '0'
+        iframe.style.border = '0'
+        document.body.appendChild(iframe)
+        const doc = iframe.contentWindow?.document
+        if (!doc) {
+            iframe.remove()
+            window.print()
+            return
+        }
+        doc.open()
+        doc.write(html)
+        doc.close()
+        setTimeout(() => {
+            iframe.contentWindow?.focus()
+            iframe.contentWindow?.print()
+            setTimeout(() => iframe.remove(), 1500)
+        }, 120)
+    }
 
     if (loading) {
         return (
@@ -506,25 +621,35 @@ export default function MoliyaBolimlarPage() {
                             <h2 className="text-lg font-bold text-gray-900">{t('finances.expensesBlockTitle')}</h2>
                             <p className="text-sm text-gray-500 mt-0.5">{pickLocalizedName(departments.find((d) => d.id === currentDeptId), language)}</p>
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setExpEditId(null)
-                                setExpForm({
-                                    material_name: '',
-                                    quantity: '1',
-                                    amount: '',
-                                    currency: 'UZS',
-                                    expense_date: new Date().toISOString().split('T')[0],
-                                    note: '',
-                                })
-                                setExpenseModalOpen(true)
-                            }}
-                            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 shrink-0"
-                        >
-                            <Plus size={16} />
-                            {t('finances.addExpenseCompact')}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => void printExpenseTable()}
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-800 text-xs sm:text-sm font-semibold hover:bg-slate-200 border border-slate-200 shrink-0"
+                            >
+                                <Printer size={16} />
+                                {t('common.print')}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setExpEditId(null)
+                                    setExpForm({
+                                        material_name: '',
+                                        quantity: '1',
+                                        amount: '',
+                                        currency: 'UZS',
+                                        expense_date: new Date().toISOString().split('T')[0],
+                                        note: '',
+                                    })
+                                    setExpenseModalOpen(true)
+                                }}
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs sm:text-sm font-semibold hover:bg-emerald-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 shrink-0"
+                            >
+                                <Plus size={16} />
+                                {t('finances.addExpenseCompact')}
+                            </button>
+                        </div>
                     </div>
 
                     <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between gap-2">
