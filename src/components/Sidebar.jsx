@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
 import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { EMPLOYEES_SECTION_UNLOCK_KEY } from '@/lib/employeesSectionPin'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
@@ -66,6 +67,11 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut()
     if (!error) {
+      try {
+        sessionStorage.removeItem(EMPLOYEES_SECTION_UNLOCK_KEY)
+      } catch (_) {
+        /* ignore */
+      }
       router.push('/login')
     } else {
       await showAlert(t('common.logoutError'), { variant: 'error' })

@@ -70,6 +70,36 @@ function buildDeptPath(deptId, depts, lang) {
     return parts.join(' / ')
 }
 
+/**
+ * «Kirim chiqimlar Hisob kitob» kabi yozuvlar bo‘limiga xodim chiqimlarini qo‘shish uchun.
+ * Mos kelmasa `null` — reytingda alohida qator ko‘rsatiladi.
+ */
+function findLedgerDepartmentId(departments, language) {
+    if (!departments?.length) return null
+    const scoreDept = (d) => {
+        const labels = [d.name_uz, d.name_ru, d.name_en, pickLocalizedName(d, language)]
+            .filter(Boolean)
+            .map((s) => String(s).toLowerCase())
+        let s = 0
+        for (const L of labels) {
+            if (L.includes('hisob kitob') || L.includes('hisob-kitob')) s += 4
+            if (L.includes('kirim') && L.includes('chiqim')) s += 3
+            if (L.includes('hisob')) s += 1
+        }
+        return s
+    }
+    let bestId = null
+    let best = 0
+    for (const d of departments) {
+        const sc = scoreDept(d)
+        if (sc > best) {
+            best = sc
+            bestId = d.id
+        }
+    }
+    return best >= 3 ? bestId : null
+}
+
 function computeDeptRollups(departments, directByDeptId) {
     const children = {}
     for (const d of departments) {
@@ -164,18 +194,32 @@ export default function MoliyaHisobotlarPage() {
     const [view, setView] = useState('dept')
     const [departments, setDepartments] = useState([])
     const [entries, setEntries] = useState([])
+    /** CRM xodimlar: avans + oylik to‘lovlari (sana filtri bilan) */
+    const [employeePayoutLines, setEmployeePayoutLines] = useState([])
     const [loading, setLoading] = useState(true)
     const [salesOrders, setSalesOrders] = useState([])
     const [salesLoading, setSalesLoading] = useState(false)
 
     const load = useCallback(async () => {
         setLoading(true)
-        const dRes = await supabase.from('departments').select('*').eq('is_active', true).order('sort_order')
-        const enRes = await supabase
-            .from('material_movements')
-            .select('id, department_id, raw_material_id, unit_price_snapshot, total_cost, movement_date, note, currency')
-            .gte('movement_date', from)
-            .lte('movement_date', to)
+        const [dRes, enRes, advRes, salRes] = await Promise.all([
+            supabase.from('departments').select('*').eq('is_active', true).order('sort_order'),
+            supabase
+                .from('material_movements')
+                .select('id, department_id, raw_material_id, unit_price_snapshot, total_cost, movement_date, note, currency')
+                .gte('movement_date', from)
+                .lte('movement_date', to),
+            supabase
+                .from('employee_advances')
+                .select('id, amount, advance_date, note')
+                .gte('advance_date', from)
+                .lte('advance_date', to),
+            supabase
+                .from('employee_salary_payments')
+                .select('id, amount, payment_date, note')
+                .gte('payment_date', from)
+                .lte('payment_date', to),
+        ])
 
         if (dRes.error) console.error(dRes.error)
         else setDepartments(dRes.data || [])
@@ -192,6 +236,41 @@ export default function MoliyaHisobotlarPage() {
                 }))
             )
         }
+
+        const payoutLines = []
+        const missing = (err) => {
+            const m = String(err?.message || '')
+            return m.includes('Could not find') || m.includes('does not exist') || m.includes('schema cache')
+        }
+        if (advRes.error) {
+            if (!missing(advRes.error)) console.warn('employee_advances reports:', advRes.error.message)
+        } else {
+            for (const r of advRes.data || []) {
+                const d = String(r.advance_date ?? '').slice(0, 10)
+                payoutLines.push({
+                    kind: 'advance',
+                    id: `ea-${r.id}`,
+                    date: d,
+                    amount: Number(r.amount || 0),
+                    note: r.note ? String(r.note) : '',
+                })
+            }
+        }
+        if (salRes.error) {
+            if (!missing(salRes.error)) console.warn('employee_salary_payments reports:', salRes.error.message)
+        } else {
+            for (const r of salRes.data || []) {
+                const d = String(r.payment_date ?? '').slice(0, 10)
+                payoutLines.push({
+                    kind: 'salary',
+                    id: `es-${r.id}`,
+                    date: d,
+                    amount: Number(r.amount || 0),
+                    note: r.note ? String(r.note) : '',
+                })
+            }
+        }
+        setEmployeePayoutLines(payoutLines)
         setLoading(false)
     }, [from, to])
 
@@ -225,6 +304,13 @@ export default function MoliyaHisobotlarPage() {
         setTo(range.to)
     }
 
+    const payrollUzsTotal = useMemo(
+        () => employeePayoutLines.reduce((s, x) => s + (Number(x.amount) || 0), 0),
+        [employeePayoutLines]
+    )
+
+    const ledgerDeptId = useMemo(() => findLedgerDepartmentId(departments, language), [departments, language])
+
     const entriesGrandTotals = useMemo(() => {
         let uz = 0
         let us = 0
@@ -233,8 +319,8 @@ export default function MoliyaHisobotlarPage() {
             if (normalizeFinCurrency(e.currency) === 'USD') us += a
             else uz += a
         }
-        return { UZS: uz, USD: us }
-    }, [entries])
+        return { UZS: uz + payrollUzsTotal, USD: us }
+    }, [entries, payrollUzsTotal])
 
     const deptRanking = useMemo(() => {
         const directUzs = {}
@@ -246,18 +332,29 @@ export default function MoliyaHisobotlarPage() {
             if (normalizeFinCurrency(e.currency) === 'USD') directUsd[id] = (directUsd[id] || 0) + a
             else directUzs[id] = (directUzs[id] || 0) + a
         }
+        if (ledgerDeptId && payrollUzsTotal > 0.01) {
+            directUzs[ledgerDeptId] = (directUzs[ledgerDeptId] || 0) + payrollUzsTotal
+        }
         const rolledUzs = rollupDepartmentTotals(departments, directUzs)
         const rolledUsd = rollupDepartmentTotals(departments, directUsd)
-        return departments
-            .map((d) => ({
-                id: d.id,
-                path: buildDeptPath(d.id, departments, language),
-                totalUZS: rolledUzs[d.id] || 0,
-                totalUSD: rolledUsd[d.id] || 0,
-            }))
+        const rows = departments.map((d) => ({
+            id: d.id,
+            path: buildDeptPath(d.id, departments, language),
+            totalUZS: rolledUzs[d.id] || 0,
+            totalUSD: rolledUsd[d.id] || 0,
+        }))
+        if (payrollUzsTotal > 0.01 && !ledgerDeptId) {
+            rows.push({
+                id: '__payroll__',
+                path: t('finances.reportsPayrollStandaloneRow'),
+                totalUZS: payrollUzsTotal,
+                totalUSD: 0,
+            })
+        }
+        return rows
             .filter((r) => r.totalUZS > 0.01 || r.totalUSD > 0.01)
             .sort((a, b) => b.totalUZS - a.totalUZS || b.totalUSD - a.totalUSD)
-    }, [departments, entries, language])
+    }, [departments, entries, language, ledgerDeptId, payrollUzsTotal, t])
 
     const dailySeries = useMemo(() => {
         const day = {}
@@ -268,8 +365,14 @@ export default function MoliyaHisobotlarPage() {
             if (normalizeFinCurrency(e.currency) === 'USD') day[k].usd += a
             else day[k].uzs += a
         }
+        for (const p of employeePayoutLines) {
+            const k = p.date
+            if (!k) continue
+            if (!day[k]) day[k] = { date: k, uzs: 0, usd: 0 }
+            day[k].uzs += Number(p.amount || 0)
+        }
         return Object.values(day).sort((a, b) => b.date.localeCompare(a.date))
-    }, [entries])
+    }, [entries, employeePayoutLines])
 
     const monthlySeries = useMemo(() => {
         const mon = {}
@@ -280,24 +383,41 @@ export default function MoliyaHisobotlarPage() {
             if (normalizeFinCurrency(e.currency) === 'USD') mon[k].usd += a
             else mon[k].uzs += a
         }
+        for (const p of employeePayoutLines) {
+            const k = String(p.date).slice(0, 7)
+            if (!k || k.length < 7) continue
+            if (!mon[k]) mon[k] = { month: k, uzs: 0, usd: 0 }
+            mon[k].uzs += Number(p.amount || 0)
+        }
         return Object.values(mon).sort((a, b) => b.month.localeCompare(a.month))
-    }, [entries])
+    }, [entries, employeePayoutLines])
 
     const ledgerRows = useMemo(() => {
-        return [...entries]
-            .map((e) => ({
-                id: e.id,
-                date: e.expense_date,
-                deptPath: buildDeptPath(e.department_id, departments, language),
-                amount: Number(e.amount || 0),
-                currency: normalizeFinCurrency(e.currency),
-                note: e.note || '',
-            }))
-            .sort((a, b) => {
-                const c = String(b.date).localeCompare(String(a.date))
-                return c !== 0 ? c : a.id.localeCompare(b.id)
-            })
-    }, [entries, departments, language])
+        const material = entries.map((e) => ({
+            id: e.id,
+            date: e.expense_date,
+            deptPath: buildDeptPath(e.department_id, departments, language),
+            amount: Number(e.amount || 0),
+            currency: normalizeFinCurrency(e.currency),
+            note: e.note || '',
+        }))
+        const pay = employeePayoutLines.map((p) => {
+            const tag = p.kind === 'advance' ? t('finances.reportsLedgerAdvanceTag') : t('finances.reportsLedgerSalaryTag')
+            const tail = p.note?.trim() ? ` ${p.note.trim()}` : ''
+            return {
+                id: p.id,
+                date: p.date,
+                deptPath: t('finances.reportsLedgerPayrollDeptPath'),
+                amount: Number(p.amount || 0),
+                currency: 'UZS',
+                note: `${tag}${tail}`,
+            }
+        })
+        return [...material, ...pay].sort((a, b) => {
+            const c = String(b.date).localeCompare(String(a.date))
+            return c !== 0 ? c : String(a.id).localeCompare(String(b.id))
+        })
+    }, [entries, departments, language, employeePayoutLines, t])
 
     const hasAnyData =
         deptRanking.length > 0 ||

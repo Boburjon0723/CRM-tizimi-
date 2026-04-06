@@ -21,16 +21,24 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: false, // SWC ni o'chirish
-  /** Windows: buzilgan .next / Watchpack C:\\ skaneri xatolarini kamaytirish */
+  /** Windows: Watchpack — faqat string glob (RegExp Next ichida bo‘lishi mumkin, webpack schema rad etadi) */
   webpack: (config, { dev }) => {
     if (dev && process.platform === 'win32') {
+      const prev = config.watchOptions?.ignored
+      const extra = ['**/node_modules/**', '**/.git/**', '**/.next/**']
+      const fromPrev = []
+      const walk = (v) => {
+        if (v == null) return
+        if (typeof v === 'string' && v.length > 0) fromPrev.push(v)
+        else if (Array.isArray(v)) v.forEach(walk)
+      }
+      walk(prev)
+      const ignored = [...new Set([...fromPrev, ...extra])]
       config.watchOptions = {
         ...config.watchOptions,
-        ignored: [
-          '**/node_modules/**',
-          '**/.git/**',
-          '**/.next/**',
-        ],
+        ignored,
+        followSymlinks: false,
+        ...(process.env.NEXT_WEBPACK_POLL === '1' ? { poll: 1000 } : {}),
       }
     }
     return config

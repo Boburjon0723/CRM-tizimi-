@@ -1,6 +1,19 @@
 'use client'
 
-import { Bell, User, Menu, X, ShoppingBag, Globe, ChevronDown, Moon, Sun, MessageSquare } from 'lucide-react'
+import {
+    Bell,
+    User,
+    Menu,
+    X,
+    ShoppingBag,
+    Globe,
+    ChevronDown,
+    Moon,
+    Sun,
+    MessageSquare,
+    Wallet,
+    Users,
+} from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useNotifications } from '@/context/NotificationContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -10,7 +23,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
 function notificationHref(notification) {
-    return notification?.type === 'message' ? '/xabarlar' : '/buyurtmalar'
+    const ty = notification?.type
+    if (ty === 'message') return '/xabarlar'
+    if (ty === 'bot_finance') return '/moliya/bolimlar'
+    if (ty === 'bot_advance' || ty === 'bot_salary') return '/xodimlar'
+    return '/buyurtmalar'
 }
 
 export default function Header({ title, toggleSidebar: propToggleSidebar }) {
@@ -174,10 +191,24 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                             >
                                                 <div className="flex items-start gap-3">
                                                     <div
-                                                        className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${notification.type === 'message' ? 'bg-emerald-100' : 'bg-blue-100'}`}
+                                                        className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                                                            notification.type === 'message'
+                                                                ? 'bg-emerald-100'
+                                                                : notification.type === 'bot_finance'
+                                                                  ? 'bg-amber-100'
+                                                                  : notification.type === 'bot_advance' ||
+                                                                      notification.type === 'bot_salary'
+                                                                    ? 'bg-violet-100'
+                                                                    : 'bg-blue-100'
+                                                        }`}
                                                     >
                                                         {notification.type === 'message' ? (
                                                             <MessageSquare size={20} className="text-emerald-700" />
+                                                        ) : notification.type === 'bot_finance' ? (
+                                                            <Wallet size={20} className="text-amber-800" />
+                                                        ) : notification.type === 'bot_advance' ||
+                                                          notification.type === 'bot_salary' ? (
+                                                            <Users size={20} className="text-violet-700" />
                                                         ) : (
                                                             <ShoppingBag size={20} className="text-blue-600" />
                                                         )}
@@ -211,13 +242,20 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                 </div>
 
                                 {notifications.length > 0 && (
-                                    <div className="grid grid-cols-2 border-t border-gray-100">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 border-t border-gray-100 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
                                         <Link
                                             href="/buyurtmalar"
                                             onClick={() => setShowNotifications(false)}
-                                            className="py-3 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors border-r border-gray-100"
+                                            className="py-3 text-center text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
                                         >
                                             {t('common.viewAllOrders')}
+                                        </Link>
+                                        <Link
+                                            href="/moliya/bolimlar"
+                                            onClick={() => setShowNotifications(false)}
+                                            className="py-3 text-center text-sm font-medium text-amber-800 hover:bg-amber-50 transition-colors"
+                                        >
+                                            {t('common.viewMoliyaDepartments')}
                                         </Link>
                                         <Link
                                             href="/xabarlar"

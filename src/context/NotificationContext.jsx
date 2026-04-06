@@ -2,10 +2,12 @@
 
 import { createContext, useContext, useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useLanguage } from '@/context/LanguageContext'
 
 const NotificationContext = createContext()
 
 export function NotificationProvider({ children }) {
+    const { t, language } = useLanguage()
     const [notifications, setNotifications] = useState([])
     const [unreadCount, setUnreadCount] = useState(0)
 
@@ -67,11 +69,106 @@ export function NotificationProvider({ children }) {
             )
             .subscribe()
 
+        /** Telegram bot: material_movements (note ichida [telegram]) */
+        const botMovementChannel = supabase
+            .channel('bot_material_movements')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'material_movements' },
+                (payload) => {
+                    const row = payload.new
+                    if (!row || !String(row.note || '').includes('[telegram]')) return
+                    const cost = Number(row.total_cost)
+                    const msg = [
+                        Number.isFinite(cost) ? `${cost.toLocaleString()} so'm` : '',
+                        row.movement_date || '',
+                    ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    setNotifications((prev) => [
+                        {
+                            id: `mm-${row.id}`,
+                            type: 'bot_finance',
+                            title: t('common.notifyBotMaterialTitle'),
+                            message: msg || t('common.notifyBotMaterialFallback'),
+                            data: row,
+                            read: false,
+                            timestamp: new Date(),
+                        },
+                        ...prev,
+                    ])
+                    setUnreadCount((c) => c + 1)
+                    playNotificationSound()
+                }
+            )
+            .subscribe()
+
+        /** Telegram bot: xodim avansi */
+        const botAdvanceChannel = supabase
+            .channel('bot_employee_advances')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'employee_advances' },
+                (payload) => {
+                    const row = payload.new
+                    if (!row || row.source !== 'telegram') return
+                    const amt = Number(row.amount)
+                    const msg = Number.isFinite(amt) ? `${amt.toLocaleString()} so'm` : ''
+                    setNotifications((prev) => [
+                        {
+                            id: `ea-${row.id}`,
+                            type: 'bot_advance',
+                            title: t('common.notifyBotAdvanceTitle'),
+                            message: msg,
+                            data: row,
+                            read: false,
+                            timestamp: new Date(),
+                        },
+                        ...prev,
+                    ])
+                    setUnreadCount((c) => c + 1)
+                    playNotificationSound()
+                }
+            )
+            .subscribe()
+
+        /** Telegram bot: oylik to‘lovi */
+        const botSalaryChannel = supabase
+            .channel('bot_employee_salary')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'employee_salary_payments' },
+                (payload) => {
+                    const row = payload.new
+                    if (!row || row.source !== 'telegram') return
+                    const amt = Number(row.amount)
+                    const msg = Number.isFinite(amt) ? `${amt.toLocaleString()} so'm` : ''
+                    setNotifications((prev) => [
+                        {
+                            id: `esp-${row.id}`,
+                            type: 'bot_salary',
+                            title: t('common.notifyBotSalaryTitle'),
+                            message: msg,
+                            data: row,
+                            read: false,
+                            timestamp: new Date(),
+                        },
+                        ...prev,
+                    ])
+                    setUnreadCount((c) => c + 1)
+                    playNotificationSound()
+                }
+            )
+            .subscribe()
+
         return () => {
             supabase.removeChannel(orderChannel)
             supabase.removeChannel(messageChannel)
+            supabase.removeChannel(botMovementChannel)
+            supabase.removeChannel(botAdvanceChannel)
+            supabase.removeChannel(botSalaryChannel)
         }
-    }, [])
+    }, [language, t])
 
     function playNotificationSound() {
         if (typeof window !== 'undefined') {

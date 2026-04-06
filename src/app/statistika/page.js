@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
@@ -14,6 +14,8 @@ import {
     Users,
     FileDown,
     Layers,
+    FolderTree,
+    Printer,
 } from 'lucide-react'
 import {
     AreaChart,
@@ -82,6 +84,72 @@ function writeLs(key, value) {
     } catch {
         /* ignore */
     }
+}
+
+const PRINT_CLONE_CLASS = 'crm-stat-print-clone-root'
+const PRINT_STYLE_ID = 'crm-stat-print-styles'
+
+/**
+ * Chop etish: visibility:hidden butun sahifa balandligini saqlab, ko‘p bo‘sh sahifalar berardi.
+ * DOM nusxasini body ga qo‘shib, @media print da faqat uni qoldiramiz.
+ */
+function printAnalyticsBlock(el) {
+    if (typeof document === 'undefined' || !el) return
+
+    const clone = el.cloneNode(true)
+    clone.classList.add(PRINT_CLONE_CLASS)
+    clone.querySelectorAll('button').forEach((b) => b.remove())
+
+    let style = document.getElementById(PRINT_STYLE_ID)
+    if (!style) {
+        style = document.createElement('style')
+        style.id = PRINT_STYLE_ID
+        style.textContent = `
+      @media print {
+        body > *:not(.${PRINT_CLONE_CLASS}) {
+          display: none !important;
+        }
+        html, body {
+          height: auto !important;
+          min-height: 0 !important;
+          overflow: visible !important;
+          background: #fff !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .${PRINT_CLONE_CLASS} {
+          display: block !important;
+          position: static !important;
+          width: 100% !important;
+          max-width: none !important;
+          margin: 0 !important;
+          padding: 12px !important;
+          box-sizing: border-box !important;
+          box-shadow: none !important;
+        }
+        .${PRINT_CLONE_CLASS} .stat-analytics-print-scroll {
+          max-height: none !important;
+          overflow: visible !important;
+        }
+        .${PRINT_CLONE_CLASS} thead {
+          position: static !important;
+        }
+      }
+    `
+        document.head.appendChild(style)
+    }
+
+    document.querySelectorAll(`.${PRINT_CLONE_CLASS}`).forEach((n) => n.remove())
+
+    document.body.appendChild(clone)
+
+    const cleanup = () => {
+        clone.remove()
+        window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+    window.print()
+    window.setTimeout(cleanup, 2500)
 }
 
 function startOfDay(d) {
@@ -296,6 +364,19 @@ export default function StatistikaPage() {
         return `${a} — ${b}`
     }, [periodStart, periodEnd, locale])
 
+    const printContextLine = useMemo(() => {
+        const statusLabel =
+            orderStatusFilter === 'completed'
+                ? t('statistics.orderStatusCompleted')
+                : t('statistics.orderStatusAll')
+        return `${t('statistics.activePeriod')}: ${periodLabel} · ${t('statistics.orderStatusFilter')}: ${statusLabel}`
+    }, [orderStatusFilter, periodLabel, t])
+
+    const printRefCategories = useRef(null)
+    const printRefProducts = useRef(null)
+    const printRefCustomers = useRef(null)
+    const printRefCustomerModels = useRef(null)
+
     const ordersInPeriod = useMemo(
         () =>
             data.orders.filter((o) => {
@@ -317,6 +398,17 @@ export default function StatistikaPage() {
         [data.finance, periodStart, periodEnd]
     )
 
+    /** Davrdagi tugallangan buyurtmalar — kirim kartochkasi va moliya grafikidagi «kirim» ustuni */
+    const completedOrdersInPeriod = useMemo(
+        () => ordersInPeriod.filter((o) => isOrderCompletedStatus(o.status)),
+        [ordersInPeriod]
+    )
+
+    const totalIncomeFromCompletedOrders = useMemo(
+        () => completedOrdersInPeriod.reduce((sum, o) => sum + (Number(o.total) || 0), 0),
+        [completedOrdersInPeriod]
+    )
+
     const salesTrend = {}
     filteredOrders.forEach((o) => {
         const day = new Date(o.created_at).toLocaleDateString('en-CA')
@@ -326,34 +418,74 @@ export default function StatistikaPage() {
         .map(([date, amount]) => ({ date, amount }))
         .sort((a, b) => a.date.localeCompare(b.date))
 
-    const financeTrend = {}
-    filteredFinance.forEach((f) => {
-        const day = typeof f.date === 'string' ? f.date.trim().slice(0, 10) : f.date
-        if (!financeTrend[day]) financeTrend[day] = { date: day, income: 0, expense: 0 }
-        if (f.type === 'income') financeTrend[day].income += Number(f.amount) || 0
-        else financeTrend[day].expense += Number(f.amount) || 0
-    })
-    const financeChartData = Object.values(financeTrend).sort((a, b) => a.date.localeCompare(b.date))
+    /** Kirim: tugallangan buyurtmalar (kun bo‘yicha); chiqim: moliya jadvalidagi xarajatlar */
+    const financeChartData = useMemo(() => {
+        const trend = {}
+        for (const o of completedOrdersInPeriod) {
+            const day = new Date(o.created_at).toLocaleDateString('en-CA')
+            if (!trend[day]) trend[day] = { date: day, income: 0, expense: 0 }
+            trend[day].income += Number(o.total) || 0
+        }
+        for (const f of filteredFinance) {
+            if (f.type !== 'expense') continue
+            const raw = f.date
+            let day = ''
+            if (typeof raw === 'string' && raw.trim()) {
+                day = raw.trim().slice(0, 10)
+            } else if (raw != null && raw !== '') {
+                try {
+                    day = new Date(raw).toLocaleDateString('en-CA')
+                } catch {
+                    continue
+                }
+            }
+            if (!day) continue
+            if (!trend[day]) trend[day] = { date: day, income: 0, expense: 0 }
+            trend[day].expense += Number(f.amount) || 0
+        }
+        return Object.values(trend).sort((a, b) => a.date.localeCompare(b.date))
+    }, [completedOrdersInPeriod, filteredFinance])
 
-    const catSales = {}
-    filteredOrders.forEach((o) => {
-        if (o.order_items) {
-            o.order_items.forEach((item) => {
-                const cat = item.products?.categories?.name || 'Boshqa'
+    /** Kategoriya: sotilgan dona + qator summasi (diagramma — summa ulushi) */
+    const categoryAnalyticsRows = useMemo(() => {
+        const map = new Map()
+        for (const o of filteredOrders) {
+            for (const item of o.order_items || []) {
+                const catRaw = item.products?.categories?.name
+                const cat =
+                    catRaw != null && String(catRaw).trim() !== ''
+                        ? String(catRaw).trim()
+                        : t('statistics.categoryOther')
                 const q = parseItemQty(item.quantity)
                 const lineQty = q > 0 ? q : 1
                 const amount = (Number(item.price) || 0) * lineQty
-                catSales[cat] = (catSales[cat] || 0) + amount
-            })
+                if (!map.has(cat)) {
+                    map.set(cat, { key: cat, name: cat, qty: 0, revenue: 0 })
+                }
+                const r = map.get(cat)
+                r.qty += lineQty
+                r.revenue += amount
+            }
         }
-    })
-    const categoryData = Object.entries(catSales).map(([name, value]) => ({ name, value }))
+        const list = Array.from(map.values())
+        list.sort((a, b) => {
+            if (b.qty !== a.qty) return b.qty - a.qty
+            return b.revenue - a.revenue
+        })
+        return list
+    }, [filteredOrders, t])
+
+    const categoryData = useMemo(
+        () => categoryAnalyticsRows.map((r) => ({ name: r.name, value: r.revenue })),
+        [categoryAnalyticsRows]
+    )
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
     const totalSales = filteredOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0)
-    const totalIncome = filteredFinance.filter((f) => f.type === 'income').reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
-    const totalExpense = filteredFinance.filter((f) => f.type === 'expense').reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
+    const totalExpense = filteredFinance
+        .filter((f) => f.type === 'expense')
+        .reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
 
     /** Mahsulotlar: katalog + sotuvlar; kam sotilgandan ko‘p sotilgancha, 0 dona oxirida */
     const productAnalyticsRows = useMemo(() => {
@@ -559,6 +691,40 @@ export default function StatistikaPage() {
         XLSX.utils.book_append_sheet(wb, ws, 'Products')
         XLSX.writeFile(wb, `${exportFileBase}-mahsulotlar.xlsx`)
     }, [exportFileBase, productAnalyticsRows, t])
+
+    const exportCategoriesCsv = useCallback(() => {
+        const hdr = [
+            t('statistics.colRank'),
+            t('statistics.colCategory'),
+            t('statistics.colQtySold'),
+            t('statistics.colRevenue'),
+        ]
+        const lines = [
+            hdr.map(csvEscape).join(','),
+            ...categoryAnalyticsRows.map((row, i) =>
+                [i + 1, row.name, row.qty, formatUsd(row.revenue)].map(csvEscape).join(',')
+            ),
+        ]
+        const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' })
+        downloadBlob(`${exportFileBase}-kategoriyalar.csv`, blob)
+    }, [categoryAnalyticsRows, exportFileBase, t])
+
+    const exportCategoriesXlsx = useCallback(() => {
+        const hdr = [
+            t('statistics.colRank'),
+            t('statistics.colCategory'),
+            t('statistics.colQtySold'),
+            t('statistics.colRevenue'),
+        ]
+        const aoa = [
+            hdr,
+            ...categoryAnalyticsRows.map((row, i) => [i + 1, row.name, row.qty, Number(row.revenue) || 0]),
+        ]
+        const ws = XLSX.utils.aoa_to_sheet(aoa)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Categories')
+        XLSX.writeFile(wb, `${exportFileBase}-kategoriyalar.xlsx`)
+    }, [categoryAnalyticsRows, exportFileBase, t])
 
     const exportCustomersCsv = useCallback(() => {
         const hdr = [
@@ -828,7 +994,9 @@ export default function StatistikaPage() {
                         </div>
                         <div>
                             <p className="text-sm font-medium text-green-100">{t('statistics.totalIncome')}</p>
-                            <p className="text-2xl font-bold mt-1 font-mono tabular-nums">+${formatUsd(totalIncome)}</p>
+                            <p className="text-2xl font-bold mt-1 font-mono tabular-nums">
+                                +${formatUsd(totalIncomeFromCompletedOrders)}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -970,24 +1138,70 @@ export default function StatistikaPage() {
                                     cursor={{ fill: 'transparent' }}
                                 />
                                 <Legend wrapperStyle={{ paddingTop: '12px' }} />
-                                <Bar dataKey="income" name={t('finances.income')} fill="#10b981" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="expense" name={t('finances.expense')} fill="#ef4444" radius={[4, 4, 0, 0]} />
+                                <Bar
+                                    dataKey="income"
+                                    name={t('statistics.chartIncomeFromOrders')}
+                                    fill="#10b981"
+                                    radius={[4, 4, 0, 0]}
+                                />
+                                <Bar
+                                    dataKey="expense"
+                                    name={t('statistics.chartExpenseFromFinance')}
+                                    fill="#ef4444"
+                                    radius={[4, 4, 0, 0]}
+                                />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-6 text-gray-800">{t('statistics.categoryShare')}</h3>
-                    <div className="h-[300px] flex items-center justify-center">
+                <div
+                    ref={printRefCategories}
+                    className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col"
+                >
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                        <h3 className="text-lg font-bold text-gray-800">{t('statistics.categoryShare')}</h3>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                type="button"
+                                onClick={exportCategoriesCsv}
+                                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-gray-700 hover:bg-gray-50"
+                            >
+                                <FileDown size={14} />
+                                {t('statistics.exportCategoriesCsv')}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={exportCategoriesXlsx}
+                                className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-bold text-amber-900 hover:bg-amber-100"
+                            >
+                                <FileDown size={14} />
+                                {t('statistics.exportCategoriesXlsx')}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => printAnalyticsBlock(printRefCategories.current)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[11px] font-bold text-slate-800 hover:bg-slate-100"
+                                title={t('statistics.printSection')}
+                            >
+                                <Printer size={14} />
+                                {t('statistics.printSection')}
+                            </button>
+                        </div>
+                    </div>
+                    <p className="mb-2 hidden print:block text-xs text-gray-700 border-b border-gray-300 pb-2">
+                        {printContextLine}
+                    </p>
+                    <p className="text-xs text-gray-500 mb-3 print:hidden">{t('statistics.categoryTableHint')}</p>
+                    <div className="h-[260px] flex items-center justify-center shrink-0">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
                                     data={categoryData}
                                     cx="50%"
                                     cy="50%"
-                                    innerRadius={70}
-                                    outerRadius={100}
+                                    innerRadius={62}
+                                    outerRadius={92}
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
@@ -996,13 +1210,47 @@ export default function StatistikaPage() {
                                     ))}
                                 </Pie>
                                 <Tooltip formatter={(val) => `$${formatUsd(val)}`} />
-                                <Legend verticalAlign="bottom" iconType="circle" />
+                                <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>
+                    <h4 className="text-sm font-bold flex items-center gap-2 text-gray-800 mt-4 mb-2 border-t border-gray-100 pt-4">
+                        <FolderTree size={18} className="text-amber-600 shrink-0" />
+                        {t('statistics.categoryQtyAnalytics')}
+                    </h4>
+                    <div className="stat-analytics-print-scroll flex-1 overflow-auto max-h-[280px] rounded-xl border border-gray-100 min-h-0">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-gray-50 sticky top-0 z-10 text-xs uppercase text-gray-500 font-bold">
+                                <tr>
+                                    <th className="px-3 py-2 w-10">{t('statistics.colRank')}</th>
+                                    <th className="px-3 py-2">{t('statistics.colCategory')}</th>
+                                    <th className="px-3 py-2 text-right whitespace-nowrap">{t('statistics.colQtySold')}</th>
+                                    <th className="px-3 py-2 text-right whitespace-nowrap">{t('statistics.colRevenue')}</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {categoryAnalyticsRows.map((row, idx) => (
+                                    <tr key={row.key} className="hover:bg-amber-50/40">
+                                        <td className="px-3 py-2 tabular-nums font-medium">{idx + 1}</td>
+                                        <td className="px-3 py-2 font-medium text-gray-800 max-w-[10rem] truncate" title={row.name}>
+                                            {row.name}
+                                        </td>
+                                        <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold">{row.qty}</td>
+                                        <td className="px-3 py-2 text-right font-mono tabular-nums">${formatUsd(row.revenue)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {categoryAnalyticsRows.length === 0 ? (
+                            <div className="text-center py-10 text-gray-400">{t('statistics.noData')}</div>
+                        ) : null}
+                    </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-[320px]">
+                <div
+                    ref={printRefProducts}
+                    className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-[320px]"
+                >
                     <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
                         <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800">
                             <Package size={20} className="text-indigo-500" />
@@ -1025,12 +1273,24 @@ export default function StatistikaPage() {
                                 <FileDown size={14} />
                                 {t('statistics.exportProductsXlsx')}
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => printAnalyticsBlock(printRefProducts.current)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[11px] font-bold text-slate-800 hover:bg-slate-100"
+                                title={t('statistics.printSection')}
+                            >
+                                <Printer size={14} />
+                                {t('statistics.printSection')}
+                            </button>
                         </div>
                     </div>
-                    <p className="text-xs text-gray-500 mb-4">
+                    <p className="mb-2 hidden print:block text-xs text-gray-700 border-b border-gray-300 pb-2">
+                        {printContextLine}
+                    </p>
+                    <p className="text-xs text-gray-500 mb-4 print:hidden">
                         {t('statistics.colUnsold')}: <span className="font-bold text-gray-700">{unsoldCount}</span>
                     </p>
-                    <div className="flex-1 overflow-auto max-h-[420px] rounded-xl border border-gray-100">
+                    <div className="stat-analytics-print-scroll flex-1 overflow-auto max-h-[420px] rounded-xl border border-gray-100">
                         <table className="w-full text-sm text-left">
                             <thead className="bg-gray-50 sticky top-0 z-10 text-xs uppercase text-gray-500 font-bold">
                                 <tr>
@@ -1063,7 +1323,7 @@ export default function StatistikaPage() {
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div ref={printRefCustomers} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
                     <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800">
                         <Users size={20} className="text-emerald-600" />
@@ -1086,9 +1346,21 @@ export default function StatistikaPage() {
                             <FileDown size={14} />
                             {t('statistics.exportCustomersXlsx')}
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => printAnalyticsBlock(printRefCustomers.current)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[11px] font-bold text-slate-800 hover:bg-slate-100"
+                            title={t('statistics.printSection')}
+                        >
+                            <Printer size={14} />
+                            {t('statistics.printSection')}
+                        </button>
                     </div>
                 </div>
-                <div className="overflow-x-auto rounded-xl border border-gray-100 max-h-[480px] overflow-y-auto">
+                <p className="mb-3 hidden print:block text-xs text-gray-700 border-b border-gray-300 pb-2">
+                    {printContextLine}
+                </p>
+                <div className="stat-analytics-print-scroll overflow-x-auto rounded-xl border border-gray-100 max-h-[480px] overflow-y-auto">
                     <table className="w-full text-sm text-left min-w-[640px]">
                         <thead className="bg-gray-50 sticky top-0 z-10 text-xs uppercase text-gray-500 font-bold">
                             <tr>
@@ -1121,7 +1393,7 @@ export default function StatistikaPage() {
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div ref={printRefCustomerModels} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                 <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
                     <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800">
                         <Layers size={20} className="text-violet-600" />
@@ -1144,10 +1416,22 @@ export default function StatistikaPage() {
                             <FileDown size={14} />
                             {t('statistics.exportCustomerModelsXlsx')}
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => printAnalyticsBlock(printRefCustomerModels.current)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-[11px] font-bold text-slate-800 hover:bg-slate-100"
+                            title={t('statistics.printSection')}
+                        >
+                            <Printer size={14} />
+                            {t('statistics.printSection')}
+                        </button>
                     </div>
                 </div>
-                <p className="text-xs text-gray-500 mb-4">{t('statistics.customerModelHint')}</p>
-                <div className="overflow-x-auto rounded-xl border border-gray-100 max-h-[480px] overflow-y-auto">
+                <p className="mb-2 hidden print:block text-xs text-gray-700 border-b border-gray-300 pb-2">
+                    {printContextLine}
+                </p>
+                <p className="text-xs text-gray-500 mb-4 print:hidden">{t('statistics.customerModelHint')}</p>
+                <div className="stat-analytics-print-scroll overflow-x-auto rounded-xl border border-gray-100 max-h-[480px] overflow-y-auto">
                     <table className="w-full text-sm text-left min-w-[720px]">
                         <thead className="bg-gray-50 sticky top-0 z-10 text-xs uppercase text-gray-500 font-bold">
                             <tr>
