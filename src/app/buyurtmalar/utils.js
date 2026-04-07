@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import { isDeletedAtMissingError } from '@/lib/orderTrash'
 import { formatUsd } from '@/utils/formatters'
+export { formatUsd }
 import { normalizeModelKey as coreNormalizeModelKey } from '@/utils/validators'
 
 export function escapeHtml(s) {
