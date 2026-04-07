@@ -223,6 +223,7 @@ export default function Mahsulotlar() {
     const [editId, setEditId] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategoryId, setFilterCategoryId] = useState('all')
+    const [filterLowStock, setFilterLowStock] = useState(false)
     const [uploading, setUploading] = useState(false)
     const [form, setForm] = useState({
         name: '',
@@ -1226,6 +1227,13 @@ export default function Mahsulotlar() {
             const pid = p?.category_id != null ? String(p.category_id) : ''
             const matchesCategory = filterCategoryId === 'all' || pid === filterCategoryId
             if (!matchesCategory) return false
+
+            if (filterLowStock) {
+                const stock = Number(p.stock) || 0
+                const min = Number(p.min_stock) || 10
+                if (stock >= min) return false
+            }
+
             if (searchTerms.length === 0) return true
             return searchTerms.every((term) => {
                 const inName = p.name?.toLowerCase().includes(term)
@@ -1238,7 +1246,8 @@ export default function Mahsulotlar() {
                 return inName || inNameUz || inNameRu || inNameEn || inSize || inColors || inCategory
             })
         })
-    }, [products, searchTerm, filterCategoryId])
+    }, [products, searchTerm, filterCategoryId, filterLowStock])
+
 
     if (loading) {
         return (
@@ -1412,6 +1421,19 @@ export default function Mahsulotlar() {
                         {cat.name} ({cat.count})
                     </button>
                 ))}
+                <button
+                    type="button"
+                    onClick={() => setFilterLowStock(!filterLowStock)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center gap-1 ${
+                        filterLowStock
+                            ? 'bg-red-600 text-white border-red-600'
+                            : 'bg-white text-red-600 border-red-200 hover:bg-red-50'
+                    }`}
+                >
+                    <AlertTriangle size={14} />
+                    Kam qolgan ({products.filter(p => (Number(p.stock) || 0) < (Number(p.min_stock) || 10)).length})
+                </button>
+
             </div>
 
             {/* Bitta kategoriya — tavsif/xususiyat va rang jamoalari uchun */}

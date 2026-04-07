@@ -93,8 +93,11 @@ export default function Mijozlar() {
             }
             const allOrders = allOrdersRes.error ? [] : allOrdersRes.data
 
-            // Enrich customers with order stats
+            // Enrich customers with order stats and website account matches
             const enrichedCustomers = (customersData || []).map(cust => {
+                const phoneNorm = (cust.phone || '').trim()
+                const websiteUser = registeredData?.find(u => (u.phone || '').trim() === phoneNorm)
+                
                 const custOrders = (allOrders || []).filter(o =>
                     o.customer_phone === cust.phone ||
                     o.customer_id === cust.id
@@ -106,11 +109,13 @@ export default function Mijozlar() {
 
                 return {
                     ...cust,
-                    totalOrders: custOrders.length,
-                    totalSpend: totalSpend,
-                    lastOrder: lastOrder
+                    totalOrders: (custOrders.length || 0) + (Number(websiteUser?.total_orders) || 0),
+                    totalSpend: totalSpend + (Number(websiteUser?.total_spend) || 0),
+                    lastOrder: lastOrder || websiteUser?.created_at,
+                    websiteAccount: websiteUser || null
                 }
             })
+
 
             setCustomers(enrichedCustomers)
         } catch (error) {
@@ -498,12 +503,11 @@ export default function Mijozlar() {
                                 <tr>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.customer')}</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.contact')}</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Davlat</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.address')}</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.orders')}</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.totalSpend')}</th>
-                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.lastOrder')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">Hisob holati</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700 text-center">{t('customers.orders')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700 text-right">{t('customers.totalSpend')}</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.actions')}</th>
+
                                 </tr>
                             </thead>
                             <tbody>
@@ -546,39 +550,36 @@ export default function Mijozlar() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="py-4 px-6 text-sm text-gray-600 font-medium">
-                                                {customer.country ? t(`common.countries.${customer.country}`) : '-'}
-                                            </td>
                                             <td className="py-4 px-6">
-                                                {customer.address ? (
-                                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                        <MapPin size={14} className="flex-shrink-0" />
-                                                        <span className="truncate max-w-[200px]">{customer.address}</span>
-                                                    </div>
+                                                {customer.websiteAccount ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold ring-1 ring-inset ring-blue-600/10">
+                                                        <UserCheck size={14} strokeWidth={2.5} />
+                                                        Veb-sayt
+                                                    </span>
                                                 ) : (
-                                                    <span className="text-gray-400">-</span>
+                                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-50 text-gray-500 text-xs font-bold ring-1 ring-inset ring-gray-900/5">
+                                                        Faqat CRM
+                                                    </span>
                                                 )}
                                             </td>
-                                            <td className="py-4 px-6">
+                                            <td className="py-4 px-6 text-center">
                                                 <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-sm font-bold">
                                                     {customer.totalOrders}
                                                 </span>
                                             </td>
-                                            <td className="py-4 px-6">
-                                                <span className="font-bold text-green-600">
-                                                    {customer.totalSpend.toLocaleString()} {language === 'uz' ? 'so\'m' : language === 'ru' ? 'сум' : 'UZS'}
-                                                </span>
+                                            <td className="py-4 px-6 text-right">
+                                                <div className="flex flex-col items-end">
+                                                    <span className="font-bold text-emerald-600">
+                                                        {customer.totalSpend.toLocaleString()} {language === 'uz' ? 'so\'m' : language === 'ru' ? 'сум' : 'UZS'}
+                                                    </span>
+                                                    {customer.lastOrder && (
+                                                        <span className="text-[10px] text-gray-400 mt-0.5">
+                                                            Oxirgi: {new Date(customer.lastOrder).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
-                                            <td className="py-4 px-6">
-                                                {customer.lastOrder ? (
-                                                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                        <Calendar size={14} />
-                                                        {new Date(customer.lastOrder).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-gray-400">Yo'q</span>
-                                                )}
-                                            </td>
+
                                             <td className="py-4 px-6">
                                                 <div className="flex gap-2">
                                                     <button

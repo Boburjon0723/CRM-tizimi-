@@ -1,13 +1,19 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
-import { Plus, AlertTriangle, TrendingUp, Package, RefreshCcw, Minus, Search, Filter } from 'lucide-react'
+import { 
+    Plus, AlertTriangle, TrendingUp, Package, RefreshCcw, 
+    Minus, Search, Filter, History, Download, Settings, 
+    X, ChevronDown, ChevronUp, Hash, Layers
+} from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
+import StockAdjustDialog from '@/components/StockAdjustDialog'
+import * as XLSX from 'xlsx'
 
 const ALL_CATEGORIES = '__all__'
 
@@ -27,12 +33,19 @@ function unitPriceUzs(p) {
 export default function Ombor() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
-    const { showAlert } = useDialog()
+    const { showAlert, showToast } = useDialog()
     const [products, setProducts] = useState([])
     const [loading, setLoading] = useState(true)
     const [loadError, setLoadError] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterCategory, setFilterCategory] = useState(ALL_CATEGORIES)
+    const [adjustingProduct, setAdjustingProduct] = useState(null)
+    const [historyProduct, setHistoryProduct] = useState(null)
+    const [historyData, setHistoryData] = useState([])
+    const [historyLoading, setHistoryLoading] = useState(false)
+    const [collapsedCategories, setCollapsedCategories] = useState({})
+
+    const sectionRefs = useRef({})
 
     const locale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US'
 
@@ -46,7 +59,7 @@ export default function Ombor() {
             setLoading(true)
             const { data, error } = await supabase
                 .from('products')
-                .select('*')
+                .select('*, categories(name)')
                 .order('name', { ascending: true })
 
             if (error) throw error
@@ -59,17 +72,38 @@ export default function Ombor() {
         }
     }
 
-    async function updateStock(id, currentStock, change) {
+    async function updateStock(id, currentStock, change, reason = '') {
         const base = numStock(currentStock)
         const newStock = Math.max(0, base + change)
+        
         try {
-            const { error } = await supabase
+            // 1. Update product stock
+            const { error: productError } = await supabase
                 .from('products')
                 .update({ stock: newStock })
                 .eq('id', id)
 
-            if (error) throw error
+            if (productError) throw productError
+
+            // 2. Log movement (if reason or substantial change)
+            const type = change > 0 ? 'restock' : 'manual_adjustment'
+            const { error: moveError } = await supabase
+                .from('stock_movements')
+                .insert([{
+                    product_id: id,
+                    change_amount: change,
+                    previous_stock: base,
+                    new_stock: newStock,
+                    reason: reason || (change > 0 ? 'Manual increase' : 'Manual decrease'),
+                    type: type
+                }])
+            
+            // We don't throw for movement errors to keep it resilient, 
+            // but logging is preferred.
+            if (moveError) console.warn('Movement log failed:', moveError)
+
             setProducts((prev) => prev.map((m) => (m.id === id ? { ...m, stock: newStock } : m)))
+            showToast(t('common.saveSuccess') || 'Saqlandi', { type: 'success' })
         } catch (error) {
             console.error('Error updating stock:', error)
             const msg = error?.message || String(error)
@@ -78,8 +112,43 @@ export default function Ombor() {
         }
     }
 
+    async function loadHistory(productId) {
+        setHistoryLoading(true)
+        try {
+            const { data, error } = await supabase
+                .from('stock_movements')
+                .select('*')
+                .eq('product_id', productId)
+                .order('created_at', { ascending: false })
+                .limit(20)
+            
+            if (error) throw error
+            setHistoryData(data || [])
+        } catch (err) {
+            console.error('History load failed:', err)
+        } finally {
+            setHistoryLoading(false)
+        }
+    }
+
+    const exportToExcel = () => {
+        const wsData = products.map(p => ({
+            'Nomi': p.name,
+            'Kategoriya': p.categories?.name || p.category || '-',
+            'Mavjud (dona)': numStock(p.stock),
+            'Min. Zaxira': p.min_stock || 10,
+            'Sotuv narxi': unitPriceUzs(p),
+            'Holati': numStock(p.stock) === 0 ? 'Tugagan' : numStock(p.stock) < (p.min_stock || 10) ? 'Kam qolgan' : 'Yetarli'
+        }))
+
+        const ws = XLSX.utils.json_to_sheet(wsData)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, 'Ombor')
+        XLSX.writeFile(wb, `Ombor_Hisoboti_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    }
+
     const categoryOptions = useMemo(() => {
-        const uniq = [...new Set(products.map((m) => m.category).filter(Boolean))]
+        const uniq = [...new Set(products.map((m) => m.categories?.name || m.category).filter(Boolean))]
         return [{ value: ALL_CATEGORIES, label: t('warehouse.allCategories') }, ...uniq.map((c) => ({ value: c, label: c }))]
     }, [products, t])
 
@@ -87,13 +156,14 @@ export default function Ombor() {
         const q = searchTerm.toLowerCase()
         return products.filter((m) => {
             const matchesSearch = (m.name || '').toLowerCase().includes(q)
-            const matchesCategory = filterCategory === ALL_CATEGORIES || m.category === filterCategory
+            const catName = m.categories?.name || m.category
+            const matchesCategory = filterCategory === ALL_CATEGORIES || catName === filterCategory
             return matchesSearch && matchesCategory
         })
     }, [products, searchTerm, filterCategory])
 
     const lowStockItems = useMemo(
-        () => products.filter((m) => numStock(m.stock) < 10),
+        () => products.filter((m) => numStock(m.stock) < (m.min_stock || 10)),
         [products]
     )
     const outOfStockItems = useMemo(
@@ -104,6 +174,24 @@ export default function Ombor() {
         () => products.reduce((sum, m) => sum + numStock(m.stock) * unitPriceUzs(m), 0),
         [products]
     )
+
+    const groupedInventory = useMemo(() => {
+        const groups = {}
+        filteredInventory.forEach(item => {
+            const cat = item.categories?.name || item.category || 'Boshqa'
+            if (!groups[cat]) groups[cat] = []
+            groups[cat].push(item)
+        })
+        return groups
+    }, [filteredInventory])
+
+    const toggleCollapse = (cat) => {
+        setCollapsedCategories(prev => ({ ...prev, [cat]: !prev[cat] }))
+    }
+
+    const scrollToSection = (cat) => {
+        sectionRefs.current[cat]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
 
     if (loading) {
         return (
@@ -116,7 +204,7 @@ export default function Ombor() {
     }
 
     return (
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="max-w-7xl mx-auto px-6 pb-20">
             <Header title={t('warehouse.title')} toggleSidebar={toggleSidebar} />
 
             <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3 text-sm text-sky-950">
@@ -139,9 +227,6 @@ export default function Ombor() {
                         <p className="break-words">
                             <span className="font-semibold">{t('dashboard.loadErrorTitle')}</span> {loadError}
                         </p>
-                        {/stock/i.test(loadError) ? (
-                            <p className="mt-2 text-xs text-amber-900/90 leading-relaxed">{t('warehouse.stockColumnHint')}</p>
-                        ) : null}
                     </div>
                     <button
                         type="button"
@@ -201,169 +286,314 @@ export default function Ombor() {
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                <div className="relative w-full md:w-96">
-                    <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
-                    <input
-                        type="text"
-                        placeholder={t('warehouse.searchPlaceholder')}
-                        className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-
-                <div className="flex gap-3 w-full md:w-auto">
-                    <div className="flex items-center gap-2 bg-gray-50 px-4 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 transition-all flex-1 md:flex-none">
-                        <Filter size={20} className="text-gray-500" />
-                        <select
-                            value={filterCategory}
-                            onChange={(e) => setFilterCategory(e.target.value)}
-                            className="bg-transparent py-3 outline-none text-gray-700 font-medium cursor-pointer w-full"
-                        >
-                            {categoryOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </option>
-                            ))}
-                        </select>
+            <div className="sticky top-0 z-30 space-y-4 bg-gray-50/80 backdrop-blur-md pt-2 pb-4">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                    <div className="relative w-full md:w-96">
+                        <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
+                        <input
+                            type="text"
+                            placeholder={t('warehouse.searchPlaceholder')}
+                            className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-500 rounded-xl outline-none transition-all font-medium"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
 
-                    <button
-                        onClick={() => void loadData()}
-                        className="p-3 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-xl transition-colors border border-transparent hover:border-gray-200"
-                        title={t('warehouse.refresh')}
-                        type="button"
-                    >
-                        <RefreshCcw size={20} />
-                    </button>
-                </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                <th className="px-6 py-4 rounded-tl-2xl">{t('warehouse.product')}</th>
-                                <th className="px-6 py-4">{t('warehouse.category')}</th>
-                                <th className="px-6 py-4">{t('warehouse.stock')}</th>
-                                <th className="px-6 py-4">{t('warehouse.price')}</th>
-                                <th className="px-6 py-4">{t('warehouse.status')}</th>
-                                <th className="px-6 py-4 rounded-tr-2xl text-right">{t('warehouse.management')}</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {filteredInventory.length > 0 ? (
-                                filteredInventory.map((item) => {
-                                    const stockNum = numStock(item.stock)
-                                    const priceNum = unitPriceUzs(item)
-                                    return (
-                                        <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
-                                                    {item.image_url ? (
-                                                        <img
-                                                            src={item.image_url}
-                                                            alt={item.name}
-                                                            className="w-10 h-10 rounded-lg object-cover bg-gray-100 border border-gray-200"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 border border-gray-200">
-                                                            <Package size={20} />
-                                                        </div>
-                                                    )}
-                                                    <div>
-                                                        <div className="font-bold text-gray-900">{item.name}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className="px-3 py-1 bg-gray-50 text-gray-600 rounded-lg text-xs font-bold uppercase tracking-wide border border-gray-200">
-                                                    {item.category || '-'}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span
-                                                    className={`font-bold text-lg ${stockNum < 10 ? 'text-red-500' : 'text-gray-900'}`}
-                                                >
-                                                    {stockNum}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 font-mono font-bold text-gray-700">
-                                                {priceNum.toLocaleString(locale)}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                {stockNum === 0 ? (
-                                                    <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-lg uppercase">
-                                                        {t('warehouse.soldOut')}
-                                                    </span>
-                                                ) : stockNum < 10 ? (
-                                                    <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-xs font-bold rounded-lg uppercase">
-                                                        {t('warehouse.almostOut')}
-                                                    </span>
-                                                ) : (
-                                                    <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-lg uppercase">
-                                                        {t('warehouse.enough')}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateStock(item.id, item.stock, -1)}
-                                                        className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-bold"
-                                                        title={t('warehouse.minusStockTitle')}
-                                                    >
-                                                        <Minus size={18} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateStock(item.id, item.stock, 1)}
-                                                        className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors font-bold"
-                                                        title={t('warehouse.plusStockTitle')}
-                                                    >
-                                                        <Plus size={18} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )
-                                })
-                            ) : (
-                                <tr>
-                                    <td colSpan="6" className="px-6 py-16 text-center text-gray-400">
-                                        <div className="flex flex-col items-center">
-                                            <Package size={48} className="mb-4 opacity-20" />
-                                            <p className="font-medium">{t('warehouse.noProducts')}</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            {lowStockItems.length > 0 && (
-                <div className="mt-8 bg-gradient-to-r from-yellow-50 to-white border-l-4 border-yellow-400 p-6 rounded-r-xl shadow-sm">
-                    <h4 className="text-yellow-800 font-bold mb-3 flex items-center gap-2 text-lg">
-                        <AlertTriangle size={24} className="text-yellow-500" />
-                        {t('warehouse.lowStockAlert')}
-                    </h4>
-                    <div className="flex flex-wrap gap-3">
-                        {lowStockItems.map((item) => (
-                            <span
-                                key={item.id}
-                                className="bg-white pl-3 pr-4 py-1.5 rounded-full text-sm border border-yellow-200 text-yellow-700 font-semibold shadow-sm flex items-center gap-2"
+                    <div className="flex gap-3 w-full md:w-auto">
+                        <div className="flex items-center gap-2 bg-gray-50 px-4 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 transition-all flex-1 md:flex-none">
+                            <Filter size={20} className="text-gray-500" />
+                            <select
+                                value={filterCategory}
+                                onChange={(e) => setFilterCategory(e.target.value)}
+                                className="bg-transparent py-3 outline-none text-gray-700 font-bold cursor-pointer w-full text-sm"
                             >
-                                {item.name}
-                                <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full text-xs">
-                                    {numStock(item.stock)} ta
-                                </span>
-                            </span>
-                        ))}
+                                {categoryOptions.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <button
+                            onClick={() => void loadData()}
+                            className="p-3 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-xl transition-colors border border-transparent hover:border-gray-200"
+                            title={t('warehouse.refresh')}
+                        >
+                            <RefreshCcw size={20} />
+                        </button>
+
+                        <button
+                            onClick={exportToExcel}
+                            className="flex items-center gap-2 px-4 py-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl transition-all border border-emerald-200"
+                        >
+                            <Download size={20} />
+                            <span className="hidden sm:inline">{t('common.export') || 'Eksport'}</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Category Quick Jump Chips */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide no-scrollbar">
+                    <div className="p-2 bg-blue-100 text-blue-700 rounded-lg shrink-0">
+                        <Layers size={18} />
+                    </div>
+                    {Object.keys(groupedInventory).sort().map(cat => (
+                        <button
+                            key={cat}
+                            onClick={() => scrollToSection(cat)}
+                            className="shrink-0 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-bold hover:border-blue-500 hover:text-blue-600 transition-all shadow-sm active:scale-95"
+                        >
+                            {cat} <span className="ml-1 opacity-50 text-xs">{groupedInventory[cat].length}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="space-y-8 mt-4">
+                {Object.keys(groupedInventory).length > 0 ? (
+                    Object.keys(groupedInventory).sort().map(cat => {
+                        const items = groupedInventory[cat]
+                        const isCollapsed = collapsedCategories[cat]
+                        const catValue = items.reduce((sum, m) => sum + numStock(m.stock) * unitPriceUzs(m), 0)
+
+                        return (
+                            <div 
+                                key={cat} 
+                                ref={el => sectionRefs.current[cat] = el}
+                                className="scroll-mt-40 transition-all"
+                            >
+                                <div className="flex items-center justify-between mb-4 group cursor-pointer" onClick={() => toggleCollapse(cat)}>
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md shadow-blue-200 ring-4 ring-blue-50">
+                                            <Hash size={20} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-xl font-black text-gray-900 group-hover:text-blue-600 transition-colors uppercase tracking-tight">
+                                                {cat}
+                                            </h3>
+                                            <div className="flex items-center gap-3 mt-1 text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                                <span>{items.length} turdagi tovar</span>
+                                                <span className="w-1 h-1 rounded-full bg-gray-300" />
+                                                <span className="text-emerald-600">Qiymat: {catValue.toLocaleString(locale)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button className="p-2 hover:bg-gray-100 rounded-full text-gray-400">
+                                        {isCollapsed ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
+                                    </button>
+                                </div>
+
+                                {!isCollapsed && (
+                                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-300">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-gray-50/50 border-b border-gray-100 text-[10px] uppercase tracking-widest text-gray-400 font-black">
+                                                        <th className="px-6 py-4">{t('warehouse.product')}</th>
+                                                        <th className="px-6 py-4">{t('warehouse.stock')}</th>
+                                                        <th className="px-6 py-4">{t('warehouse.price')}</th>
+                                                        <th className="px-6 py-4">{t('warehouse.status')}</th>
+                                                        <th className="px-6 py-4 text-right">Amallar</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-50">
+                                                    {items.map((item) => {
+                                                        const stockNum = numStock(item.stock)
+                                                        const priceNum = unitPriceUzs(item)
+                                                        const isLow = stockNum < (item.min_stock || 10)
+                                                        return (
+                                                            <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex items-center gap-4">
+                                                                        <div className="relative">
+                                                                            {item.image_url ? (
+                                                                                <img
+                                                                                    src={item.image_url}
+                                                                                    alt={item.name}
+                                                                                    className="w-12 h-12 rounded-xl object-cover bg-gray-100 border border-gray-100 shadow-sm"
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-gray-300 border border-gray-100">
+                                                                                    <Package size={24} />
+                                                                                </div>
+                                                                            )}
+                                                                            {isLow && (
+                                                                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full" />
+                                                                            )}
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{item.name}</div>
+                                                                            <div className="text-[10px] font-bold text-gray-400 uppercase mt-0.5 tracking-tighter">KOD: {item.size || 'Noma\'lum'}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    <span
+                                                                        className={`font-black text-xl tabular-nums ${isLow ? 'text-red-500' : 'text-gray-900'}`}
+                                                                    >
+                                                                        {stockNum}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4 font-mono font-bold text-gray-700 tabular-nums">
+                                                                    {priceNum.toLocaleString(locale)}
+                                                                </td>
+                                                                <td className="px-6 py-4">
+                                                                    {stockNum === 0 ? (
+                                                                        <span className="px-3 py-1 bg-red-50 text-red-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-red-100">
+                                                                            {t('warehouse.soldOut')}
+                                                                        </span>
+                                                                    ) : isLow ? (
+                                                                        <span className="px-3 py-1 bg-yellow-50 text-yellow-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-yellow-100">
+                                                                            {t('warehouse.almostOut')}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-emerald-100">
+                                                                            {t('warehouse.enough')}
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right">
+                                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setHistoryProduct(item)
+                                                                                loadHistory(item.id)
+                                                                            }}
+                                                                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                                                            title={t('warehouse.viewHistory')}
+                                                                        >
+                                                                            <History size={18} />
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setAdjustingProduct(item)}
+                                                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                                            title={t('warehouse.adjustStockTitle')}
+                                                                        >
+                                                                            <Settings size={18} />
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => updateStock(item.id, item.stock, -1, 'Ombor: 1 dona kamaytirildi')}
+                                                                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                                            title={t('warehouse.minusStockTitle')}
+                                                                        >
+                                                                            <Minus size={18} />
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => updateStock(item.id, item.stock, 1, 'Ombor: 1 dona qo\'shildi')}
+                                                                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                                            title={t('warehouse.plusStockTitle')}
+                                                                        >
+                                                                            <Plus size={18} />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    })
+                ) : (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 py-16 text-center text-gray-400">
+                        <div className="flex flex-col items-center">
+                            <Package size={64} className="mb-4 opacity-10" />
+                            <p className="font-bold text-lg">{t('warehouse.noProducts')}</p>
+                            <p className="text-sm opacity-60">Qidiruv yoki filtrlarni o'zgartirib ko'ring</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Low stock alert section removed as per user request */}
+
+            {/* Custom Styles for sticky and no-scrollbar */}
+            <style jsx global>{`
+                .no-scrollbar::-webkit-scrollbar { display: none; }
+                .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+            `}</style>
+
+            {adjustingProduct && (
+                <StockAdjustDialog
+                    product={adjustingProduct}
+                    onClose={() => setAdjustingProduct(null)}
+                    onConfirm={(amount, reason) => 
+                        updateStock(adjustingProduct.id, adjustingProduct.stock, amount, reason)
+                    }
+                />
+            )}
+
+            {historyProduct && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div 
+                        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+                        onClick={() => setHistoryProduct(null)}
+                    />
+                    <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl overflow-hidden min-h-[500px] flex flex-col animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between p-8 border-b border-gray-50 bg-gray-50/50">
+                            <div>
+                                <h3 className="text-2xl font-black text-gray-900 tracking-tight">{t('warehouse.stockHistory') || 'Zaxira tarixi'}</h3>
+                                <p className="text-sm font-bold text-blue-600 mt-1 uppercase tracking-widest">{historyProduct.name}</p>
+                            </div>
+                            <button 
+                                onClick={() => setHistoryProduct(null)}
+                                className="p-3 hover:bg-white rounded-full transition-all shadow-sm group"
+                            >
+                                <X size={24} className="text-gray-400 group-hover:text-red-500" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-8 space-y-4">
+                            {historyLoading ? (
+                                <div className="flex items-center justify-center py-20">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                                </div>
+                            ) : historyData.length > 0 ? (
+                                historyData.map((record) => (
+                                    <div key={record.id} className="flex gap-5 p-5 rounded-2xl border border-gray-100 bg-white hover:border-blue-100 transition-colors">
+                                        <div className={`shrink-0 w-14 h-14 rounded-2xl flex items-center justify-center shadow-inner ${record.change_amount > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                                            {record.change_amount > 0 ? <Plus size={24} /> : <Minus size={24} />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <span className={`text-xl font-black tabular-nums ${record.change_amount > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                        {record.change_amount > 0 ? '+' : ''}{record.change_amount}
+                                                    </span>
+                                                    <span className="mx-3 text-gray-200">|</span>
+                                                    <span className="text-sm font-bold text-gray-500 tabular-nums">
+                                                        {record.previous_stock} → {record.new_stock}
+                                                    </span>
+                                                </div>
+                                                <time className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                                    {new Date(record.created_at).toLocaleString(locale)}
+                                                </time>
+                                            </div>
+                                            <p className="text-sm text-gray-700 mt-2 font-medium leading-relaxed bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                                "{record.reason || 'Siz tomondan o\'zgartirildi'}"
+                                            </p>
+                                            <div className="mt-3 text-[10px] uppercase tracking-widest font-black text-gray-300">
+                                                Harakat turi: {record.type.replace('_', ' ')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-24 text-gray-400">
+                                    <History size={64} className="mb-6 opacity-5" />
+                                    <p className="font-bold text-lg">{t('warehouse.noHistory') || 'Hozircha harakatlar tarixi mavjud emas'}</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

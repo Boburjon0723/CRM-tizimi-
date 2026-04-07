@@ -102,8 +102,8 @@ export default function AuthWrapper({ children }) {
         )
     }
 
-    // Login page doesn't need Sidebar and extra wrapper
-    if (pathname === '/login') {
+    // Login or Mobile pages don't need Sidebar and extra wrapper
+    if (pathname === '/login' || pathname.startsWith('/mobile')) {
         return <>{children}</>
     }
 
