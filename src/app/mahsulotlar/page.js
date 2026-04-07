@@ -109,6 +109,60 @@ function featuresToPayload(rows) {
     }
 }
 
+const WEIGHT_FEATURE_NAME_UZ = "Og'irligi (kg)"
+const WEIGHT_FEATURE_NAME_RU = 'Вес (кг)'
+const WEIGHT_FEATURE_NAME_EN = 'Weight (kg)'
+
+function isWeightFeatureName(v) {
+    const s = String(v || '').trim().toLowerCase()
+    return (
+        s === WEIGHT_FEATURE_NAME_UZ.toLowerCase() ||
+        s === WEIGHT_FEATURE_NAME_RU.toLowerCase() ||
+        s === WEIGHT_FEATURE_NAME_EN.toLowerCase()
+    )
+}
+
+function splitWeightFeature(rows) {
+    const rest = []
+    let weightKg = ''
+    for (const r of rows || []) {
+        const match =
+            isWeightFeatureName(r?.name_uz) ||
+            isWeightFeatureName(r?.name_ru) ||
+            isWeightFeatureName(r?.name_en)
+        if (match && !weightKg) {
+            weightKg = String(r?.value_uz || r?.value_ru || r?.value_en || '').trim()
+            continue
+        }
+        rest.push(r)
+    }
+    return { rest, weightKg }
+}
+
+function withWeightFeature(rows, weightKgRaw) {
+    const clean = String(weightKgRaw || '').trim()
+    const stripped = (rows || []).filter(
+        (r) =>
+            !(
+                isWeightFeatureName(r?.name_uz) ||
+                isWeightFeatureName(r?.name_ru) ||
+                isWeightFeatureName(r?.name_en)
+            )
+    )
+    if (!clean) return stripped
+    return [
+        ...stripped,
+        {
+            name_uz: WEIGHT_FEATURE_NAME_UZ,
+            value_uz: clean,
+            name_ru: WEIGHT_FEATURE_NAME_RU,
+            value_ru: clean,
+            name_en: WEIGHT_FEATURE_NAME_EN,
+            value_en: clean,
+        },
+    ]
+}
+
 const SESSION_PRODUCTS_BULK_UI = 'crm_products_bulk_ui_v1'
 
 function readBulkAccordionInitial() {
@@ -247,7 +301,9 @@ export default function Mahsulotlar() {
         sort_order: '0', // vitrinada kategoriya ichida tartib (kichik = yuqoriroq)
         rating: '0',
         reviews: '0',
-        model_3d_url: '' // 3D model link
+        model_3d_url: '', // 3D model link
+        is_kg: false, // Og'irligi bo'yicha (kg)
+        rope_weight_kg: '' // Arqon uchun fizik og'irlik (kg)
     })
     const [isAddingColor, setIsAddingColor] = useState(false)
     const [newColor, setNewColor] = useState({ name_uz: '', name_ru: '', name_en: '', hex_code: '#000000' })
@@ -527,10 +583,11 @@ export default function Mahsulotlar() {
                 colors: form.colors || [],
                 size: form.size, // Kod
                 sort_order: Math.max(0, parseInt(form.sort_order, 10) || 0),
-                features: featuresToPayload(form.features),
+                features: featuresToPayload(withWeightFeature(form.features, form.is_kg ? form.rope_weight_kg : '')),
                 rating: parseFloat(form.rating) || 0,
                 reviews: parseInt(form.reviews) || 0,
-                model_3d_url: form.model_3d_url
+                model_3d_url: form.model_3d_url,
+                is_kg: form.is_kg
             }
 
             if (editId) {
@@ -570,6 +627,8 @@ export default function Mahsulotlar() {
                 rating: '0',
                 reviews: '0',
                 model_3d_url: '',
+                is_kg: false,
+                rope_weight_kg: '',
             })
             setIsModalOpen(false)
             loadData({ silent: true })
@@ -630,6 +689,7 @@ export default function Mahsulotlar() {
     }
 
     function handleEdit(item) {
+        const parsed = splitWeightFeature(featuresRowsFromProduct(item))
         setForm({
             name: item.name || '',
             name_uz: item.name_uz || '',
@@ -648,11 +708,13 @@ export default function Mahsulotlar() {
             colors: item.colors || (item.color ? [item.color] : []),
             size: item.size || '',
             sort_order: item.sort_order != null ? String(item.sort_order) : '0',
-            features: featuresRowsFromProduct(item),
+            features: parsed.rest,
             imageUrlInput: '',
             rating: item.rating?.toString() || '0',
             reviews: item.reviews?.toString() || '0',
-            model_3d_url: item.model_3d_url || ''
+            model_3d_url: item.model_3d_url || '',
+            is_kg: item.is_kg || false,
+            rope_weight_kg: parsed.weightKg || ''
         })
 
         setEditId(item.id)
@@ -683,6 +745,8 @@ export default function Mahsulotlar() {
             rating: '0',
             reviews: '0',
             model_3d_url: '',
+            is_kg: false,
+            rope_weight_kg: ''
         })
         setEditId(null)
         setIsModalOpen(false)
@@ -1247,6 +1311,19 @@ export default function Mahsulotlar() {
             })
         })
     }, [products, searchTerm, filterCategoryId, filterLowStock])
+
+    const selectedCategory = categories.find((c) => c.id === form.category_id) || null
+    const selectedCategoryText = String(
+        selectedCategory?.name_uz ||
+            selectedCategory?.name_ru ||
+            selectedCategory?.name_en ||
+            selectedCategory?.name ||
+            ''
+    ).toLowerCase()
+    const isRopeCategory =
+        selectedCategoryText.includes('arqon') ||
+        selectedCategoryText.includes('канат') ||
+        selectedCategoryText.includes('rope')
 
 
     if (loading) {
@@ -1901,7 +1978,7 @@ export default function Mahsulotlar() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 font-mono font-medium text-gray-700">
-                                        {item.sale_price?.toLocaleString()} $
+                                        {item.sale_price?.toLocaleString()} $ {item.is_kg ? '/ kg' : ''}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-wrap gap-1">
@@ -2019,13 +2096,17 @@ export default function Mahsulotlar() {
                                 </div>
 
                                 <div className="space-y-4">
-                                    <label className="block text-sm font-bold text-gray-700">Sotuv Narxi ($)</label>
+                                    <label className="block text-sm font-bold text-gray-700">
+                                        {form.is_kg ? 'Kg narxi ($)' : 'Sotuv Narxi ($)'}
+                                    </label>
                                     <input
                                         type="number"
                                         required
-                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                                        step="any"
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all font-mono font-bold"
                                         value={form.sale_price}
                                         onChange={e => setForm({ ...form, sale_price: e.target.value })}
+                                        placeholder="0.00"
                                     />
                                 </div>
 
@@ -2287,7 +2368,22 @@ export default function Mahsulotlar() {
                                     <select
                                         className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
                                         value={form.category_id}
-                                        onChange={e => setForm({ ...form, category_id: e.target.value })}
+                                        onChange={e => {
+                                            const catId = e.target.value;
+                                            const nextCat = categories.find((c) => c.id === catId)
+                                            const nextCatText = String(
+                                                nextCat?.name_uz || nextCat?.name_ru || nextCat?.name_en || nextCat?.name || ''
+                                            ).toLowerCase()
+                                            const nextIsRope =
+                                                nextCatText.includes('arqon') ||
+                                                nextCatText.includes('канат') ||
+                                                nextCatText.includes('rope')
+                                            setForm({
+                                                ...form,
+                                                category_id: catId,
+                                                is_kg: nextIsRope ? form.is_kg : false
+                                            });
+                                        }}
                                         required
                                     >
                                         <option value="">Tanlang</option>
@@ -2296,6 +2392,46 @@ export default function Mahsulotlar() {
                                         ))}
                                     </select>
                                 </div>
+
+                                {isRopeCategory && (
+                                    <div className="space-y-4 col-span-2 sm:col-span-1">
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">O'lchov turi</label>
+                                        <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                                            <label className="inline-flex items-center cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    className="sr-only peer"
+                                                    checked={form.is_kg}
+                                                    onChange={e => setForm({ ...form, is_kg: e.target.checked })}
+                                                />
+                                                <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                                <span className="ms-3 text-sm font-bold text-blue-900 uppercase">Og'irligi bo'yicha (KG)</span>
+                                            </label>
+                                        </div>
+                                        <p className="text-[10px] text-blue-600 font-medium italic">
+                                            * Arqon kategoriyasi uchun narxni 1 kg bo'yicha belgilash rejimi.
+                                        </p>
+                                        {form.is_kg && (
+                                            <div className="space-y-2">
+                                                <label className="block text-xs font-bold text-blue-700 uppercase">
+                                                    Kg miqdori (mahsulot og'irligi)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.001"
+                                                    className="w-full px-4 py-2 bg-white border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                                                    value={form.rope_weight_kg}
+                                                    onChange={(e) => setForm({ ...form, rope_weight_kg: e.target.value })}
+                                                    placeholder="masalan: 2.5"
+                                                />
+                                                <p className="text-[10px] text-blue-600">
+                                                    Bu qiymat xususiyatlar ichida `Weight (kg)` sifatida saqlanadi.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Rating and Reviews */}

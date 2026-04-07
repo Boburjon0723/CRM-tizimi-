@@ -17,7 +17,7 @@ export function escapeHtml(s) {
 export function parseOrderItemQty(v) {
     const n = Number(v)
     if (!Number.isFinite(n) || n < 0) return 0
-    return Math.floor(n)
+    return n
 }
 
 export function parseOrderItemPrice(v) {
@@ -246,7 +246,7 @@ export function expandOrderLineForSubmit(line) {
         /** Bir xil rang kaliti (takrorlangan colorChoices yoki yozuv farqi) bitta DB qatorida yig‘iladi */
         const byNorm = new Map()
         for (const c of line.colorChoices) {
-            const q = parseInt(String(line.colorQtyByColor?.[c] ?? '0'), 10) || 0
+            const q = parseFloat(String(line.colorQtyByColor?.[c] ?? '0')) || 0
             if (q <= 0) continue
             const nk = normalizeModelKey(String(c))
             const prev = byNorm.get(nk)
@@ -272,7 +272,7 @@ export function expandOrderLineForSubmit(line) {
         }
         return rows
     }
-    const q = parseInt(String(line.quantity ?? '0'), 10) || 0
+    const q = parseFloat(String(line.quantity ?? '0')) || 0
     if (q <= 0) return []
     return [
         {

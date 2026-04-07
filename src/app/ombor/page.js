@@ -19,7 +19,7 @@ const ALL_CATEGORIES = '__all__'
 
 function numStock(v) {
     const n = Number(v)
-    return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0
+    return Number.isFinite(n) ? Math.max(0, n) : 0
 }
 
 /** Katalog: asosan `sale_price`, eski qatorlar uchun `price` */

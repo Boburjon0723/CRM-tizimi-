@@ -347,6 +347,7 @@ export default function OrderFormDialog({
                                           type="number"
                                           min="0"
                                           className="w-14 px-1.5 py-0.5 border border-gray-200 rounded-md text-[13px] font-bold text-right tabular-nums focus:ring-1 focus:ring-blue-500"
+                                          step="any"
                                           value={line.colorQtyByColor?.[c] ?? '0'}
                                           onChange={(e) => updateOrderLineColorQty(line.id, c, e.target.value)}
                                         />
@@ -364,13 +365,14 @@ export default function OrderFormDialog({
                           </td>
                           <td className="px-3 py-2 align-top pt-2">
                              {!isMatrix ? (
-                               <input
-                                 type="number"
-                                 min="1"
-                                 className="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-sm text-right tabular-nums font-bold focus:ring-2 focus:ring-blue-500"
-                                 value={line.quantity}
-                                 onChange={(e) => updateOrderLine(line.id, { quantity: e.target.value })}
-                               />
+                                 <input
+                                   type="number"
+                                   min="0.001"
+                                   step="any"
+                                   className="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-sm text-right tabular-nums font-bold focus:ring-2 focus:ring-blue-500"
+                                   value={line.quantity}
+                                   onChange={(e) => updateOrderLine(line.id, { quantity: e.target.value })}
+                                 />
                              ) : (
                                <div className="text-center pt-1">
                                  <span className="inline-block px-2 py-0.5 bg-gray-100 rounded-full text-xs font-bold tabular-nums">
