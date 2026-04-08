@@ -16,6 +16,7 @@ export const viewport = {
 /** Brauzer yorlig‘i, PWA va Apple — barchasi yangi ERP `favicon.svg` */
 export const metadata = {
     title: 'Nuur_Home_Collection',
+    manifest: '/manifest.json',
     icons: {
         icon: [{ url: '/favicon.svg', type: 'image/svg+xml', sizes: 'any' }],
         shortcut: '/favicon.svg',
@@ -23,8 +24,8 @@ export const metadata = {
     },
     appleWebApp: {
         capable: true,
-        statusBarStyle: 'default',
-        title: 'Nuur_Home_Collection',
+        statusBarStyle: 'black-translucent',
+        title: 'Nuur Home CRM',
     },
 }
 

@@ -1,10 +1,10 @@
 {
-    "name": "CRM Dashboard",
-    "short_name": "CRM",
+    "name": "Nuur Home CRM",
+    "short_name": "NuurHome",
     "description": "CRM tizimi - Buyurtmalarni boshqarish",
-    "start_url": "/",
+    "start_url": "/mobile",
     "display": "standalone",
-    "background_color": "#ffffff",
+    "background_color": "#031c24",
     "theme_color": "#031c24",
     "icons": [
         {
