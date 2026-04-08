@@ -63,7 +63,7 @@ export default function OrdersView() {
     })
 
     const formatCurrency = (amount) => {
-        return Number(amount || 0).toLocaleString('ru-RU') + " So'm"
+        return "$" + Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     }
 
     const getStatusStyle = (status) => {
