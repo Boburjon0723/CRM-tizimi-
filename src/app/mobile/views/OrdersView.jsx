@@ -30,19 +30,7 @@ export default function OrdersView() {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select(`
-                    id, 
-                    total, 
-                    status, 
-                    created_at, 
-                    customers(name, phone),
-                    order_items(
-                        quantity,
-                        price,
-                        product_name,
-                        products(name, price)
-                    )
-                `)
+                .select(`*, customers(name, phone), order_items(*, products(*))`)
                 .is('deleted_at', null)
                 .order('created_at', { ascending: false })
                 .limit(50)
@@ -51,19 +39,7 @@ export default function OrdersView() {
             if (error && error.message.includes('deleted_at')) {
                 const retry = await supabase
                     .from('orders')
-                    .select(`
-                        id, 
-                        total, 
-                        status, 
-                        created_at, 
-                        customers(name, phone),
-                        order_items(
-                            quantity,
-                            price,
-                            product_name,
-                            products(name, price)
-                        )
-                    `)
+                    .select(`*, customers(name, phone), order_items(*, products(*))`)
                     .order('created_at', { ascending: false })
                     .limit(50)
                 
@@ -78,11 +54,13 @@ export default function OrdersView() {
         }
     }
 
-    const filteredOrders = orders.filter(o => 
-        (o.id && String(o.id).includes(searchQuery)) ||
-        (o.customers?.name && o.customers.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (o.customers?.phone && o.customers.phone.includes(searchQuery))
-    )
+    const filteredOrders = orders.filter(o => {
+        const cName = o.customer_name || o.customers?.name || ''
+        const cPhone = o.customer_phone || o.customers?.phone || ''
+        return (o.id && String(o.id).includes(searchQuery)) ||
+               (cName && cName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+               (cPhone && cPhone.includes(searchQuery))
+    })
 
     const formatCurrency = (amount) => {
         return Number(amount || 0).toLocaleString('ru-RU') + " So'm"
@@ -144,12 +122,12 @@ export default function OrdersView() {
 
                             <div className="mb-4">
                                 <h3 className="text-lg font-bold text-white mb-1">
-                                    {order.customers?.name || "Noma'lum"}
+                                    {order.customer_name || order.customers?.name || "Noma'lum"}
                                 </h3>
-                                {(order.customers?.phone) && (
+                                {(order.customer_phone || order.customers?.phone) && (
                                     <div className="flex items-center gap-1.5 text-sm font-medium text-slate-400">
                                         <Phone size={14} />
-                                        {order.customers.phone}
+                                        {order.customer_phone || order.customers?.phone}
                                     </div>
                                 )}
                             </div>
