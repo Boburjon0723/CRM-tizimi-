@@ -149,6 +149,16 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto">
+      {/* Banner to force PWA/Mobile view without back history */}
+      <div className="block md:hidden p-4 mb-2">
+        <button
+          onClick={() => window.location.replace('/mobile')}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all outline-none"
+        >
+          📱 Mobil versiyaga o'tish (PWA shaklida)
+        </button>
+      </div>
+
       <Header title={t('common.dashboard')} toggleSidebar={toggleSidebar} />
 
       {loadError ? (
