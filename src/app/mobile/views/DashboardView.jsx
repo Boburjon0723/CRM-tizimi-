@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TrendingUp, Users, Wallet, ShoppingCart, MessageCircle, MoreHorizontal, Loader2, Clock, Timer, CheckCircle, XCircle } from 'lucide-react'
 
-export default function DashboardView({ role }) {
+export default function DashboardView({ role, setActiveTab }) {
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState({
         employeesCount: 0,
@@ -140,7 +140,11 @@ export default function DashboardView({ role }) {
                 <div className="space-y-3">
                     {data.recentActivities.length > 0 ? (
                         data.recentActivities.map((activity, idx) => (
-                            <div key={idx} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
+                            <div 
+                                key={idx} 
+                                onClick={() => setActiveTab && setActiveTab('orders')}
+                                className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors cursor-pointer active:scale-[0.98]"
+                            >
                                 <div className={`w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center ${activity.color} shrink-0`}>
                                     <activity.icon size={22} />
                                 </div>

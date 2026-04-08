@@ -25,7 +25,7 @@ export default function MobilePage() {
     const renderView = () => {
         switch (activeTab) {
             case 'dashboard':
-                return <DashboardView role={role} />
+                return <DashboardView role={role} setActiveTab={setActiveTab} />
             case 'orders':
                 return <OrdersView />
             case 'stats':
