@@ -22,7 +22,7 @@ export default function DashboardView({ role }) {
     useEffect(() => {
         async function fetchData() {
             try {
-                setLoading(true)
+                // setLoading(true) // do not set loading true on background refetch
                 
                 // 1. Orders by Status
                 const { data: orders } = await supabase
@@ -32,10 +32,10 @@ export default function DashboardView({ role }) {
                 const statusStats = { new: 0, pending: 0, completed: 0, cancelled: 0 }
                 if (orders) {
                     orders.forEach(o => {
-                        if (o.status === 'new') statusStats.new++
-                        if (o.status === 'pending') statusStats.pending++
-                        if (o.status === 'completed') statusStats.completed++
-                        if (o.status === 'cancelled') statusStats.cancelled++
+                        if (o.status === 'Yangi' || o.status === 'new') statusStats.new++
+                        if (o.status === 'Jarayonda' || o.status === 'pending') statusStats.pending++
+                        if (o.status === 'Tugallangan' || o.status === 'completed') statusStats.completed++
+                        if (o.status === 'Bekor qilingan' || o.status === 'cancelled') statusStats.cancelled++
                     })
                 }
 
@@ -47,7 +47,7 @@ export default function DashboardView({ role }) {
                 // 3. Recent Activities (Last 5 orders)
                 const { data: recentOrders } = await supabase
                     .from('orders')
-                    .select('id, total, created_at, customers(name)')
+                    .select('*, customers(name)')
                     .order('created_at', { ascending: false })
                     .limit(5)
 
@@ -72,6 +72,18 @@ export default function DashboardView({ role }) {
         }
 
         fetchData()
+
+        const channel = supabase
+            .channel('mobile_dashboard_updates')
+            .on('postgres_changes',
+                { event: '*', schema: 'public', table: 'orders' },
+                () => fetchData()
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
     }, [])
 
     const stats = [

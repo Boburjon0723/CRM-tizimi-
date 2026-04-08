@@ -1,10 +1,11 @@
 'use client'
 
-import { LayoutGrid, BarChart2, Users, Wallet } from 'lucide-react'
+import { LayoutGrid, BarChart2, Users, Wallet, ShoppingCart } from 'lucide-react'
 
 export default function BottomNav({ activeTab, setActiveTab, role }) {
     const navItems = [
         { id: 'dashboard', label: 'Asosiy', icon: LayoutGrid, roles: ['admin', 'manager', 'finance', 'staff'] },
+        { id: 'orders', label: 'Buyurtmalar', icon: ShoppingCart, roles: ['admin', 'manager', 'staff'] },
         { id: 'stats', label: 'Statistika', icon: BarChart2, roles: ['admin', 'manager'] },
         { id: 'employees', label: 'Xodimlar', icon: Users, roles: ['admin', 'manager', 'finance'] },
         { id: 'finance', label: 'Moliya', icon: Wallet, roles: ['admin', 'finance'] },
