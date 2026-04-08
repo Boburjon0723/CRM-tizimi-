@@ -25,13 +25,22 @@ export default function DashboardView({ role, setActiveTab }) {
                 // setLoading(true) // do not set loading true on background refetch
                 
                 // 1. Orders by Status
-                const { data: orders } = await supabase
+                let ordersData = null
+                const resOrders = await supabase
                     .from('orders')
                     .select('status')
+                    .is('deleted_at', null)
                 
+                if (resOrders.error && resOrders.error.message.includes('deleted_at')) {
+                    const fallback = await supabase.from('orders').select('status')
+                    ordersData = fallback.data
+                } else if (resOrders.data) {
+                    ordersData = resOrders.data
+                }
+
                 const statusStats = { new: 0, pending: 0, completed: 0, cancelled: 0 }
-                if (orders) {
-                    orders.forEach(o => {
+                if (ordersData) {
+                    ordersData.forEach(o => {
                         if (o.status === 'Yangi' || o.status === 'new') statusStats.new++
                         if (o.status === 'Jarayonda' || o.status === 'pending') statusStats.pending++
                         if (o.status === 'Tugallangan' || o.status === 'completed') statusStats.completed++
@@ -45,13 +54,26 @@ export default function DashboardView({ role, setActiveTab }) {
                     .select('*', { count: 'exact', head: true })
 
                 // 3. Recent Activities (Last 5 orders)
-                const { data: recentOrders } = await supabase
+                let recentOrdersData = null
+                const resRecentOrders = await supabase
                     .from('orders')
                     .select('*, customers(name)')
+                    .is('deleted_at', null)
                     .order('created_at', { ascending: false })
                     .limit(5)
 
-                const activities = (recentOrders || []).map(o => ({
+                if (resRecentOrders.error && resRecentOrders.error.message.includes('deleted_at')) {
+                    const fallback = await supabase
+                        .from('orders')
+                        .select('*, customers(name)')
+                        .order('created_at', { ascending: false })
+                        .limit(5)
+                    recentOrdersData = fallback.data
+                } else if (resRecentOrders.data) {
+                    recentOrdersData = resRecentOrders.data
+                }
+
+                const activities = (recentOrdersData || []).map(o => ({
                     title: `Buyurtma #${String(o.id).slice(0, 8)}`,
                     time: new Date(o.created_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' }),
                     desc: `Mijoz: ${o.customer_name || o.customers?.name || 'Noma\'lum'}`,
