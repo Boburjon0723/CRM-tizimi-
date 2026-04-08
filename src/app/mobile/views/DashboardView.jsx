@@ -2,15 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { TrendingUp, Users, Wallet, ShoppingCart, MessageCircle, MoreHorizontal, Loader2 } from 'lucide-react'
+import { TrendingUp, Users, Wallet, ShoppingCart, MessageCircle, MoreHorizontal, Loader2, Clock, Timer, CheckCircle, XCircle } from 'lucide-react'
 
 export default function DashboardView({ role }) {
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState({
-        revenue: 0,
-        ordersCount: 0,
         employeesCount: 0,
-        balance: 0,
+        statusStats: { new: 0, pending: 0, completed: 0, cancelled: 0 },
         recentActivities: []
     })
 
@@ -25,44 +23,31 @@ export default function DashboardView({ role }) {
         async function fetchData() {
             try {
                 setLoading(true)
-                const today = new Date().toISOString().split('T')[0]
                 
-                // 1. Daily Revenue (Inflows today)
-                const { data: transToday } = await supabase
-                    .from('transactions')
-                    .select('amount, type')
-                    .eq('date', today)
-                
-                const dailyRev = (transToday || [])
-                    .filter(t => t.type === 'inflow')
-                    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-
-                // 2. New Orders today
-                const { count: ordersCount } = await supabase
+                // 1. Orders by Status
+                const { data: orders } = await supabase
                     .from('orders')
-                    .select('*', { count: 'exact', head: true })
-                    .gte('created_at', `${today}T00:00:00`)
-                    .lte('created_at', `${today}T23:59:59`)
+                    .select('status')
+                
+                const statusStats = { new: 0, pending: 0, completed: 0, cancelled: 0 }
+                if (orders) {
+                    orders.forEach(o => {
+                        if (o.status === 'new') statusStats.new++
+                        if (o.status === 'pending') statusStats.pending++
+                        if (o.status === 'completed') statusStats.completed++
+                        if (o.status === 'cancelled') statusStats.cancelled++
+                    })
+                }
 
-                // 3. Employees Total
+                // 2. Employees Total
                 const { count: empCount } = await supabase
                     .from('employees')
                     .select('*', { count: 'exact', head: true })
 
-                // 4. Finance Balance
-                const { data: allTrans } = await supabase
-                    .from('transactions')
-                    .select('amount, type')
-                
-                const balance = (allTrans || []).reduce((sum, t) => {
-                    const amt = Number(t.amount) || 0
-                    return t.type === 'inflow' ? sum + amt : sum - amt
-                }, 0)
-
-                // 5. Recent Activities (Last 5 orders)
+                // 3. Recent Activities (Last 5 orders)
                 const { data: recentOrders } = await supabase
                     .from('orders')
-                    .select('id, total_amount, created_at, customers(name)')
+                    .select('id, total, created_at, customers(name)')
                     .order('created_at', { ascending: false })
                     .limit(5)
 
@@ -75,10 +60,8 @@ export default function DashboardView({ role }) {
                 }))
 
                 setData({
-                    revenue: dailyRev,
-                    ordersCount: ordersCount || 0,
                     employeesCount: empCount || 0,
-                    balance: balance,
+                    statusStats: statusStats,
                     recentActivities: activities
                 })
             } catch (error) {
@@ -92,10 +75,10 @@ export default function DashboardView({ role }) {
     }, [])
 
     const stats = [
-        { label: 'Kunlik tushum', value: data.revenue.toLocaleString(), change: 'Bugun', icon: TrendingUp, color: 'bg-emerald-500/10 text-emerald-500' },
-        { label: 'Yangi buyurtmalar', value: data.ordersCount.toString(), change: 'Bugun', icon: ShoppingCart, color: 'bg-indigo-500/10 text-indigo-500' },
-        { label: 'Xodimlar', value: `${data.employeesCount} kishi`, change: 'Aktiv', icon: Users, color: 'bg-sky-500/10 text-sky-500' },
-        { label: 'Moliya balansi', value: data.balance.toLocaleString(), change: 'Umumiy', icon: Wallet, color: 'bg-amber-500/10 text-amber-500' },
+        { label: 'Yangi buyurtmalar', value: data.statusStats.new.toString(), change: 'Yangi', icon: Clock, color: 'bg-blue-500/10 text-blue-500' },
+        { label: 'Jarayonda', value: data.statusStats.pending.toString(), change: 'Jarayonda', icon: Timer, color: 'bg-amber-500/10 text-amber-500' },
+        { label: 'Tugallangan', value: data.statusStats.completed.toString(), change: 'Tugallangan', icon: CheckCircle, color: 'bg-emerald-500/10 text-emerald-500' },
+        { label: 'Bekor qilingan', value: data.statusStats.cancelled.toString(), change: 'Bekor qilingan', icon: XCircle, color: 'bg-rose-500/10 text-rose-500' },
     ]
 
     if (loading) {
@@ -164,3 +147,4 @@ export default function DashboardView({ role }) {
         </div>
     )
 }
+
