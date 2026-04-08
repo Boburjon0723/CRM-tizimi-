@@ -52,9 +52,9 @@ export default function DashboardView({ role }) {
                     .limit(5)
 
                 const activities = (recentOrders || []).map(o => ({
-                    title: `Buyurtma #${o.id.toString().slice(-4)}`,
+                    title: `Buyurtma #${String(o.id).slice(0, 8)}`,
                     time: new Date(o.created_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' }),
-                    desc: `Mijoz: ${o.customers?.name || 'Noma\'lum'}`,
+                    desc: `Mijoz: ${o.customer_name || o.customers?.name || 'Noma\'lum'}`,
                     icon: ShoppingCart,
                     color: 'text-indigo-400'
                 }))
