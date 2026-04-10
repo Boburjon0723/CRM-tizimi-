@@ -28,7 +28,8 @@ export default function OrdersFilter({
   orderCategoryOptions,
   handlePrintOrderList,
   filteredOrders,
-  handlePrintCategoryOnly,
+  handlePrintSelectedByCategory,
+  selectedOrders,
   isAdding,
   handleCancel,
   clearNewOrderDraft,
@@ -99,20 +100,6 @@ export default function OrdersFilter({
             </>
           )}
 
-          <div className="flex items-center gap-1.5 bg-gray-50 px-2 rounded-lg border border-gray-100 h-[38px]">
-            <Filter size={15} className="text-gray-500 shrink-0" />
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="bg-transparent py-1.5 pr-1 outline-none text-gray-700 text-xs font-medium cursor-pointer max-w-[9.5rem]"
-            >
-              <option value="all">{t('orders.allStatuses')}</option>
-              <option value="new">{t('orders.statusNew')}</option>
-              <option value="pending">{t('orders.statusProcessing')}</option>
-              <option value="completed">{t('orders.statusCompleted')}</option>
-              <option value="cancelled">{t('orders.statusCancelled')}</option>
-            </select>
-          </div>
 
           <div className="flex items-center gap-1.5 bg-gray-50 px-2 rounded-lg border border-gray-100 h-[38px]">
             <ListTree size={15} className="text-gray-500 shrink-0" />
@@ -152,17 +139,22 @@ export default function OrdersFilter({
 
           <button
             type="button"
-            onClick={() => handlePrintCategoryOnly(filteredOrders, filterCategory)}
-            disabled={filterCategory === 'all'}
+            onClick={() => handlePrintSelectedByCategory(selectedOrders, filterCategory)}
+            disabled={selectedOrders.length === 0}
             className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs h-[38px] ${
-              filterCategory !== 'all'
-                ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              selectedOrders.length > 0
+                ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-sm'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
-            title="Tanlangan kategoriya mahsulotlarini chop etish"
+            title="Tanlangan buyurtmalarni kategoriya bo'yicha birlashtirib chop etish"
           >
-            <ListTree size={15} />
-            <span className="hidden sm:inline">Kategoriya chop</span>
+            <GitMerge size={15} />
+            <span className="hidden sm:inline">Tanlanganni kategoriya bo'yicha</span>
+            {selectedOrders.length > 0 && (
+              <span className="min-w-[1.1rem] rounded-full bg-white/20 px-1 text-center text-[10px] font-bold tabular-nums leading-none py-0.5 ml-1">
+                {selectedOrders.length}
+              </span>
+            )}
           </button>
 
           <button

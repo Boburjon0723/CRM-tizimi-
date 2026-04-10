@@ -5,6 +5,7 @@ import { NotificationProvider } from '@/context/NotificationContext'
 import { DialogProvider } from '@/context/DialogContext'
 import { ThemeProvider } from '@/context/ThemeContext'
 import AuthWrapper from '@/components/AuthWrapper'
+import ReactQueryProvider from '@/components/ReactQueryProvider'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -33,17 +34,19 @@ export default function RootLayout({ children }) {
     return (
         <html lang="uz">
             <body className={inter.className}>
-                <LanguageProvider>
-                    <ThemeProvider>
-                        <LayoutProvider>
-                            <NotificationProvider>
-                                <DialogProvider>
-                                    <AuthWrapper>{children}</AuthWrapper>
-                                </DialogProvider>
-                            </NotificationProvider>
-                        </LayoutProvider>
-                    </ThemeProvider>
-                </LanguageProvider>
+                <ReactQueryProvider>
+                    <LanguageProvider>
+                        <ThemeProvider>
+                            <LayoutProvider>
+                                <NotificationProvider>
+                                    <DialogProvider>
+                                        <AuthWrapper>{children}</AuthWrapper>
+                                    </DialogProvider>
+                                </NotificationProvider>
+                            </LayoutProvider>
+                        </ThemeProvider>
+                    </LanguageProvider>
+                </ReactQueryProvider>
             </body>
         </html>
     )

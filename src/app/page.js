@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
@@ -9,129 +9,75 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Package, Users, ShoppingCart, DollarSign, TrendingUp } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
-import { isDeletedAtMissingError } from '@/lib/orderTrash'
+import { useDashboardStats, useRecentOrders } from '@/hooks/useDashboardStats'
+import { useQueryClient } from '@tanstack/react-query'
+
+/**
+ * Haftalik tranzaksiya ma'lumotlarini grafik uchun formatlash.
+ * Bu funksiyani komponent tashqarisida saqlash — render bilan bog'liq emas.
+ */
+function buildChartData(transactions, t, language) {
+  const daysUz = [
+    t('dashboard.sun'), t('dashboard.mon'), t('dashboard.tue'),
+    t('dashboard.wed'), t('dashboard.thu'), t('dashboard.fri'), t('dashboard.sat')
+  ]
+  const weeklyData = {}
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date()
+    date.setDate(date.getDate() - i)
+    const dateStr = date.toISOString().split('T')[0]
+    const dayName = daysUz[date.getDay()]
+    weeklyData[dateStr] = { name: dayName, kirim: 0, chiqim: 0 }
+  }
+  transactions.forEach((tx) => {
+    if (weeklyData[tx.date]) {
+      if (tx.type === 'income') weeklyData[tx.date].kirim += (Number(tx.amount) || 0)
+      else weeklyData[tx.date].chiqim += (Number(tx.amount) || 0)
+    }
+  })
+  return Object.values(weeklyData)
+}
+
 
 export default function Dashboard() {
   const { toggleSidebar } = useLayout()
   const { t, language } = useLanguage()
-  const [stats, setStats] = useState({
-    mahsulotlar: 0,
-    xodimlar: 0,
-    buyurtmalar: 0,
-    foyda: 0
-  })
-  const [chartData, setChartData] = useState([])
-  const [recentOrders, setRecentOrders] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(null)
+  const queryClient = useQueryClient()
 
+  // React Query: keshdan tezkor ko'rsatish + orqafon yangilanish
+  const { data: statsData, isLoading: statsLoading, error: statsError } = useDashboardStats()
+  const { data: recentOrders = [], isLoading: ordersLoading } = useRecentOrders()
+
+  const loading = statsLoading || ordersLoading
+
+  // Statistika ma'lumotlari
+  const stats = {
+    mahsulotlar: statsData?.mahsulotlar ?? 0,
+    xodimlar: statsData?.xodimlar ?? 0,
+    buyurtmalar: statsData?.buyurtmalar ?? 0,
+    foyda: statsData?.foyda ?? 0,
+  }
+
+  // Grafik uchun haftalik ma'lumot
+  const chartData = buildChartData(statsData?.transactions || [], t, language)
+
+  // Supabase realtime — yangi buyurtmada keshni yangilash
   useEffect(() => {
-    loadData()
-
-    // Subscribe to real-time changes
     const ordersChannel = supabase
       .channel('dashboard_updates')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
-        () => loadData()
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['recent-orders'] })
+        }
       )
       .subscribe()
 
     return () => {
       supabase.removeChannel(ordersChannel)
     }
-  }, [])
-
-  async function loadData() {
-    setLoadError(null)
-    try {
-      let ordersRes = await supabase
-        .from('orders')
-        .select('*, customers(name)')
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(5)
-      if (ordersRes.error && isDeletedAtMissingError(ordersRes.error)) {
-        ordersRes = await supabase
-          .from('orders')
-          .select('*, customers(name)')
-          .order('created_at', { ascending: false })
-          .limit(5)
-      }
-
-      const [productsCountRes, employeesRes, transactionsRes] = await Promise.all([
-        supabase.from('products').select('id', { count: 'exact', head: true }),
-        supabase.from('employees').select('id'),
-        supabase.from('transactions').select('type, amount, date')
-      ])
-
-      const totalProducts = productsCountRes.count ?? 0
-      const totalEmployees = employeesRes.data?.length || 0
-
-      let countRes = await supabase.from('orders').select('id', { count: 'exact', head: true }).is('deleted_at', null)
-      if (countRes.error && isDeletedAtMissingError(countRes.error)) {
-        countRes = await supabase.from('orders').select('id', { count: 'exact', head: true })
-      }
-      const totalOrders = countRes.count || 0
-
-      const errParts = []
-      if (ordersRes.error) errParts.push(ordersRes.error.message || String(ordersRes.error))
-      if (productsCountRes.error) errParts.push(productsCountRes.error.message || String(productsCountRes.error))
-      if (employeesRes.error) errParts.push(employeesRes.error.message || String(employeesRes.error))
-      if (transactionsRes.error) errParts.push(transactionsRes.error.message || String(transactionsRes.error))
-      if (countRes.error) errParts.push(countRes.error.message || String(countRes.error))
-      if (errParts.length) setLoadError(errParts.filter(Boolean).join(' · '))
-
-      const income = transactionsRes.data?.filter(t => t.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
-      const expense = transactionsRes.data?.filter(t => t.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
-      const profit = income - expense
-
-      setStats({
-        mahsulotlar: totalProducts,
-        xodimlar: totalEmployees,
-        buyurtmalar: totalOrders,
-        foyda: profit
-      })
-
-      // Format recent orders for display
-      const formattedRecentOrders = (ordersRes.error ? [] : ordersRes.data || []).map(order => ({
-        id: order.id,
-        mijoz: order.customers?.name || 'Mijoz',
-        mahsulot: 'Order #' + order.id.toString().slice(0, 8),
-        summa: order.total,
-        status: order.status
-      }))
-
-      setRecentOrders(formattedRecentOrders)
-
-      // Process chart data for last 7 days
-      const daysUz = [t('dashboard.sun'), t('dashboard.mon'), t('dashboard.tue'), t('dashboard.wed'), t('dashboard.thu'), t('dashboard.fri'), t('dashboard.sat')]
-      const weeklyData = {}
-
-      // Initialize last 7 days
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date()
-        date.setDate(date.getDate() - i)
-        const dateStr = date.toISOString().split('T')[0]
-        const dayName = daysUz[date.getDay()]
-        weeklyData[dateStr] = { name: dayName, kirim: 0, chiqim: 0 }
-      }
-
-      transactionsRes.data?.forEach(t => {
-        if (weeklyData[t.date]) {
-          if (t.type === 'income') weeklyData[t.date].kirim += (Number(t.amount) || 0)
-          else weeklyData[t.date].chiqim += (Number(t.amount) || 0)
-        }
-      })
-
-      setChartData(Object.values(weeklyData))
-    } catch (error) {
-      console.error('Data loading error:', error)
-      setLoadError(error?.message || String(error))
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [queryClient])
 
   if (loading) {
     return (
@@ -161,15 +107,18 @@ export default function Dashboard() {
 
       <Header title={t('common.dashboard')} toggleSidebar={toggleSidebar} />
 
-      {loadError ? (
+      {statsError ? (
         <div className="mx-4 md:mx-6 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <p>
             <span className="font-semibold">{t('dashboard.loadErrorTitle')}</span>{' '}
-            <span className="text-amber-900/90 break-words">{loadError}</span>
+            <span className="text-amber-900/90 break-words">{statsError?.message || String(statsError)}</span>
           </p>
           <button
             type="button"
-            onClick={() => void loadData()}
+            onClick={() => {
+              queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+              queryClient.invalidateQueries({ queryKey: ['recent-orders'] })
+            }}
             className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-950 hover:bg-amber-100"
           >
             {t('dashboard.retryLoad')}

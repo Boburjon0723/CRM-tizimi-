@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
 import { BarChart, Bar, ResponsiveContainer, Cell, XAxis, YAxis, Tooltip } from 'recharts'
 import { TrendingUp, Loader2, Package, ShoppingCart, Users, ChevronRight } from 'lucide-react'
 
@@ -22,10 +23,7 @@ export default function StatsView() {
                 const thirtyDaysAgo = new Date(now)
                 thirtyDaysAgo.setDate(now.getDate() - 30)
                 
-                // 1. Fetch Orders with Items and Categories (Excluding Deleted)
-                const { data: orders } = await supabase
-                    .from('orders')
-                    .select(`
+                const orderSelect = `
                         id,
                         total,
                         status,
@@ -44,10 +42,24 @@ export default function StatsView() {
                                 categories (name)
                             )
                         )
-                    `)
+                    `
+
+                let ordersRes = await supabase
+                    .from('orders')
+                    .select(orderSelect)
                     .is('deleted_at', null)
                     .gte('created_at', thirtyDaysAgo.toISOString())
                     .order('created_at', { ascending: true })
+
+                if (ordersRes.error && isDeletedAtMissingError(ordersRes.error)) {
+                    ordersRes = await supabase
+                        .from('orders')
+                        .select(orderSelect)
+                        .gte('created_at', thirtyDaysAgo.toISOString())
+                        .order('created_at', { ascending: true })
+                }
+
+                const orders = ordersRes.error ? [] : ordersRes.data || []
 
                 // 2. Fetch all products
                 const { data: products } = await supabase
@@ -55,7 +67,7 @@ export default function StatsView() {
                     .select('id, name')
 
                 setData({
-                    orders: orders || [],
+                    orders,
                     products: products || [],
                     chartData: [],
                     avgCheck: 0

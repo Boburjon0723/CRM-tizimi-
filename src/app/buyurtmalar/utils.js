@@ -601,6 +601,7 @@ export function groupOrderItemsForPrint(orderItems, productsList) {
             if (n && !lineNoteParts.includes(n)) lineNoteParts.push(n)
         }
         const lineNoteJoined = lineNoteParts.join('; ')
+        const customerNames = Array.from(new Set(lines.map((l) => l._customer_name).filter(Boolean))).join(', ')
         return {
             product_name: first.product_name || first.products?.name || '-',
             size: resolvedOrderItemSizeRaw(first, productsList || []) || first.size,
@@ -610,7 +611,8 @@ export function groupOrderItemsForPrint(orderItems, productsList) {
             totalPieces,
             lineMonetary: lineMonetaryFinal,
             unitPrice,
-            lineNote: lineNoteJoined
+            lineNote: lineNoteJoined,
+            customerNames
         }
     })
 }
@@ -747,6 +749,170 @@ export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showP
     const imageWrapPx = imagePx + 10
     const imageCellPx = imagePx + 14
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>body{font-family:sans-serif;padding:40px;color:#333}.header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}.header h1{margin:0;color:#1a1a1a;font-size:1.25rem}.list-banner{color:#555;font-size:0.95rem;margin-bottom:16px}.order-block{margin-bottom:24px}.info{display:flex;justify-content:space-between;margin-bottom:20px}table.items-table{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #8c8c8c;box-shadow:0 1px 2px rgba(0,0,0,.06)}.order-block table.items-table:not(.order-totals-table){margin-bottom:0}table.items-table thead{display:table-header-group}table.items-table th{background:#ffeb9c;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #c9a227;font-size:0.82rem;font-weight:700}table.items-table th.th-narrow{white-space:nowrap}table.items-table th.th-rang{background:#fff2cc}table.items-table th.th-miqdor{background:#e2efda}table.items-table td{padding:8px 6px;border:1px solid #b4b4b4;vertical-align:top}table.items-table tbody tr{page-break-inside:avoid}table.items-table tbody tr:nth-child(odd) td{background:#fffef7}table.items-table tbody tr:nth-child(even) td{background:#e7f3ff}table.items-table tbody tr:nth-child(even) td.colors-stack{background:#f5fbff}table.items-table tbody tr:nth-child(even) td.qty-stack{background:#eef7f0}table.items-table tbody tr:nth-child(odd) td.colors-stack{background:#fffdf0}table.items-table tbody tr:nth-child(odd) td.qty-stack{background:#f7fdf5}table.order-totals-table{width:100%;margin-top:-1px;margin-bottom:16px;page-break-inside:avoid}table.order-totals-table .totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}table.order-totals-table .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}table.order-totals-table .totals-td{text-align:right;vertical-align:middle}table.order-totals-table .totals-empty{color:#999;font-weight:400}tr.cat-header-row td{background:#e2efda!important;border:1px solid #92c47c!important}tr.cat-subtotal-row td{background:#eef2ff!important;border:1px solid #9ca3af!important}.mono{font-variant-numeric:tabular-nums}.colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.88rem;line-height:1.35}.qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.88rem;line-height:1.35}.colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.35;min-height:1.25em;font-size:0.85rem}.qty-stack .stack-line{font-weight:600}.prod-img-cell{width:${imageCellPx}px;max-width:${imageCellPx}px;min-width:${imageCellPx}px;text-align:center;vertical-align:middle;padding:6px!important;overflow:hidden;background:#fff!important}.prod-thumb-wrap{max-width:100%;max-height:${imageWrapPx}px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.prod-thumb{max-width:${imagePx}px;max-height:${imagePx}px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}.prod-no-img{color:#999;font-size:0.85rem}table.items-table th.th-izoh{background:#ede9fe;color:#1a1a1a;min-width:5rem}.print-note-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #c4b5fd!important}table.items-table th.th-extra{background:#dbeafe;color:#1a1a1a;min-width:5rem}.print-extra-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #93c5fd!important}.page-break{page-break-after:always;border:none;margin:24px 0;padding:0;height:0;overflow:hidden}.footer{margin-top:32px;text-align:center;color:#666;font-size:0.8em;border-top:1px solid #eee;padding-top:16px}@media print{body{padding:16px 24px}.footer{page-break-inside:avoid}table.items-table th,table.items-table td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>NUUR_HOME_COLLECTION</h1></div>${listBanner}${blocks}<div class="footer">Nuur_Home_Collection<br>Xaridingiz uchun rahmat!</div><script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script></body></html>`
+}
+
+/**
+ * Bir nechta buyurtmalardagi mahsulotlarni birlashtirish (SKU + rang bo‘yicha miqdorlarni qo‘shish).
+ * Ishlab chiqarish yoki yig‘ish ro‘yxati (picking list) uchun ishlatiladi.
+ */
+
+
+/**
+ * Umumlashtirilgan (consolidated) kategoriya bo‘yicha chop etish htmlli.
+ * Tanlangan barcha buyurtmalardagi mahsulotlar bitta yirik jadvalda kategoriya bo‘yicha guruhlanadi.
+ */
+export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {
+    // 1. Kategoriyalarni aniqlaymiz
+    const allUniqueCategories = new Set()
+    for (const o of orders) {
+        for (const oi of normalizeOrderItemsForList(o.order_items)) {
+            const cat = categoryLabelFromGroupedLine(oi) || '—'
+            allUniqueCategories.add(cat)
+        }
+    }
+    const categoriesSorted = Array.from(allUniqueCategories).sort((a, b) => a.localeCompare(b, 'uz'))
+
+    const withNote = (!showPrices && !!tableConfig?.includePrintNoteColumn) || (showPrices && !!tableConfig?.includePrintNoteWithPrices)
+    const withExtra = (!showPrices && !!tableConfig?.includePrintExtraColumn) || (showPrices && !!tableConfig?.includePrintExtraWithPrices)
+    const colSpanFixed = 6 // #, Rasm, Kod, Rang, Miqdor, Jami par
+    const colSpanAll = colSpanFixed + (showPrices ? 2 : 0) + (withNote ? 1 : 0) + (withExtra ? 1 : 0)
+
+    const noteTh = escapeHtml(showPrices ? String(tableConfig?.printNoteTitleWithPrices ?? 'Izoh').trim() || 'Izoh' : String(tableConfig?.printNoteTitle ?? 'Izoh').trim() || 'Izoh')
+    const extraTh = escapeHtml(showPrices ? String(tableConfig?.printExtraTitleWithPrices ?? 'Belgi').trim() || 'Belgi' : String(tableConfig?.printExtraTitle ?? 'Belgi').trim() || 'Belgi')
+    const thPrice = showPrices ? '<th class="th-narrow">1 par</th><th class="th-narrow">Qator</th>' : ''
+    const thNote = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
+    const thExtra = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
+
+    const imagePx = imagePxBySize(tableConfig?.imageSize)
+    const imageWrapPx = imagePx + 10
+    const imageCellPx = imagePx + 14
+
+    function oneDataRowHtml(g, displayIndex) {
+        const sku = escapeHtml(g.size != null && g.size !== '' ? String(g.size) : '—')
+        const imgHtml = g.image_url ? `<img class="prod-thumb" src="${escapeHtml(g.image_url)}" alt="">` : ''
+        const { colorsHtml, qtysHtml } = buildColorQtyStacksHtml(g.colorPairs, labelColorFn)
+        const priceCells = showPrices ? `<td class="mono">$${escapeHtml(formatUsd(g.unitPrice))}</td><td class="mono">$${escapeHtml(formatUsd(g.lineMonetary))}</td>` : ''
+        const noteCellRow = withNote ? `<td class="print-note-cell">${g.lineNote ? escapeHtml(g.lineNote) : ''}</td>` : ''
+        const extraCell = withExtra ? '<td class="print-extra-cell"></td>' : ''
+
+        return `<tr>
+                <td>${displayIndex}</td>
+                <td class="prod-img-cell">${imgHtml ? `<div class="prod-thumb-wrap">${imgHtml}</div>` : '<span class="prod-no-img">—</span>'}</td>
+                <td class="mono">${sku}</td>
+                <td class="colors-stack">${colorsHtml}</td>
+                <td class="qty-stack mono">${qtysHtml}</td>
+                <td class="mono">${g.totalPieces}</td>
+                ${priceCells}${noteCellRow}${extraCell}
+            </tr>`
+    }
+
+    let fullBodyHtml = ''
+    let totalPiecesGlobal = 0
+
+    for (const categoryName of categoriesSorted) {
+        let categoryTotalPieces = 0
+        let categoryBlocksHtml = ''
+
+        // Shu kategoriyaga tegishli mahsulotlari bor mijozlarni topamiz
+        for (const o of orders) {
+            const customerItems = normalizeOrderItemsForList(o.order_items).filter(oi => (categoryLabelFromGroupedLine(oi) || '—') === categoryName)
+            if (customerItems.length === 0) continue
+
+            const groupedRaw = groupOrderItemsForPrint(customerItems, productsList)
+            const grouped = sortGroupedBucketsForPrint(groupedRaw)
+
+            const customerName = escapeHtml(o.customer_name || o.customers?.name || 'Mijoz')
+            const customerHeader = `<h3 style="margin: 15px 0 8px 0; font-size: 1rem; color: #1e40af;">Mijoz: ${customerName}</h3>`
+            
+            let rowHtml = ''
+            let rowNum = 1
+            let customerTotalPieces = 0
+
+            for (const g of grouped) {
+                rowHtml += oneDataRowHtml(g, rowNum++)
+                customerTotalPieces += Number(g.totalPieces) || 0
+            }
+
+            categoryTotalPieces += customerTotalPieces
+            
+            categoryBlocksHtml += `
+                <div class="customer-block">
+                    ${customerHeader}
+                    <table class="items-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Rasm</th>
+                                <th>Kod</th>
+                                <th class="th-rang">Rang</th>
+                                <th class="th-miqdor">Miqdor</th>
+                                <th>Jami par</th>
+                                ${thPrice}${thNote}${thExtra}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowHtml}
+                            <tr class="customer-totals-row">
+                                <td colspan="5" style="text-align:right; font-weight:700;">Mijoz jami</td>
+                                <td class="mono" style="font-weight:700;">${customerTotalPieces}</td>
+                                <td colspan="${colSpanAll - 6}"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `
+        }
+
+        if (categoryBlocksHtml) {
+            totalPiecesGlobal += categoryTotalPieces
+            fullBodyHtml += `
+                <div class="category-section" style="margin-bottom: 40px; border-top: 2px solid #3b82f6; padding-top: 10px;">
+                    <h2 style="background: #eff6ff; padding: 10px; margin: 0; font-size: 1.15rem; border-radius: 6px;">Kategoriya: ${escapeHtml(categoryName)}</h2>
+                    ${categoryBlocksHtml}
+                    <div style="text-align: right; padding: 10px; font-weight: 700; background: #f8fafc; border-radius: 4px; margin-top: 5px;">
+                        Kategoriya umumiy jami: ${categoryTotalPieces} ta
+                    </div>
+                </div>
+            `
+        }
+    }
+
+    const listBannerHtml = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>
+        body{font-family:sans-serif;padding:30px;color:#333; line-height: 1.4;}
+        .header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}
+        .header h1{margin:0;color:#1a1a1a;font-size:1.25rem}
+        .list-banner{color:#555;font-size:0.95rem;margin-bottom:16px}
+        table.items-table{width:100%;border-collapse:collapse;margin-bottom:10px;border:1px solid #8c8c8c;}
+        table.items-table th{background:#f1f5f9;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #94a3b8;font-size:0.8rem;font-weight:700}
+        table.items-table td{padding:6px 6px;border:1px solid #cbd5e1;vertical-align:top; font-size: 0.85rem;}
+        table.items-table tbody tr:nth-child(even) td{background:#f8fafc}
+        .mono{font-variant-numeric:tabular-nums; font-family: monospace;}
+        .colors-stack, .qty-stack{ font-size:0.82rem; line-height:1.3; }
+        .stack-line{padding:1px 0;}
+        .prod-img-cell{width:${imageCellPx}px; text-align:center; vertical-align:middle; padding:4px!important; background:#fff!important}
+        .prod-thumb-wrap{max-width:100%; max-height:${imageWrapPx}px; display:flex; align-items:center; justify-content:center; overflow:hidden;}
+        .prod-thumb{max-width:${imagePx}px; max-height:${imagePx}px; object-fit:contain;}
+        .customer-totals-row td { background: #f1f5f9 !important; }
+        .category-section { page-break-inside: avoid; }
+        @media print {
+            body { padding: 10px; }
+            .category-section { page-break-inside: avoid; margin-bottom: 20px; }
+            .customer-block { page-break-inside: avoid; margin-bottom: 15px; }
+        }
+    </style></head><body>
+        <div class="header"><h1>NUUR_HOME_COLLECTION</h1></div>
+        ${listBannerHtml}
+        ${fullBodyHtml}
+        <div style="margin-top: 30px; padding: 15px; background: #1e3a8a; color: white; font-weight: 700; text-align: center; border-radius: 8px; font-size: 1.1rem;">
+            TANLANGAN BARCHA BUYURTMALAR JAMI: ${totalPiecesGlobal} ta mahsulot
+        </div>
+        <div class="footer" style="margin-top: 30px; text-align: center; color: #666; font-size: 0.8rem;">
+            Nuur_Home_Collection<br>Xaridingiz uchun rahmat!
+        </div>
+        <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script>
+    </body></html>`
 }
 
 export function openPrintTab(html) {

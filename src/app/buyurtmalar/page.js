@@ -87,10 +87,12 @@ import {
     aggregateMergedOrdersTotals,
     orderCategoryLabels,
     filterOrderItemsByCategoryLabel,
-    buildOrderFormTableRows
+    buildOrderFormTableRows,
+    buildConsolidatedPrintHtml
 } from './utils'
 
 import StatsCards from './components/StatsCards'
+import StatusTabs from './components/StatusTabs'
 import OrdersFilter from './components/OrdersFilter'
 import OrdersTable from './components/OrdersTable'
 import OrderFormDialog from './components/OrderFormDialog'
@@ -147,6 +149,12 @@ function BuyurtmalarPageContent() {
         note: '',
         source: 'dokon'
     })
+
+    const selectedOrders = useMemo(() => {
+        const list = ordersListView === 'active' ? orders : trashOrders
+        return list.filter((o) => mergeSelection[o.id])
+    }, [ordersListView, orders, trashOrders, mergeSelection])
+
 
     const firstModelCodeRef = useRef(null)
     /** Tahrir/yangi buyurtma paneli — jadvaldan keyin ochilganda ko‘rinish uchun scroll */
@@ -1514,13 +1522,9 @@ function BuyurtmalarPageContent() {
         }
     }
 
-    async function handlePrintCategoryOnly(list, categoryLabel) {
+    async function handlePrintSelectedByCategory(list, categoryLabel) {
         if (!list?.length) {
             await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
-            return
-        }
-        if (!categoryLabel || categoryLabel === 'all') {
-            await showAlert('Avval kategoriya tanlang.', { variant: 'info' })
             return
         }
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
@@ -1543,7 +1547,7 @@ function BuyurtmalarPageContent() {
                 })
                 .filter((o) => (o.order_items || []).length > 0)
         } catch (e) {
-            console.error('handlePrintCategoryOnly refetch:', e)
+            console.error('handlePrintSelectedByCategory refetch:', e)
             ordersForPrint = list
                 .map((o) => {
                     const rows = dedupeOrderItemsKeepNewest(o.order_items || [], products)
@@ -1554,13 +1558,15 @@ function BuyurtmalarPageContent() {
         }
 
         if (!ordersForPrint.length) {
-            await showAlert('Tanlangan kategoriya bo‘yicha chop etiladigan mahsulot topilmadi.', { variant: 'info' })
+            await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
             return
         }
 
-        const html = buildPrintDocumentHtml({
-            documentTitle: `Buyurtmalar-${categoryLabel}`,
-            listTitle: `Kategoriya: ${categoryLabel} | ${t('orders.listPrintCount')}: ${ordersForPrint.length}`,
+        const html = buildConsolidatedPrintHtml({
+            documentTitle: `Bulk-Category-${categoryLabel || 'All'}`,
+            listTitle: categoryLabel && categoryLabel !== 'all' 
+                ? `Kategoriya: ${categoryLabel} | Umumlashtirilgan ro'yxat` 
+                : "Umumlashtirilgan kategoriya ro'yxati",
             orders: ordersForPrint,
             showPrices: false,
             labelColorFn,
@@ -1682,6 +1688,7 @@ function BuyurtmalarPageContent() {
     }
 
 
+
     return (
         <div className="w-full max-w-none xl:max-w-[min(100%,112rem)] 2xl:max-w-[min(100%,120rem)] mx-auto">
             <Header title={t('common.orders')} toggleSidebar={toggleSidebar} />
@@ -1729,7 +1736,18 @@ function BuyurtmalarPageContent() {
                 statusStats={statusStats}
                 totalSumma={totalSumma}
                 filteredOrdersCount={filteredOrders.length}
+                onStatusClick={setFilterStatus}
+                activeStatus={filterStatus}
             />
+
+            {ordersListView === 'active' && (
+                <StatusTabs 
+                    t={t}
+                    filterStatus={filterStatus}
+                    setFilterStatus={setFilterStatus}
+                    statusStats={statusStats}
+                />
+            )}
 
             {draftBanner && !isAdding ? (
                 <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
@@ -1769,7 +1787,8 @@ function BuyurtmalarPageContent() {
                 orderCategoryOptions={orderCategoryOptions}
                 handlePrintOrderList={handlePrintOrderList}
                 filteredOrders={filteredOrders}
-                handlePrintCategoryOnly={handlePrintCategoryOnly}
+                handlePrintSelectedByCategory={handlePrintSelectedByCategory}
+                selectedOrders={selectedOrders}
                 isAdding={isAdding}
                 handleCancel={handleCancel}
                 clearNewOrderDraft={clearNewOrderDraft}
