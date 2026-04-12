@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, Fragment } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import { 
     Plus, AlertTriangle, TrendingUp, Package, RefreshCcw, 
     Minus, Search, Filter, History, Download, Settings, 
-    X, ChevronDown, ChevronUp, Hash, Layers
+    X, ChevronDown, ChevronUp, Hash, Layers, Palette
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -30,6 +30,58 @@ function unitPriceUzs(p) {
     return Number.isFinite(pr) && pr >= 0 ? pr : 0
 }
 
+/** Katalogdagi ranglar ro'yxati (colors[] yoki color) */
+function listProductColors(p) {
+    const arr = Array.isArray(p?.colors) ? p.colors : []
+    const names = arr.map((c) => String(c ?? '').trim()).filter(Boolean)
+    const uniq = [...new Set(names)]
+    if (uniq.length) return uniq
+    const legacy = p?.color != null ? String(p.color).trim() : ''
+    return legacy ? [legacy] : []
+}
+
+function parseStockByColor(p) {
+    const raw = p?.stock_by_color
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const o = {}
+        for (const [k, v] of Object.entries(raw)) {
+            const n = Number(v)
+            if (Number.isFinite(n) && n >= 0) o[k] = Math.floor(n)
+        }
+        return o
+    }
+    return {}
+}
+
+function sumStockByColor(map) {
+    if (!map || typeof map !== 'object') return 0
+    return Object.values(map).reduce((s, n) => s + (Number.isFinite(Number(n)) ? Math.max(0, Math.floor(Number(n))) : 0), 0)
+}
+
+/** Ko'rsatish / tahrir: rang kalitlari bilan; DB bo'sh bo'lsa joriy jami ranglarga taqsimlanadi */
+function buildStockByColorMap(product) {
+    const colors = listProductColors(product)
+    if (!colors.length) return {}
+    const fromDb = parseStockByColor(product)
+    const out = {}
+    let sumDb = 0
+    for (const c of colors) {
+        const v = fromDb[c]
+        const n = v != null && Number.isFinite(Number(v)) ? Math.max(0, Math.floor(Number(v))) : 0
+        out[c] = n
+        sumDb += n
+    }
+    if (sumDb > 0) return out
+    const total = numStock(product.stock)
+    if (total <= 0) return Object.fromEntries(colors.map((c) => [c, 0]))
+    const per = Math.floor(total / colors.length)
+    let rem = total - per * colors.length
+    colors.forEach((c, i) => {
+        out[c] = per + (i === 0 ? rem : 0)
+    })
+    return out
+}
+
 export default function Ombor() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
@@ -44,6 +96,9 @@ export default function Ombor() {
     const [historyData, setHistoryData] = useState([])
     const [historyLoading, setHistoryLoading] = useState(false)
     const [collapsedCategories, setCollapsedCategories] = useState({})
+    /** mahsulot id -> rang bo'yicha zaxira (tahrir) */
+    const [colorDrafts, setColorDrafts] = useState({})
+    const [expandedColorRows, setExpandedColorRows] = useState({})
 
     const sectionRefs = useRef({})
 
@@ -112,6 +167,66 @@ export default function Ombor() {
         }
     }
 
+    async function saveStockByColor(product, draftMap) {
+        const colors = listProductColors(product)
+        if (!colors.length) return
+        const prev = numStock(product.stock)
+        const clean = {}
+        for (const c of colors) {
+            const v = draftMap[c]
+            clean[c] = Math.max(0, Math.floor(Number(v) || 0))
+        }
+        const nextTotal = sumStockByColor(clean)
+        const change = nextTotal - prev
+        const reasonLine = colors.map((c) => `${c}: ${clean[c]}`).join('; ')
+        try {
+            const { error: productError } = await supabase
+                .from('products')
+                .update({ stock: nextTotal, stock_by_color: clean })
+                .eq('id', product.id)
+
+            if (productError) throw productError
+
+            if (change !== 0) {
+                const { error: moveError } = await supabase.from('stock_movements').insert([
+                    {
+                        product_id: product.id,
+                        change_amount: change,
+                        previous_stock: prev,
+                        new_stock: nextTotal,
+                        reason: `Ombor (ranglar): ${reasonLine}`,
+                        type: change > 0 ? 'restock' : 'manual_adjustment',
+                    },
+                ])
+                if (moveError) console.warn('Movement log failed:', moveError)
+            }
+
+            setProducts((prev) =>
+                prev.map((m) =>
+                    m.id === product.id ? { ...m, stock: nextTotal, stock_by_color: clean } : m
+                )
+            )
+            setColorDrafts((d) => ({ ...d, [product.id]: clean }))
+            showToast(t('warehouse.updateSuccess') || 'Saqlandi', { type: 'success' })
+        } catch (error) {
+            console.error('saveStockByColor:', error)
+            const msg = error?.message || String(error)
+            const hint = /stock_by_color|column|does not exist|42703/i.test(msg)
+                ? `\n\nSupabase: ${t('warehouse.stockByColorHint')}`
+                : ''
+            void showAlert(`${t('common.saveError')}${hint}`, { variant: 'error' })
+        }
+    }
+
+    function toggleColorRow(product) {
+        const id = product.id
+        const open = !expandedColorRows[id]
+        setExpandedColorRows((prev) => ({ ...prev, [id]: open }))
+        if (open) {
+            setColorDrafts((prev) => ({ ...prev, [id]: buildStockByColorMap(product) }))
+        }
+    }
+
     async function loadHistory(productId) {
         setHistoryLoading(true)
         try {
@@ -132,14 +247,33 @@ export default function Ombor() {
     }
 
     const exportToExcel = () => {
-        const wsData = products.map(p => ({
-            'Nomi': p.name,
-            'Kategoriya': p.categories?.name || p.category || '-',
-            'Mavjud (dona)': numStock(p.stock),
-            'Min. Zaxira': p.min_stock || 10,
-            'Sotuv narxi': unitPriceUzs(p),
-            'Holati': numStock(p.stock) === 0 ? 'Tugagan' : numStock(p.stock) < (p.min_stock || 10) ? 'Kam qolgan' : 'Yetarli'
-        }))
+        const wsData = products.map((p) => {
+            const cols = listProductColors(p)
+            const byColor = parseStockByColor(p)
+            const jsonCol =
+                cols.length > 0
+                    ? JSON.stringify(
+                          cols.reduce((acc, c) => {
+                              acc[c] = byColor[c] != null ? byColor[c] : 0
+                              return acc
+                          }, {})
+                      )
+                    : ''
+            return {
+                Nomi: p.name,
+                Kategoriya: p.categories?.name || p.category || '-',
+                'Mavjud (dona)': numStock(p.stock),
+                [t('warehouse.exportStockByColorCol')]: jsonCol,
+                'Min. Zaxira': p.min_stock || 10,
+                'Sotuv narxi': unitPriceUzs(p),
+                Holati:
+                    numStock(p.stock) === 0
+                        ? 'Tugagan'
+                        : numStock(p.stock) < (p.min_stock || 10)
+                          ? 'Kam qolgan'
+                          : 'Yetarli',
+            }
+        })
 
         const ws = XLSX.utils.json_to_sheet(wsData)
         const wb = XLSX.utils.book_new()
@@ -399,100 +533,215 @@ export default function Ombor() {
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-50">
                                                     {items.map((item) => {
+                                                        const colorList = listProductColors(item)
+                                                        const hasColors = colorList.length > 0
                                                         const stockNum = numStock(item.stock)
                                                         const priceNum = unitPriceUzs(item)
                                                         const isLow = stockNum < (item.min_stock || 10)
+                                                        const expanded = !!expandedColorRows[item.id]
+                                                        const draft = colorDrafts[item.id] || buildStockByColorMap(item)
                                                         return (
-                                                            <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
-                                                                <td className="px-6 py-4">
-                                                                    <div className="flex items-center gap-4">
-                                                                        <div className="relative">
-                                                                            {item.image_url ? (
-                                                                                <img
-                                                                                    src={item.image_url}
-                                                                                    alt={item.name}
-                                                                                    className="w-12 h-12 rounded-xl object-cover bg-gray-100 border border-gray-100 shadow-sm"
-                                                                                />
-                                                                            ) : (
-                                                                                <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-gray-300 border border-gray-100">
-                                                                                    <Package size={24} />
+                                                            <Fragment key={item.id}>
+                                                                <tr className="hover:bg-blue-50/30 transition-colors group">
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex items-center gap-4">
+                                                                            <div className="relative">
+                                                                                {item.image_url ? (
+                                                                                    <img
+                                                                                        src={item.image_url}
+                                                                                        alt={item.name}
+                                                                                        className="w-12 h-12 rounded-xl object-cover bg-gray-100 border border-gray-100 shadow-sm"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-gray-300 border border-gray-100">
+                                                                                        <Package size={24} />
+                                                                                    </div>
+                                                                                )}
+                                                                                {isLow && (
+                                                                                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full" />
+                                                                                )}
+                                                                            </div>
+                                                                            <div>
+                                                                                <div className="font-bold text-gray-900 group-hover:text-blue-700 transition-colors">
+                                                                                    {item.name}
                                                                                 </div>
-                                                                            )}
-                                                                            {isLow && (
-                                                                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 border-2 border-white rounded-full" />
+                                                                                <div className="text-[10px] font-bold text-gray-400 uppercase mt-0.5 tracking-tighter">
+                                                                                    KOD: {item.size || "Noma'lum"}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                <span
+                                                                                    className={`font-black text-xl tabular-nums ${isLow ? 'text-red-500' : 'text-gray-900'}`}
+                                                                                >
+                                                                                    {stockNum}
+                                                                                </span>
+                                                                                {hasColors && (
+                                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-800 text-[10px] font-black uppercase border border-violet-100">
+                                                                                        <Palette size={12} />
+                                                                                        {colorList.length}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                            {hasColors && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => toggleColorRow(item)}
+                                                                                    className="text-left text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 w-fit"
+                                                                                >
+                                                                                    {expanded ? (
+                                                                                        <ChevronUp size={14} />
+                                                                                    ) : (
+                                                                                        <ChevronDown size={14} />
+                                                                                    )}
+                                                                                    {expanded
+                                                                                        ? t('warehouse.stockByColorCollapse')
+                                                                                        : t('warehouse.stockByColorExpand')}
+                                                                                </button>
                                                                             )}
                                                                         </div>
-                                                                        <div>
-                                                                            <div className="font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{item.name}</div>
-                                                                            <div className="text-[10px] font-bold text-gray-400 uppercase mt-0.5 tracking-tighter">KOD: {item.size || 'Noma\'lum'}</div>
+                                                                    </td>
+                                                                    <td className="px-6 py-4 font-mono font-bold text-gray-700 tabular-nums">
+                                                                        {priceNum.toLocaleString(locale)}
+                                                                    </td>
+                                                                    <td className="px-6 py-4">
+                                                                        {stockNum === 0 ? (
+                                                                            <span className="px-3 py-1 bg-red-50 text-red-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-red-100">
+                                                                                {t('warehouse.soldOut')}
+                                                                            </span>
+                                                                        ) : isLow ? (
+                                                                            <span className="px-3 py-1 bg-yellow-50 text-yellow-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-yellow-100">
+                                                                                {t('warehouse.almostOut')}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-emerald-100">
+                                                                                {t('warehouse.enough')}
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-6 py-4 text-right">
+                                                                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    setHistoryProduct(item)
+                                                                                    loadHistory(item.id)
+                                                                                }}
+                                                                                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                                                                title={t('warehouse.viewHistory')}
+                                                                            >
+                                                                                <History size={18} />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => !hasColors && setAdjustingProduct(item)}
+                                                                                disabled={hasColors}
+                                                                                className={`p-2 rounded-lg transition-colors ${hasColors ? 'text-gray-300 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-50'}`}
+                                                                                title={
+                                                                                    hasColors
+                                                                                        ? t('warehouse.stockByColorHint')
+                                                                                        : t('warehouse.adjustStockTitle')
+                                                                                }
+                                                                            >
+                                                                                <Settings size={18} />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    !hasColors &&
+                                                                                    updateStock(item.id, item.stock, -1, 'Ombor: 1 dona kamaytirildi')
+                                                                                }
+                                                                                disabled={hasColors}
+                                                                                className={`p-2 rounded-lg transition-colors ${hasColors ? 'text-gray-200 cursor-not-allowed' : 'text-red-500 hover:bg-red-50'}`}
+                                                                                title={
+                                                                                    hasColors
+                                                                                        ? t('warehouse.stockByColorHint')
+                                                                                        : t('warehouse.minusStockTitle')
+                                                                                }
+                                                                            >
+                                                                                <Minus size={18} />
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    !hasColors &&
+                                                                                    updateStock(item.id, item.stock, 1, "Ombor: 1 dona qo'shildi")
+                                                                                }
+                                                                                disabled={hasColors}
+                                                                                className={`p-2 rounded-lg transition-colors ${hasColors ? 'text-gray-200 cursor-not-allowed' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                                                                                title={
+                                                                                    hasColors
+                                                                                        ? t('warehouse.stockByColorHint')
+                                                                                        : t('warehouse.plusStockTitle')
+                                                                                }
+                                                                            >
+                                                                                <Plus size={18} />
+                                                                            </button>
                                                                         </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-4">
-                                                                    <span
-                                                                        className={`font-black text-xl tabular-nums ${isLow ? 'text-red-500' : 'text-gray-900'}`}
-                                                                    >
-                                                                        {stockNum}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-6 py-4 font-mono font-bold text-gray-700 tabular-nums">
-                                                                    {priceNum.toLocaleString(locale)}
-                                                                </td>
-                                                                <td className="px-6 py-4">
-                                                                    {stockNum === 0 ? (
-                                                                        <span className="px-3 py-1 bg-red-50 text-red-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-red-100">
-                                                                            {t('warehouse.soldOut')}
-                                                                        </span>
-                                                                    ) : isLow ? (
-                                                                        <span className="px-3 py-1 bg-yellow-50 text-yellow-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-yellow-100">
-                                                                            {t('warehouse.almostOut')}
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-black rounded-lg uppercase tracking-wider border border-emerald-100">
-                                                                            {t('warehouse.enough')}
-                                                                        </span>
-                                                                    )}
-                                                                </td>
-                                                                <td className="px-6 py-4 text-right">
-                                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setHistoryProduct(item)
-                                                                                loadHistory(item.id)
-                                                                            }}
-                                                                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                                                                            title={t('warehouse.viewHistory')}
-                                                                        >
-                                                                            <History size={18} />
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => setAdjustingProduct(item)}
-                                                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                                            title={t('warehouse.adjustStockTitle')}
-                                                                        >
-                                                                            <Settings size={18} />
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => updateStock(item.id, item.stock, -1, 'Ombor: 1 dona kamaytirildi')}
-                                                                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                                                            title={t('warehouse.minusStockTitle')}
-                                                                        >
-                                                                            <Minus size={18} />
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => updateStock(item.id, item.stock, 1, 'Ombor: 1 dona qo\'shildi')}
-                                                                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                                                            title={t('warehouse.plusStockTitle')}
-                                                                        >
-                                                                            <Plus size={18} />
-                                                                        </button>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
+                                                                    </td>
+                                                                </tr>
+                                                                {hasColors && expanded && (
+                                                                    <tr className="bg-violet-50/40 border-b border-violet-100">
+                                                                        <td colSpan={5} className="px-6 py-4">
+                                                                            <p className="text-xs font-bold text-violet-900 mb-3 flex items-center gap-2">
+                                                                                <Palette size={16} />
+                                                                                {t('warehouse.stockByColor')}
+                                                                            </p>
+                                                                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+                                                                                {colorList.map((cn) => (
+                                                                                    <label
+                                                                                        key={cn}
+                                                                                        className="flex flex-col gap-1 bg-white rounded-xl border border-violet-100 px-3 py-2 shadow-sm"
+                                                                                    >
+                                                                                        <span className="text-[10px] font-black uppercase text-gray-500 tracking-tight">
+                                                                                            {cn}
+                                                                                        </span>
+                                                                                        <input
+                                                                                            type="number"
+                                                                                            min={0}
+                                                                                            step={1}
+                                                                                            value={draft[cn] ?? 0}
+                                                                                            onChange={(e) => {
+                                                                                                const v = Math.max(
+                                                                                                    0,
+                                                                                                    Math.floor(Number(e.target.value) || 0)
+                                                                                                )
+                                                                                                setColorDrafts((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [item.id]: {
+                                                                                                        ...(prev[item.id] || draft),
+                                                                                                        [cn]: v,
+                                                                                                    },
+                                                                                                }))
+                                                                                            }}
+                                                                                            className="w-full px-2 py-2 border border-gray-200 rounded-lg font-mono font-bold text-lg tabular-nums"
+                                                                                        />
+                                                                                    </label>
+                                                                                ))}
+                                                                            </div>
+                                                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                                                <p className="text-sm text-gray-700">
+                                                                                    <span className="font-bold">{t('warehouse.stockTotalFromColors')}:</span>{' '}
+                                                                                    <span className="font-mono tabular-nums text-violet-800">
+                                                                                        {sumStockByColor(draft)}
+                                                                                    </span>
+                                                                                </p>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => saveStockByColor(item, draft)}
+                                                                                    className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-black rounded-xl shadow-md"
+                                                                                >
+                                                                                    {t('warehouse.stockByColorSave')}
+                                                                                </button>
+                                                                            </div>
+                                                                            <p className="text-[11px] text-gray-500 mt-2">{t('warehouse.stockByColorHint')}</p>
+                                                                        </td>
+                                                                    </tr>
+                                                                )}
+                                                            </Fragment>
                                                         )
                                                     })}
                                                 </tbody>

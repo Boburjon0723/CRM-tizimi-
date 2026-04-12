@@ -426,7 +426,20 @@ export const translations = {
             minusStockTitle: 'Chiqim (−1)',
             plusStockTitle: 'Kirim (+1)',
             stockColumnHint:
-                'Agar «stock» ustuni yo‘q xatosi chiqsa, Supabase’da `update_products_schema.sql` dagi `stock` migratsiyasini ishga tushiring.'
+                'Agar «stock» ustuni yo‘q xatosi chiqsa, Supabase’da `update_products_schema.sql` dagi `stock` migratsiyasini ishga tushiring.',
+            stockByColor: 'Ranglar bo‘yicha zaxira',
+            stockByColorHint:
+                'Har rang uchun dona kiriting; jami «Zaxira» ustuniga yoziladi. Migratsiya: `add_products_stock_by_color.sql`.',
+            stockByColorSave: 'Rang zaxirasini saqlash',
+            stockByColorExpand: 'Ranglar',
+            stockByColorCollapse: 'Yopish',
+            stockTotalFromColors: 'Jami (ranglar)',
+            stockSingleColorHint: 'Faqat bitta rang — oddiy zaxira.',
+            exportStockByColorCol: 'Ranglar bo‘yicha (JSON)',
+            viewHistory: 'Harakatlar tarixi',
+            adjustStockTitle: 'Zaxirani tahrirlash',
+            stockHistory: 'Zaxira tarixi',
+            noHistory: 'Hozircha harakatlar yo‘q',
         },
         messages: {
             title: 'Xabarlar',
@@ -1573,7 +1586,20 @@ export const translations = {
             minusStockTitle: 'Расход (−1)',
             plusStockTitle: 'Приход (+1)',
             stockColumnHint:
-                'Если ошибка «column stock does not exist», выполните в Supabase миграцию `stock` из `update_products_schema.sql`.'
+                'Если ошибка «column stock does not exist», выполните в Supabase миграцию `stock` из `update_products_schema.sql`.',
+            stockByColor: 'Остаток по цветам',
+            stockByColorHint:
+                'Введите количество по каждому цвету; сумма попадёт в колонку «Запас». Миграция: `add_products_stock_by_color.sql`.',
+            stockByColorSave: 'Сохранить по цветам',
+            stockByColorExpand: 'Цвета',
+            stockByColorCollapse: 'Свернуть',
+            stockTotalFromColors: 'Итого (цвета)',
+            stockSingleColorHint: 'Один цвет — обычный остаток.',
+            exportStockByColorCol: 'По цветам (JSON)',
+            viewHistory: 'История движений',
+            adjustStockTitle: 'Изменить остаток',
+            stockHistory: 'История остатков',
+            noHistory: 'Пока нет движений',
         },
         messages: {
             title: 'Сообщения',
@@ -2716,7 +2742,20 @@ export const translations = {
             minusStockTitle: 'Issue (−1)',
             plusStockTitle: 'Receipt (+1)',
             stockColumnHint:
-                'If you see “column stock does not exist”, run the `stock` migration from `update_products_schema.sql` in Supabase.'
+                'If you see “column stock does not exist”, run the `stock` migration from `update_products_schema.sql` in Supabase.',
+            stockByColor: 'Stock by color',
+            stockByColorHint:
+                'Enter quantity per color; total updates the Stock column. Migration: `add_products_stock_by_color.sql`.',
+            stockByColorSave: 'Save color breakdown',
+            stockByColorExpand: 'Colors',
+            stockByColorCollapse: 'Collapse',
+            stockTotalFromColors: 'Total (colors)',
+            stockSingleColorHint: 'Single color — use normal stock.',
+            exportStockByColorCol: 'By color (JSON)',
+            viewHistory: 'Movement history',
+            adjustStockTitle: 'Adjust stock',
+            stockHistory: 'Stock history',
+            noHistory: 'No movements yet',
         },
         messages: {
             title: 'Messages',
