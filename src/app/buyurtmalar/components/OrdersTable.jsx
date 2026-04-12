@@ -20,7 +20,8 @@ import {
   orderItemLineNoteText, 
   formatUsd, 
   normalizeStatusForSelect,
-  ORDER_LIST_ITEMS_PREVIEW
+  ORDER_LIST_ITEMS_PREVIEW,
+  orderItemQtyDisplay,
 } from '../utils';
 
 export default function OrdersTable({
@@ -173,7 +174,7 @@ export default function OrdersTable({
                                   </div>
                                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                                     <span className="font-bold text-blue-700 text-lg tabular-nums">
-                                      {oi.quantity}x
+                                      {orderItemQtyDisplay(oi, products)}
                                     </span>
                                     <div className="text-xs text-gray-600 flex flex-wrap gap-x-2 gap-y-0.5 font-medium">
                                       {oi.size && <span>Kod: {oi.size}</span>}

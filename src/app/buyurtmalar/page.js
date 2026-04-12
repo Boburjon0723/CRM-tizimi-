@@ -735,7 +735,7 @@ function BuyurtmalarPageContent() {
                         expandedRows.reduce((s, row) => {
                             const acc = Number(s) || 0
                             const pr = Number(row.product_price) || 0
-                            const q = parseInt(String(row.quantity ?? '0'), 10) || 0
+                            const q = parseOrderItemQty(row.quantity ?? '0')
                             return acc + pr * q
                         }, 0) * 100
                     ) / 100
@@ -745,7 +745,7 @@ function BuyurtmalarPageContent() {
                 const qtyByProductId = new Map()
                 for (const row of expandedRows) {
                     const pid = String(row.product_id)
-                    const q = parseInt(String(row.quantity ?? '0'), 10) || 0
+                    const q = parseOrderItemQty(row.quantity ?? '0')
                     qtyByProductId.set(pid, (Number(qtyByProductId.get(pid)) || 0) + q)
                 }
                 const stockIssues = []

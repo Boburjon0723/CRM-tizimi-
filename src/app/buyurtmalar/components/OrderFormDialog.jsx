@@ -12,7 +12,8 @@ import {
 import { 
   formatUsd, 
   computeOrderLineSubtotal, 
-  labelColorCanonical 
+  labelColorCanonical,
+  parseOrderItemQty,
 } from '../utils';
 
 export default function OrderFormDialog({
@@ -203,7 +204,12 @@ export default function OrderFormDialog({
                       <th className="px-3 py-2 min-w-[8rem] max-w-[16rem]">{t('orders.lineItemNote')}</th>
                       {tableConfig.showFormColorColumn && <th className="px-3 py-2 min-w-[200px]">{t('orders.lineColor')}</th>}
                       <th className="px-3 py-2 w-24">{t('orders.lineUnitPrice')}</th>
-                      <th className="px-3 py-2 w-20">{t('orders.quantity')}</th>
+                      <th className="px-3 py-2 w-24">
+                        <span className="block">{t('orders.quantity')}</span>
+                        <span className="block text-[9px] font-normal normal-case text-gray-400 leading-tight">
+                          dona / kg
+                        </span>
+                      </th>
                       <th className="px-3 py-2 w-24">{t('orders.lineSubtotal')}</th>
                       <th className="px-3 py-2 w-10 text-center"><Plus size={14} className="inline opacity-40" /></th>
                     </tr>
@@ -240,10 +246,11 @@ export default function OrderFormDialog({
                       const line = row.line;
                       const isMatrix = line.colorChoices?.length > 1;
                       const qtySum = isMatrix
-                        ? line.colorChoices.reduce((s, c) => s + (parseInt(line.colorQtyByColor?.[c] ?? '0', 10) || 0), 0)
-                        : parseInt(line.quantity, 10) || 0;
+                        ? line.colorChoices.reduce((s, c) => s + parseOrderItemQty(line.colorQtyByColor?.[c] ?? '0'), 0)
+                        : parseOrderItemQty(line.quantity);
                       const sub = computeOrderLineSubtotal(line);
                       const prodRow = line.product_id && products.find((p) => String(p.id) === String(line.product_id));
+                      const lineIsKg = Boolean(prodRow?.is_kg);
                       const stockNum = prodRow?.stock != null && prodRow.stock !== '' ? Number(prodRow.stock) : null;
                       const stockWarn = stockNum != null && Number.isFinite(stockNum) && stockNum >= 0 && qtySum > stockNum;
 
@@ -380,6 +387,11 @@ export default function OrderFormDialog({
                                  </span>
                                </div>
                              )}
+                             <span
+                               className={`block text-center text-[10px] font-bold mt-0.5 ${lineIsKg ? 'text-blue-700' : 'text-gray-500'}`}
+                             >
+                               {lineIsKg ? 'kg' : 'dona'}
+                             </span>
                              {stockWarn && (
                                <div className="flex items-center justify-center gap-1 mt-1 text-red-600" title="Omborda kam!">
                                  <AlertCircle size={14} />

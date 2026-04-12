@@ -20,6 +20,27 @@ export function parseOrderItemQty(v) {
     return n
 }
 
+/** Chop etish / ro'yxat: miqdorni qisqa matn (kg yoki dona) */
+export function formatOrderQtyPlain(q) {
+    const n = parseOrderItemQty(q)
+    if (!Number.isFinite(n) || n <= 0) return '0'
+    const r = Math.round(n * 1000) / 1000
+    return Number.isInteger(r) ? String(r) : String(r)
+}
+
+/** Buyurtma qatori: mahsulot kg bo'yicha sotilsa "2.5 kg", aks holda "3×" */
+export function orderItemQtyDisplay(oi, productsList) {
+    const prod =
+        oi?.product_id && productsList?.length
+            ? productsList.find((p) => String(p.id) === String(oi.product_id))
+            : null
+    const emb = oi?.products
+    const isKg = Boolean(prod?.is_kg ?? emb?.is_kg)
+    const q = parseOrderItemQty(oi.quantity)
+    const s = formatOrderQtyPlain(q)
+    return isKg ? `${s} kg` : `${s}×`
+}
+
 export function parseOrderItemPrice(v) {
     const n = Number(v)
     return Number.isFinite(n) ? n : 0
@@ -53,19 +74,19 @@ export const ORDERS_SELECT_FALLBACKS = [
   customers (id, name, phone),
   order_items (
     *,
-    products (id, name, size, category_id, categories (id, name, name_uz))
+    products (id, name, size, category_id, is_kg, categories (id, name, name_uz))
   )`,
     `*,
   customers (id, name, phone),
   order_items (
     *,
-    products (id, name, size, category_id)
+    products (id, name, size, category_id, is_kg)
   )`,
     `*,
   customers (id, name, phone),
   order_items (
     *,
-    products (id, name, size)
+    products (id, name, size, is_kg)
   )`,
     `*,
   customers (id, name, phone),
@@ -112,10 +133,10 @@ export async function fetchDeletedOrdersPageWithFallback() {
 }
 
 const ORDER_ITEMS_FOR_ORDER_FALLBACKS = [
-    { select: `*, products (id, name, size, category_id, categories (id, name, name_uz))`, order: 'line_index' },
-    { select: `*, products (id, name, size, category_id, categories (id, name, name_uz))`, order: 'created_at' },
-    { select: `*, products (id, name, size, category_id)`, order: 'created_at' },
-    { select: `*, products (id, name, size)`, order: 'created_at' },
+    { select: `*, products (id, name, size, category_id, is_kg, categories (id, name, name_uz))`, order: 'line_index' },
+    { select: `*, products (id, name, size, category_id, is_kg, categories (id, name, name_uz))`, order: 'created_at' },
+    { select: `*, products (id, name, size, category_id, is_kg)`, order: 'created_at' },
+    { select: `*, products (id, name, size, is_kg)`, order: 'created_at' },
     { select: '*', order: 'created_at' },
 ]
 
@@ -1031,13 +1052,13 @@ export function mergeDuplicateSourceLineIntoTarget(orderLines, targetId, sourceL
             if (tq[c] == null) tq[c] = '0'
         }
         for (const c of sourceLine.colorChoices || []) {
-            const add = parseInt(String(sourceLine.colorQtyByColor?.[c] ?? '0'), 10) || 0
+            const add = parseOrderItemQty(sourceLine.colorQtyByColor?.[c] ?? '0')
             if (add <= 0) continue
             const nk = normalizeModelKey(String(c))
             const matchKey = baseTarget.colorChoices.find((k) => normalizeModelKey(String(k)) === nk)
             const destKey = matchKey || baseTarget.colorChoices[0]
             if (!destKey) continue
-            tq[destKey] = String((parseInt(String(tq[destKey] ?? '0'), 10) || 0) + add)
+            tq[destKey] = String(parseOrderItemQty(tq[destKey] ?? '0') + add)
         }
         return { ...baseTarget, colorQtyByColor: tq, local_note: noteMerged }
     }
@@ -1047,13 +1068,13 @@ export function mergeDuplicateSourceLineIntoTarget(orderLines, targetId, sourceL
             nextTarget = mergeSourceMatrixInto(nextTarget)
         } else {
             const tq = { ...(nextTarget.colorQtyByColor || {}) }
-            const add = parseInt(String(sourceLine.quantity ?? '0'), 10) || 0
+            const add = parseOrderItemQty(sourceLine.quantity ?? '0')
             const sc = (sourceLine.color || '').trim()
             const key =
                 nextTarget.colorChoices.find((c) => normalizeModelKey(String(c)) === normalizeModelKey(sc)) ||
                 nextTarget.colorChoices[0]
             if (key && add) {
-                tq[key] = String((parseInt(String(tq[key] ?? '0'), 10) || 0) + add)
+                tq[key] = String(parseOrderItemQty(tq[key] ?? '0') + add)
             }
             nextTarget = { ...nextTarget, colorQtyByColor: tq, local_note: noteMerged }
         }
@@ -1073,13 +1094,13 @@ export function mergeDuplicateSourceLineIntoTarget(orderLines, targetId, sourceL
     } else if (sourceMatrix && !productMulti) {
         let sum = 0
         for (const c of sourceLine.colorChoices || []) {
-            sum += parseInt(String(sourceLine.colorQtyByColor?.[c] ?? '0'), 10) || 0
+            sum += parseOrderItemQty(sourceLine.colorQtyByColor?.[c] ?? '0')
         }
-        const qt = parseInt(String(nextTarget.quantity ?? '0'), 10) || 0
+        const qt = parseOrderItemQty(nextTarget.quantity ?? '0')
         nextTarget = { ...nextTarget, quantity: String(qt + sum), local_note: noteMerged }
     } else {
-        const qt = parseInt(String(nextTarget.quantity ?? '0'), 10) || 0
-        const qs = parseInt(String(sourceLine.quantity ?? '0'), 10) || 0
+        const qt = parseOrderItemQty(nextTarget.quantity ?? '0')
+        const qs = parseOrderItemQty(sourceLine.quantity ?? '0')
         nextTarget = { ...nextTarget, quantity: String(qt + qs), local_note: noteMerged }
     }
 
@@ -1111,7 +1132,7 @@ export function seedColorQtyForMatrix(line, colorOpts) {
     const out = {}
     const existing =
         line.colorQtyByColor && typeof line.colorQtyByColor === 'object' ? line.colorQtyByColor : {}
-    const qtyMain = parseInt(String(line.quantity ?? '0'), 10) || 0
+    const qtyMain = parseOrderItemQty(line.quantity ?? '0')
     const lineColor = (line.color || '').trim()
     const lineColorNorm = normalizeModelKey(lineColor)
     for (const c of colorOpts) {
@@ -1283,12 +1304,12 @@ export function computeOrderLineSubtotal(line) {
     if (matrix) {
         let rowSum = 0
         for (const c of line.colorChoices) {
-            const q = parseInt(String(line.colorQtyByColor?.[c] ?? '0'), 10) || 0
+            const q = parseOrderItemQty(line.colorQtyByColor?.[c] ?? '0')
             rowSum += pr * q
         }
         return rowSum
     }
-    const q = parseInt(String(line.quantity ?? '0'), 10) || 0
+    const q = parseOrderItemQty(line.quantity ?? '0')
     return pr * q
 }
 
