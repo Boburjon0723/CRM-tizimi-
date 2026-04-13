@@ -1656,7 +1656,13 @@ function BuyurtmalarPageContent() {
                 b.status === 'Tugallandi' ||
                 b.status === 'completed' ||
                 b.status === 'Tugallangan'
-        )
+        ),
+        cancelled: statusPick(
+            (b) =>
+                b.status === 'cancelled' ||
+                b.status === 'Bekor qilingan' ||
+                b.status === 'Bekor qilindi'
+        ),
     }
 
     const highlightOrderId = searchParams.get('highlight')
@@ -1731,13 +1737,11 @@ function BuyurtmalarPageContent() {
                 </button>
             </div>
 
-            <StatsCards 
+            <StatsCards
                 t={t}
                 statusStats={statusStats}
                 totalSumma={totalSumma}
                 filteredOrdersCount={filteredOrders.length}
-                onStatusClick={setFilterStatus}
-                activeStatus={filterStatus}
             />
 
             {ordersListView === 'active' && (
@@ -1780,8 +1784,6 @@ function BuyurtmalarPageContent() {
                 handleMergeSelectedOrders={handleMergeSelectedOrders}
                 selectedMergeCount={selectedMergeCount}
                 clearMergeSelection={clearMergeSelection}
-                filterStatus={filterStatus}
-                setFilterStatus={setFilterStatus}
                 filterCategory={filterCategory}
                 setFilterCategory={setFilterCategory}
                 orderCategoryOptions={orderCategoryOptions}

@@ -337,6 +337,14 @@ export const translations = {
             statsCountShort: 'Soni',
             statsSumShort: 'Jami',
             statsFilteredHint: 'Filtr va qidiruv bo‘yicha ko‘rinayotgan buyurtmalar yig‘indisi',
+            filterAllCategories: 'Barcha kategoriya',
+            printListMenu: 'Ro\'yxat chop',
+            printListMenuTitle: 'Filtr bo\'yicha ro\'yxatni chop etish',
+            printSelectedByCategoryShort: 'Tanlangan — kategoriya',
+            printSelectedByCategoryTitle:
+                'Tanlangan buyurtmalarni joriy kategoriya filtri bo\'yicha guruhlab chop etish',
+            tableLineEmpty: 'Bo\'sh',
+            receiptLink: 'Chek',
             trashBin: 'Karzinka',
             trashHint:
                 'Bu yerda o‘chirilgan buyurtmalar turadi. «Qaytarish» — asosiy ro‘yxatga; qizil axlat — bazadan butunlay o‘chiradi (qatorlar ham o‘chadi).',
@@ -1497,6 +1505,14 @@ export const translations = {
             statsCountShort: 'Шт.',
             statsSumShort: 'Сумма',
             statsFilteredHint: 'Сумма заказов с учётом фильтра и поиска',
+            filterAllCategories: 'Все категории',
+            printListMenu: 'Печать списка',
+            printListMenuTitle: 'Печать списка по текущему фильтру',
+            printSelectedByCategoryShort: 'Выбранные — по категории',
+            printSelectedByCategoryTitle:
+                'Сгруппировать выбранные заказы по категории (текущий фильтр категории) и печать',
+            tableLineEmpty: 'Пусто',
+            receiptLink: 'Чек',
             trashBin: 'Корзина',
             trashHint:
                 'Здесь удалённые заказы. «Вернуть» — в основной список; красная корзина — полное удаление из базы (включая строки заказа).',
@@ -2653,6 +2669,14 @@ export const translations = {
             statsCountShort: 'Count',
             statsSumShort: 'Total',
             statsFilteredHint: 'Sum of orders visible with current filters and search',
+            filterAllCategories: 'All categories',
+            printListMenu: 'Print list',
+            printListMenuTitle: 'Print the list for the current filter',
+            printSelectedByCategoryShort: 'Selected — by category',
+            printSelectedByCategoryTitle:
+                'Group selected orders by the current category filter and print',
+            tableLineEmpty: 'Empty',
+            receiptLink: 'Receipt',
             trashBin: 'Trash',
             trashHint:
                 'Deleted orders appear here. Restore moves them back to the main list; the red trash icon permanently deletes the order and its line items.',

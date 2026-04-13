@@ -131,7 +131,7 @@ export default function OrdersTable({
                   </div>
                 </td>
                 <td className="px-3 py-3 sm:px-4 sm:py-4 font-medium text-gray-900 align-top min-w-0">
-                  <div className="font-bold">{item.customer_name || item.customers?.name || 'Noma\'lum'}</div>
+                  <div className="font-bold">{item.customer_name || item.customers?.name || t('common.unknown')}</div>
                   <div className="text-xs text-gray-500 font-mono mt-0.5">{item.customer_phone || item.customers?.phone}</div>
                   {item.note && (
                     <div className="text-xs text-amber-600 italic mt-1 bg-amber-50 px-2 py-0.5 rounded inline-block">
@@ -177,7 +177,11 @@ export default function OrdersTable({
                                       {orderItemQtyDisplay(oi, products)}
                                     </span>
                                     <div className="text-xs text-gray-600 flex flex-wrap gap-x-2 gap-y-0.5 font-medium">
-                                      {oi.size && <span>Kod: {oi.size}</span>}
+                                      {oi.size && (
+                                        <span>
+                                          {t('orders.productCode')}: {oi.size}
+                                        </span>
+                                      )}
                                       {oi.color && (
                                         <span>
                                           {t('orders.lineColor')}:{' '}
@@ -233,7 +237,7 @@ export default function OrdersTable({
                       );
                     })()
                   ) : (
-                    <span className="text-gray-400 italic text-xs">Bo'sh</span>
+                    <span className="text-gray-400 italic text-xs">{t('orders.tableLineEmpty')}</span>
                   )}
                 </td>
                 <td className="px-2 py-3 sm:px-3 sm:py-4 font-bold text-gray-900 font-mono align-top whitespace-nowrap tabular-nums">
@@ -252,7 +256,7 @@ export default function OrdersTable({
                         className="text-blue-600 hover:text-blue-700 hover:underline flex items-center justify-center gap-1 mt-1 font-bold"
                       >
                         <FileText size={12} />
-                        Chek
+                        {t('orders.receiptLink')}
                       </a>
                     )}
                   </div>

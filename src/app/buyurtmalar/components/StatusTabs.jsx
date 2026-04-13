@@ -39,6 +39,7 @@ export default function StatusTabs({ t, filterStatus, setFilterStatus, statusSta
             id: 'cancelled', 
             label: t('orders.statusCancelled'), 
             icon: XCircle, 
+            count: statusStats.cancelled.count,
             color: 'bg-rose-50 text-rose-600',
             activeColor: 'bg-rose-600 text-white shadow-rose-200'
         }
