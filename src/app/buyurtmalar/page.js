@@ -17,6 +17,7 @@ import {
     FileText,
     Archive,
     RotateCcw,
+    Truck,
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -62,6 +63,7 @@ import {
     categoryLabelFromGroupedLine,
     categoryLabelFromProduct,
     sortGroupedBucketsForPrint,
+    snapshotUnitPriceUsdForErpInbound,
     buildColorQtyStacksHtml,
     buildOrderBlockHtml,
     buildPrintDocumentHtml,
@@ -113,6 +115,8 @@ function BuyurtmalarPageContent() {
     const [products, setProducts] = useState([])
     /** Ranglar lug‘ati — `product_colors` (name_uz / name_ru / name_en) */
     const [productColors, setProductColors] = useState([])
+    /** Har buyurtma uchun ERP inbound oxirgi holati (pending/accepted/rejected). */
+    const [erpInboundByOrder, setErpInboundByOrder] = useState({})
     const [loading, setLoading] = useState(true)
     const [isAdding, setIsAdding] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
@@ -165,6 +169,11 @@ function BuyurtmalarPageContent() {
     /** Saqlash ikki marta ketma-ket ishlamasin */
     const savingOrderRef = useRef(false)
     const [isSavingOrder, setIsSavingOrder] = useState(false)
+    /** Qisman jo'natish modali */
+    const [partialShipOrder, setPartialShipOrder] = useState(null)
+    const [partialShipRows, setPartialShipRows] = useState([])
+    const [partialShipLoading, setPartialShipLoading] = useState(false)
+    const [partialShipSaving, setPartialShipSaving] = useState(false)
     /** Sahifaga qaytishda qoralama — «Davom ettirish» paneli */
     const [draftBanner, setDraftBanner] = useState(false)
     /** Tahrirlanayotgan buyurtma id (yangi buyurtmada `null`) */
@@ -335,10 +344,31 @@ function BuyurtmalarPageContent() {
                 .order('name')
             if (colorLibError) console.warn('product_colors:', colorLibError)
 
+            // ERPga yuborilgan holat: jadvalda «rad etilgan» ni ko‘rsatish va qayta yuborish.
+            const orderIds = (ordersData || []).map((o) => o.id).filter(Boolean)
+            let erpInboundMap = {}
+            if (orderIds.length) {
+                const inboundRes = await supabase
+                    .from('erp_inbound_requests')
+                    .select('id, order_id, status, created_at, accepted_at')
+                    .in('order_id', orderIds)
+                    .order('created_at', { ascending: false })
+                if (inboundRes.error) {
+                    console.warn('erp_inbound_requests:', inboundRes.error)
+                } else {
+                    for (const row of inboundRes.data || []) {
+                        const key = String(row.order_id || '')
+                        if (!key || erpInboundMap[key]) continue
+                        erpInboundMap[key] = row
+                    }
+                }
+            }
+
             setOrders(ordersData || [])
             setCustomers(customersData || [])
             setProducts(productsData || [])
             setProductColors(colorLibData || [])
+            setErpInboundByOrder(erpInboundMap)
         } catch (error) {
             console.error('Error loading data:', error)
         } finally {
@@ -749,14 +779,18 @@ function BuyurtmalarPageContent() {
                     qtyByProductId.set(pid, (Number(qtyByProductId.get(pid)) || 0) + q)
                 }
                 const stockIssues = []
+                let hasStockData = false
                 for (const [pid, qty] of qtyByProductId) {
                     const prod = products.find((p) => String(p.id) === pid)
                     if (!prod) continue
                     const st = prod.stock
                     if (st != null && st !== '' && Number.isFinite(Number(st)) && Number(st) >= 0 && qty > Number(st)) {
+                        hasStockData = true
                         stockIssues.push(
-                            `${prod.name || displayProductName(prod)}: ${t('orders.stockLabel')} ${st}, ${t('orders.qtyLabel')} ${qty}`
+                            `${prod.name || displayProductName(prod)}: ${t('orders.stockAvailableLabel')} ${st}, ${t('orders.qtyLabel')} ${qty}`
                         )
+                    } else if (st != null && st !== '' && Number.isFinite(Number(st)) && Number(st) >= 0) {
+                        hasStockData = true
                     }
                 }
                 if (stockIssues.length) {
@@ -765,6 +799,8 @@ function BuyurtmalarPageContent() {
                         { title: t('orders.stockWarningTitle'), variant: 'warning' }
                     )
                     if (!ok) return
+                } else if (hasStockData) {
+                    showToast(t('orders.stockEnoughNotice') || 'Buyurtma mahsulotlari omborda yetarli', { type: 'info' })
                 }
 
                 const noteCombined = (form.note || '').trim()
@@ -853,8 +889,15 @@ function BuyurtmalarPageContent() {
                         const items = itemPayloadsEdit
                         const num = oldOrder?.order_number || orderIdStr
                         if (newStatus === 'completed') {
-                            await deductStockForCompletedOrder(orderIdStr, num, items)
-                            showToast(t('orders.stockDeductedOk') || 'Ombor qoldig\'i yangilandi', { type: 'success' })
+                            const outstanding = await getOutstandingItemsForDeduction(orderIdStr, items)
+                            if (outstanding.length > 0) {
+                                await deductStockForCompletedOrder(orderIdStr, num, outstanding)
+                                showToast(t('orders.stockDeductedOk') || 'Ombor qoldig\'i yangilandi', { type: 'success' })
+                            } else {
+                                showToast(t('orders.stockAlreadyDeducted') || 'Bu buyurtma bo‘yicha chiqim avval yozilgan', {
+                                    type: 'info',
+                                })
+                            }
                         } else if (oldStatus === 'completed') {
                             await reverseStockForOrder(orderIdStr, num, items)
                             showToast(t('orders.stockReversedOk') || 'Ombor qoldig\'i qaytarildi', { type: 'info' })
@@ -1170,6 +1213,310 @@ function BuyurtmalarPageContent() {
         showToast(t('orders.duplicateOrderOpened'), { type: 'success' })
     }
 
+    function orderItemShipKey(productId, colorRaw) {
+        return `${String(productId)}::${normalizeOrderItemColorKey(colorRaw)}`
+    }
+
+    async function loadOrderShippedMap(orderId) {
+        const out = new Map()
+        if (!orderId) return out
+        let rows = null
+        const main = await supabase
+            .from('stock_movements')
+            .select('product_id, color_key, change_amount, type')
+            .eq('order_id', orderId)
+            .in('type', ['sale', 'reversal'])
+        if (!main.error) {
+            rows = main.data || []
+        } else {
+            const m = String(main.error?.message || main.error?.code || '')
+            if (/color_key|column|does not exist|42703/i.test(m)) {
+                const fb = await supabase
+                    .from('stock_movements')
+                    .select('product_id, change_amount, type')
+                    .eq('order_id', orderId)
+                    .in('type', ['sale', 'reversal'])
+                if (fb.error) throw fb.error
+                rows = fb.data || []
+            } else {
+                throw main.error
+            }
+        }
+        for (const r of rows || []) {
+            const key = orderItemShipKey(r.product_id, r.color_key || '—')
+            const prev = Number(out.get(key)) || 0
+            const deltaAbs = Math.abs(Number(r.change_amount) || 0)
+            if (String(r.type) === 'reversal') {
+                out.set(key, Math.max(0, prev - deltaAbs))
+            } else {
+                out.set(key, prev + deltaAbs)
+            }
+        }
+        return out
+    }
+
+    async function getOutstandingItemsForDeduction(orderId, items) {
+        const shippedMap = await loadOrderShippedMap(orderId)
+        const agg = new Map()
+        for (const oi of items || []) {
+            if (!oi?.product_id) continue
+            const key = orderItemShipKey(oi.product_id, oi.color || '—')
+            const prev = Number(agg.get(key)?.quantity) || 0
+            const q = parseOrderItemQty(oi.quantity || 0)
+            agg.set(key, {
+                product_id: oi.product_id,
+                color: oi.color || null,
+                quantity: prev + q,
+            })
+        }
+        const out = []
+        for (const [key, item] of agg.entries()) {
+            const shipped = Number(shippedMap.get(key)) || 0
+            const remaining = Math.max(0, Number(item.quantity || 0) - shipped)
+            if (remaining > 0) out.push({ ...item, quantity: remaining })
+        }
+        return out
+    }
+
+    function productAvailableForOrderItem(product, colorRaw) {
+        const total = Number(product?.stock)
+        const totalSafe = Number.isFinite(total) && total >= 0 ? total : 0
+        const byColor = product?.stock_by_color
+        if (!byColor || typeof byColor !== 'object' || Array.isArray(byColor)) return totalSafe
+        const wanted = normalizeOrderItemColorKey(colorRaw || '—')
+        for (const [k, v] of Object.entries(byColor)) {
+            if (normalizeOrderItemColorKey(k) === wanted) {
+                const n = Number(v)
+                return Number.isFinite(n) && n >= 0 ? n : totalSafe
+            }
+        }
+        return totalSafe
+    }
+
+    async function openPartialShipDialog(order) {
+        if (!order) return
+        const rawItems = dedupeOrderItemsKeepNewest(order.order_items || [], products)
+        if (!rawItems.length) {
+            await showAlert(t('orders.partialNoItems'), { variant: 'warning' })
+            return
+        }
+        setPartialShipOrder(order)
+        setPartialShipRows([])
+        setPartialShipLoading(true)
+        try {
+            const shippedMap = await loadOrderShippedMap(order.id)
+            const rows = rawItems
+                .map((oi, idx) => {
+                    const ordered = parseOrderItemQty(oi.quantity || 0)
+                    const key = orderItemShipKey(oi.product_id, oi.color || '—')
+                    const shipped = Number(shippedMap.get(key)) || 0
+                    const remaining = Math.max(0, ordered - shipped)
+                    const prod = products.find((p) => String(p.id) === String(oi.product_id))
+                    const available = productAvailableForOrderItem(prod, oi.color || '—')
+                    return {
+                        key: `${key}-${idx}`,
+                        product_id: oi.product_id,
+                        product_name: oi.product_name || oi.products?.name || displayProductName(prod),
+                        size: oi.size || prod?.size || '',
+                        color: oi.color || null,
+                        ordered_qty: ordered,
+                        shipped_qty: shipped,
+                        remaining_qty: remaining,
+                        available_qty: available,
+                        ship_qty: remaining > 0 ? Math.min(remaining, available) : 0,
+                    }
+                })
+                .filter((r) => r.ordered_qty > 0)
+            setPartialShipRows(rows)
+        } catch (error) {
+            console.error('openPartialShipDialog:', error)
+            await showAlert(error?.message || String(error), {
+                title: t('orders.partialLoadError'),
+                variant: 'error',
+            })
+            setPartialShipOrder(null)
+            setPartialShipRows([])
+        } finally {
+            setPartialShipLoading(false)
+        }
+    }
+
+    async function submitPartialShipment() {
+        if (!partialShipOrder) return
+        const toShip = partialShipRows
+            .map((r) => ({
+                product_id: r.product_id,
+                color: r.color || null,
+                quantity: Math.max(0, Math.min(r.remaining_qty, parseOrderItemQty(r.ship_qty || 0))),
+                product_name: r.product_name,
+                available_qty: r.available_qty,
+            }))
+            .filter((r) => r.quantity > 0)
+        if (!toShip.length) {
+            await showAlert(t('orders.partialNothingToShip'), { variant: 'warning' })
+            return
+        }
+        const availabilityIssues = toShip.filter((r) => Number(r.quantity) > Number(r.available_qty || 0))
+        if (availabilityIssues.length) {
+            const msg = availabilityIssues
+                .map(
+                    (r) =>
+                        `${r.product_name}: ${t('orders.stockAvailableLabel')} ${r.available_qty}, ${t('orders.partialShipQtyLabel')} ${r.quantity}`
+                )
+                .join('\n')
+            const ok = await showConfirm(`${msg}\n\n${t('orders.stockWarningConfirm')}`, {
+                title: t('orders.stockWarningTitle'),
+                variant: 'warning',
+            })
+            if (!ok) return
+        }
+        setPartialShipSaving(true)
+        try {
+            const orderNum = partialShipOrder.order_number || partialShipOrder.id
+            const res = await deductStockForCompletedOrder(partialShipOrder.id, orderNum, toShip)
+            if (!res?.success) {
+                const errText = (res?.errors || [])
+                    .map((e) => `${e.product_id}: ${e.error}`)
+                    .join('\n')
+                await showAlert(errText || t('common.saveError'), {
+                    title: t('orders.partialSaveError'),
+                    variant: 'error',
+                })
+                return
+            }
+            // Qisman jo'natishdan keyin buyurtma "jarayonda" bo'lib turadi.
+            await supabase.from('orders').update({ status: 'pending' }).eq('id', partialShipOrder.id)
+            showToast(t('orders.partialSavedOk'), { type: 'success' })
+            setPartialShipOrder(null)
+            setPartialShipRows([])
+            await loadData({ silent: true })
+        } catch (error) {
+            console.error('submitPartialShipment:', error)
+            await showAlert(error?.message || String(error), {
+                title: t('orders.partialSaveError'),
+                variant: 'error',
+            })
+        } finally {
+            setPartialShipSaving(false)
+        }
+    }
+
+    /** CRM → ERP jo‘natuv: navbatga qo‘shiladi, ERP «Keltirilgan»da «Qabul qilish» bilan zaxira to‘ldiriladi */
+    async function handleErpRetailInbound(order, opts = {}) {
+        if (!order) return
+        const forceResend = opts?.forceResend === true
+        const latestInbound = erpInboundByOrder[String(order.id)] || null
+
+        const buildErpUrl = (requestId) => {
+            const base =
+                (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_NUUR_ERP_URL) ||
+                'http://localhost:5173'
+            return `${String(base).replace(/\/$/, '')}/keltirilgan?request=${requestId}`
+        }
+
+        async function maybeOpenErpUrl(url) {
+            const shouldOpen = await showConfirm(
+                'ERP sahifasini yangi oynada ochilsinmi?',
+                { title: 'ERP havola tayyor', variant: 'info' }
+            )
+            if (shouldOpen && typeof window !== 'undefined') {
+                window.open(url, '_blank', 'noopener,noreferrer')
+                return
+            }
+            try {
+                if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(url)
+                    showToast('ERP havolasi nusxalandi', { type: 'info' })
+                    return
+                }
+            } catch {
+                // clipboard ishlamasa pastdagi toast ko‘rinadi
+            }
+            showToast('ERP havolasi tayyor (qo‘lda oching)', { type: 'info' })
+        }
+
+        if (latestInbound?.status === 'pending') {
+            await showAlert(
+                'Bu buyurtma bo‘yicha ERPda kutilayotgan so‘rov bor. Avval o‘sha so‘rovni qabul yoki rad qiling.',
+                { variant: 'warning' }
+            )
+            if (latestInbound.id) {
+                await maybeOpenErpUrl(buildErpUrl(latestInbound.id))
+            }
+            return
+        }
+        if (latestInbound?.status === 'accepted' && !forceResend) {
+            await showAlert(
+                'Bu buyurtma ERPda allaqachon qabul qilingan. Qayta yuborish kerak bo‘lsa «Qayta yuborish» amali bilan yuboring.',
+                { variant: 'info' }
+            )
+            return
+        }
+        const rawItems = dedupeOrderItemsKeepNewest(order.order_items || [], products)
+        if (!rawItems.length) {
+            await showAlert(t('orders.partialNoItems'), { variant: 'warning' })
+            return
+        }
+        const items = rawItems
+            .map((oi) => ({
+                product_id: oi.product_id,
+                color: oi.color || null,
+                quantity: parseOrderItemQty(oi.quantity || 0),
+                unit_price_usd: snapshotUnitPriceUsdForErpInbound(oi, products),
+            }))
+            .filter((r) => r.product_id && r.quantity > 0)
+        if (!items.length) {
+            await showAlert(t('orders.partialNoItems'), { variant: 'warning' })
+            return
+        }
+        const ok = await showConfirm(
+            forceResend
+                ? 'Bu buyurtma ERPda rad etilgan. CRM buyurtmasidan 1:1 qilib qayta yuborilsinmi?'
+                : `Buyurtma Nuur ERP «Keltirilgan» sahifasiga jo‘natilsinmi? Do‘kon zaxirasi faqat u yerda «Qabul qilish» bosilgach to‘ldiriladi.`,
+            { title: forceResend ? 'ERPga qayta yuborish' : 'ERPga jo‘natish', variant: 'info' }
+        )
+        if (!ok) return
+        try {
+            const { data, error } = await supabase
+                .from('erp_inbound_requests')
+                .insert({
+                    order_id: order.id,
+                    items,
+                    order_number_snapshot: String(order.order_number || order.id),
+                    customer_name_snapshot: String(order.customer_name || '').trim(),
+                    status: 'pending',
+                })
+                .select('id')
+                .single()
+
+            if (error) {
+                const msg = String(error.message || '')
+                const code = error.code
+                if (code === '23505' || /unique|duplicate|erp_inbound/i.test(msg)) {
+                    await showAlert(
+                        'Bu buyurtma bo‘yicha allaqachon ERPga jo‘natilgan so‘rov mavjud. ERP «Keltirilgan» sahifasida tasdiqlang.',
+                        { variant: 'warning' }
+                    )
+                    return
+                }
+                throw error
+            }
+
+            const url = buildErpUrl(data.id)
+            await maybeOpenErpUrl(url)
+            showToast(
+                forceResend
+                    ? 'ERPga qayta yuborildi'
+                    : 'ERPga yuborildi — qabul qilishni tasdiqlang',
+                { type: 'success' }
+            )
+            await loadData({ silent: true })
+        } catch (e) {
+            console.error('handleErpRetailInbound:', e)
+            await showAlert(e?.message || String(e), { variant: 'error' })
+        }
+    }
+
     async function handleStatusChange(id, newStatus) {
         const order = orders.find((o) => o.id === id)
         if (!order) return
@@ -1198,9 +1545,16 @@ function BuyurtmalarPageContent() {
             const orderNum = order.order_number || order.id
 
             if (newStatus === 'completed') {
-                // Yangi holat 'completed' bo'lsa - ombordan ayirish
-                await deductStockForCompletedOrder(id, orderNum, orderItems)
-                showToast(t('orders.stockDeductedOk') || 'Ombor qoldig\'i yangilandi', { type: 'success' })
+                // Qisman jo'natish bo'lgan bo'lsa ham faqat qolgan qismini ayiramiz.
+                const outstanding = await getOutstandingItemsForDeduction(id, orderItems)
+                if (outstanding.length > 0) {
+                    await deductStockForCompletedOrder(id, orderNum, outstanding)
+                    showToast(t('orders.stockDeductedOk') || 'Ombor qoldig\'i yangilandi', { type: 'success' })
+                } else {
+                    showToast(t('orders.stockAlreadyDeducted') || 'Bu buyurtma bo‘yicha chiqim avval yozilgan', {
+                        type: 'info',
+                    })
+                }
             } else if (oldStatus === 'completed') {
                 // Oldin 'completed' bo'lgan bo'lsa va endi boshqasiga o'tsa - qoldiqni qaytarish
                 await reverseStockForOrder(id, orderNum, orderItems)
@@ -1597,6 +1951,21 @@ function BuyurtmalarPageContent() {
             orderFormTableRows.find((r) => r.type === 'line')?.line?.id,
         [orderFormTableRows]
     )
+    const partialShipSummary = useMemo(() => {
+        let ordered = 0
+        let shipped = 0
+        let remaining = 0
+        let now = 0
+        for (const r of partialShipRows) {
+            ordered += Number(r.ordered_qty) || 0
+            shipped += Number(r.shipped_qty) || 0
+            remaining += Number(r.remaining_qty) || 0
+            now += Number(r.ship_qty) || 0
+        }
+        const nextShipped = shipped + now
+        const percent = ordered > 0 ? Math.min(100, Math.round((nextShipped / ordered) * 100)) : 0
+        return { ordered, shipped, remaining, now, percent }
+    }, [partialShipRows])
     const ordersForList = ordersListView === 'active' ? orders : trashOrders
     const orderCategoryOptions = useMemo(() => {
         const countByLabel = new Map()
@@ -1846,12 +2215,192 @@ function BuyurtmalarPageContent() {
                 setOrderListExpandedById={setOrderListExpandedById}
                 handleStatusChange={handleStatusChange}
                 handlePrintOrder={handlePrintOrder}
+                handlePartialShip={openPartialShipDialog}
+                handleErpRetailInbound={handleErpRetailInbound}
+                erpInboundByOrder={erpInboundByOrder}
                 handleDuplicateOrder={handleDuplicateOrder}
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
                 handleRestoreOrder={handleRestoreOrder}
                 handlePermanentDelete={handlePermanentDelete}
             />
+
+            {partialShipOrder ? (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+                        onClick={() => !partialShipSaving && setPartialShipOrder(null)}
+                    />
+                    <div
+                        className="relative w-full max-w-5xl max-h-[92vh] overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-6 py-5">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 className="text-xl font-black text-slate-900">{t('orders.partialModalTitle')}</h3>
+                                    <p className="text-xs text-slate-600 mt-1">
+                                        {t('orders.partialModalHint')}
+                                    </p>
+                                    <p className="text-xs text-emerald-700 mt-2 font-bold">
+                                    {(t('orders.partialModalOrderPrefix') || 'Buyurtma')}{' '}
+                                    {partialShipOrder.order_number
+                                        ? `№${partialShipOrder.order_number}`
+                                        : `#${String(partialShipOrder.id).slice(0, 8)}`}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => !partialShipSaving && setPartialShipOrder(null)}
+                                    className="rounded-full p-2 text-slate-400 hover:bg-white/80 hover:text-slate-700"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-500">{t('orders.qtyLabel')}</p>
+                                    <p className="font-mono font-black text-slate-900 text-lg">{partialShipSummary.ordered}</p>
+                                </div>
+                                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-500">{t('orders.partialShippedCol')}</p>
+                                    <p className="font-mono font-black text-emerald-700 text-lg">{partialShipSummary.shipped}</p>
+                                </div>
+                                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-500">{t('orders.partialRemainingCol')}</p>
+                                    <p className="font-mono font-black text-amber-700 text-lg">{partialShipSummary.remaining}</p>
+                                </div>
+                                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-slate-500">{t('orders.partialShipQtyLabel')}</p>
+                                    <p className="font-mono font-black text-cyan-700 text-lg">{partialShipSummary.now}</p>
+                                </div>
+                            </div>
+                            <div className="mt-3">
+                                <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all"
+                                        style={{ width: `${partialShipSummary.percent}%` }}
+                                    />
+                                </div>
+                                <p className="mt-1 text-[11px] text-slate-600">
+                                    {t('orders.partialShippedCol')}: {partialShipSummary.percent}%
+                                </p>
+                            </div>
+                        </div>
+                        {partialShipLoading ? (
+                            <div className="px-6 py-14 text-sm text-slate-500">{t('common.loading')}</div>
+                        ) : (
+                            <>
+                                <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setPartialShipRows((prev) =>
+                                                prev.map((r) => ({
+                                                    ...r,
+                                                    ship_qty: Math.min(r.remaining_qty, r.available_qty),
+                                                }))
+                                            )
+                                        }
+                                        className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+                                    >
+                                        Maksimalni qo'yish
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setPartialShipRows((prev) => prev.map((r) => ({ ...r, ship_qty: 0 })))
+                                        }
+                                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                    >
+                                        Tozalash
+                                    </button>
+                                </div>
+                                <div className="max-h-[56vh] overflow-auto">
+                                    <table className="w-full text-sm">
+                                        <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 z-10">
+                                            <tr>
+                                                <th className="px-5 py-3 text-left">{t('orders.products')}</th>
+                                                <th className="px-4 py-3 text-right">{t('orders.qtyLabel')}</th>
+                                                <th className="px-4 py-3 text-right">{t('orders.partialShippedCol')}</th>
+                                                <th className="px-4 py-3 text-right">{t('orders.partialRemainingCol')}</th>
+                                                <th className="px-4 py-3 text-right">{t('orders.stockAvailableLabel')}</th>
+                                                <th className="px-5 py-3 text-right">{t('orders.partialShipQtyLabel')}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {partialShipRows.map((row) => (
+                                                <tr key={row.key} className="border-t border-slate-100 hover:bg-emerald-50/40">
+                                                    <td className="px-5 py-3">
+                                                        <p className="font-semibold text-slate-900">{row.product_name}</p>
+                                                        <p className="text-xs text-slate-500 mt-0.5">
+                                                            {row.size || '—'} {row.color ? `• ${row.color}` : ''}
+                                                        </p>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right font-mono">{row.ordered_qty}</td>
+                                                    <td className="px-4 py-3 text-right font-mono text-emerald-700">{row.shipped_qty}</td>
+                                                    <td className="px-4 py-3 text-right font-mono font-semibold text-amber-700">
+                                                        {row.remaining_qty}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right font-mono">{row.available_qty}</td>
+                                                    <td className="px-5 py-3 text-right">
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            max={row.remaining_qty}
+                                                            step={1}
+                                                            value={row.ship_qty}
+                                                            onChange={(e) => {
+                                                                const n = Math.max(
+                                                                    0,
+                                                                    Math.min(
+                                                                        row.remaining_qty,
+                                                                        Math.floor(Number(e.target.value) || 0)
+                                                                    )
+                                                                )
+                                                                setPartialShipRows((prev) =>
+                                                                    prev.map((x) =>
+                                                                        x.key === row.key ? { ...x, ship_qty: n } : x
+                                                                    )
+                                                                )
+                                                            }}
+                                                            className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right font-mono font-semibold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 bg-slate-50">
+                                    <p className="text-xs text-slate-500">
+                                        {t('orders.partialShipQtyLabel')}: <span className="font-black text-emerald-700">{partialShipSummary.now}</span>
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPartialShipOrder(null)}
+                                            disabled={partialShipSaving}
+                                            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                                        >
+                                            {t('common.cancel')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => void submitPartialShipment()}
+                                            disabled={partialShipSaving || partialShipSummary.now <= 0}
+                                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                        >
+                                            <Truck size={16} />
+                                            {partialShipSaving ? '...' : t('orders.partialShipAction')}
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            ) : null}
         </div>
     )
 }

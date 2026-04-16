@@ -1161,6 +1161,21 @@ export function seedColorQtyForMatrix(line, colorOpts) {
     return out
 }
 
+/**
+ * ERP `erp_inbound_requests.items` uchun bir qatorning bir dona narxi (USD) — buyurtma bilan 1:1.
+ * Bazada saqlangan `order_items.price` bo‘lsa undan, aks holda katalog `sale_price`.
+ */
+export function snapshotUnitPriceUsdForErpInbound(oi, productsList) {
+    const saved = oi?.price != null ? Number(oi.price) : NaN
+    const prod =
+        oi?.product_id && productsList?.length
+            ? productsList.find((p) => String(p.id) === String(oi.product_id))
+            : null
+    const catalog = prod ? Number(prod.sale_price) || 0 : 0
+    if (Number.isFinite(saved) && saved >= 0) return Math.round(saved * 100) / 100
+    return Math.round(catalog * 100) / 100
+}
+
 /** Bitta `order_items` qatorini forma strukturasiga */
 export function orderItemToFormLine(oi, productsList) {
     const prod = oi?.product_id ? productsList.find((p) => String(p.id) === String(oi.product_id)) : null

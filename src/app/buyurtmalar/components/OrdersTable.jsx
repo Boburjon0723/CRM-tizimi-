@@ -11,7 +11,9 @@ import {
   Copy, 
   Edit, 
   Trash2, 
-  RotateCcw 
+  RotateCcw,
+  Truck,
+  Warehouse
 } from 'lucide-react';
 import { 
   normalizeOrderItemsForList, 
@@ -38,6 +40,9 @@ export default function OrdersTable({
   setOrderListExpandedById,
   handleStatusChange,
   handlePrintOrder,
+  handlePartialShip,
+  handleErpRetailInbound,
+  erpInboundByOrder,
   handleDuplicateOrder,
   handleEdit,
   handleDelete,
@@ -99,6 +104,16 @@ export default function OrdersTable({
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filteredOrders.map((item) => (
+              (() => {
+                const itemStatus = normalizeStatusForSelect(item.status);
+                const partialDisabled = itemStatus === 'completed' || itemStatus === 'cancelled';
+                const erpInbound = erpInboundByOrder?.[String(item.id)] || null;
+                const erpInboundStatus = String(erpInbound?.status || '').toLowerCase();
+                const erpInboundDisabled =
+                  itemStatus === 'cancelled' || erpInboundStatus === 'pending';
+                const isRejectedForResend = erpInboundStatus === 'rejected';
+                const erpButtonLabel = isRejectedForResend ? 'Qayta yuborish' : 'ERP';
+                return (
               <tr
                 key={item.id}
                 id={`order-row-${item.id}`}
@@ -294,6 +309,21 @@ export default function OrdersTable({
                         ? t('orders.sourcePhoneShort')
                         : t('orders.sourceStoreShort')}
                   </span>
+                  {erpInboundStatus && (
+                    <div className="mt-1">
+                      <span
+                        className={`text-[10px] uppercase font-bold px-2 py-1 rounded-lg ${
+                          erpInboundStatus === 'accepted'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : erpInboundStatus === 'rejected'
+                              ? 'bg-rose-100 text-rose-700'
+                              : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        ERP: {erpInboundStatus === 'accepted' ? 'qabul' : erpInboundStatus === 'rejected' ? 'rad' : 'kutilmoqda'}
+                      </span>
+                    </div>
+                  )}
                 </td>
                 <td className="px-2 py-3 sm:px-3 sm:py-4 text-right align-top">
                   <div className="flex items-center justify-end gap-0.5 sm:gap-1 flex-nowrap sm:flex-wrap">
@@ -315,6 +345,45 @@ export default function OrdersTable({
                     </button>
                     {ordersListView === 'active' ? (
                       <>
+                        <button
+                          type="button"
+                          onClick={() => !partialDisabled && handlePartialShip?.(item)}
+                          disabled={partialDisabled}
+                          className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 sm:px-2.5 sm:py-2 text-[11px] sm:text-xs font-bold transition-colors ${
+                            partialDisabled
+                              ? 'border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                          }`}
+                          title={t('orders.partialShipAction')}
+                        >
+                          <Truck size={15} className="shrink-0 sm:w-4 sm:h-4" />
+                          <span className="hidden lg:inline">{t('orders.partialShipShort')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            !erpInboundDisabled &&
+                            handleErpRetailInbound?.(item, { forceResend: isRejectedForResend })
+                          }
+                          disabled={erpInboundDisabled}
+                          className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 sm:px-2.5 sm:py-2 text-[11px] sm:text-xs font-bold transition-colors ${
+                            erpInboundDisabled
+                              ? 'border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : isRejectedForResend
+                                ? 'border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100'
+                                : 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                          }`}
+                          title={
+                            isRejectedForResend
+                              ? 'ERPda rad etilgan so‘rovni qayta yuborish'
+                              : erpInboundStatus === 'pending'
+                                ? 'ERPda kutilayotgan so‘rov bor'
+                                : 'ERP «Keltirilgan»ga jo‘natish — qabul qilingach do‘kon zaxirasi to‘ldiriladi'
+                          }
+                        >
+                          <Warehouse size={15} className="shrink-0 sm:w-4 sm:h-4" />
+                          <span className="hidden xl:inline">{erpButtonLabel}</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => void handleDuplicateOrder(item)}
@@ -366,6 +435,8 @@ export default function OrdersTable({
                   </div>
                 </td>
               </tr>
+                );
+              })()
             ))}
           </tbody>
         </table>

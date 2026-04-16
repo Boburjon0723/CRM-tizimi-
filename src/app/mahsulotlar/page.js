@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { withTimeout } from '@/lib/withTimeout'
+import { mergeProductInventoryRow } from '@/lib/productInventoryMerge'
 import Header from '@/components/Header'
 import {
     Plus,
@@ -371,12 +372,22 @@ export default function Mahsulotlar() {
                     if (eCat) throw eCat
                     setCategories(catData || [])
 
-                    const { data, error: eProd } = await supabase
+                    const prInv = await supabase
                         .from('products')
-                        .select('*, categories(name)')
+                        .select(
+                            '*, categories(name), product_inventory(quantity, stock_by_color, status)'
+                        )
                         .order('created_at', { ascending: false })
-                    if (eProd) throw eProd
-                    setProducts(data || [])
+                    if (prInv.error) {
+                        const prFb = await supabase
+                            .from('products')
+                            .select('*, categories(name)')
+                            .order('created_at', { ascending: false })
+                        if (prFb.error) throw prFb.error
+                        setProducts(prFb.data || [])
+                    } else {
+                        setProducts((prInv.data || []).map(mergeProductInventoryRow))
+                    }
 
                     const { data: colorData, error: eCol } = await supabase
                         .from('product_colors')

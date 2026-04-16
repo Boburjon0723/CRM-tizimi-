@@ -1,10 +1,34 @@
 import { supabase } from '@/lib/supabase'
+import {
+    mergeProductInventoryRow,
+    deriveInventoryStatusFromQty,
+} from '@/lib/productInventoryMerge'
+import {
+    buildStockByColorMap,
+    numStock,
+    productHasColorVariants,
+    resolveColorBucketKey,
+    sumStockByColor,
+} from '@/lib/stockByColor'
+
+async function upsertProductInventory(productId, quantity, stockByColor) {
+    const q = Math.max(0, Math.floor(Number(quantity) || 0))
+    const { error } = await supabase.from('product_inventory').upsert(
+        {
+            product_id: productId,
+            quantity: q,
+            stock_by_color: stockByColor ?? null,
+            status: deriveInventoryStatusFromQty(q),
+            updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'product_id' }
+    )
+    return error
+}
 
 /**
  * Buyurtma tugallanganda (completed) mahsulotlarni ombordan ayirish.
- * @param {string} orderId - Buyurtma ID raqami (loglash uchun)
- * @param {string} orderNumber - Buyurtma ko'rinishidagi raqami (loglash uchun)
- * @param {Array} items - Order items ro'yxati {product_id, quantity, product_name}
+ * Qoldiq `product_inventory` jadvalida.
  */
 export async function deductStockForCompletedOrder(orderId, orderNumber, items) {
     if (!items || items.length === 0) return { success: true }
@@ -16,39 +40,72 @@ export async function deductStockForCompletedOrder(orderId, orderNumber, items) 
         if (!item.product_id) continue
 
         try {
-            // 1. Joriy qoldiqni olish
-            const { data: product, error: fetchError } = await supabase
+            const { data: raw, error: fetchError } = await supabase
                 .from('products')
-                .select('stock, name')
+                .select('id, name, colors, color, product_inventory(quantity, stock_by_color)')
                 .eq('id', item.product_id)
                 .single()
 
             if (fetchError) throw fetchError
 
-            const currentStock = Number(product.stock) || 0
+            const product = mergeProductInventoryRow(raw)
+
             const deductQty = Number(item.quantity) || 0
-            const newStock = currentStock - deductQty
+            if (deductQty <= 0) {
+                results.push({ product_id: item.product_id, success: true, skipped: true })
+                continue
+            }
 
-            // 2. Qoldiqni yangilash
-            const { error: updateError } = await supabase
-                .from('products')
-                .update({ stock: newStock })
-                .eq('id', item.product_id)
+            const currentStock = numStock(product.stock)
+            let newStock
+            /** @type {Record<string, number>|undefined} */
+            let newStockByColor
+            let colorKeyResolved = null
+            let reasonExtra = ''
 
-            if (updateError) throw updateError
+            if (!productHasColorVariants(product)) {
+                newStock = Math.max(0, currentStock - deductQty)
+                const err = await upsertProductInventory(item.product_id, newStock, null)
+                if (err) throw err
+            } else {
+                const bucketKey = resolveColorBucketKey(product, item.color)
+                if (bucketKey) {
+                    const map = buildStockByColorMap(product)
+                    map[bucketKey] = Math.max(0, (Number(map[bucketKey]) || 0) - deductQty)
+                    newStock = sumStockByColor(map)
+                    newStockByColor = map
+                    colorKeyResolved = bucketKey
+                    const err = await upsertProductInventory(
+                        item.product_id,
+                        newStock,
+                        newStockByColor
+                    )
+                    if (err) throw err
+                } else {
+                    newStock = Math.max(0, currentStock - deductQty)
+                    reasonExtra =
+                        ' [Rang mos kelmedi — faqat jami zaxira; stock_by_color o‘zgarmadi]'
+                    const err = await upsertProductInventory(
+                        item.product_id,
+                        newStock,
+                        product.stock_by_color ?? null
+                    )
+                    if (err) throw err
+                }
+            }
 
-            // 3. Harakatni loglash (stock_movements)
-            // Izoh: stock_movements jadvali create_stock_movements.sql da yaratilgan
-            const { error: logError } = await supabase
-                .from('stock_movements')
-                .insert([{
+            const { error: logError } = await supabase.from('stock_movements').insert([
+                {
                     product_id: item.product_id,
                     change_amount: -deductQty,
                     previous_stock: currentStock,
                     new_stock: newStock,
-                    reason: `Sotuv: Buyurtma №${orderNumber || orderId}`,
-                    type: 'sale'
-                }])
+                    reason: `Sotuv: Buyurtma №${orderNumber || orderId}${reasonExtra}`,
+                    type: 'sale',
+                    order_id: orderId,
+                    color_key: colorKeyResolved,
+                },
+            ])
 
             if (logError) {
                 console.warn(`Stock movement log failed for product ${item.product_id}:`, logError)
@@ -64,15 +121,12 @@ export async function deductStockForCompletedOrder(orderId, orderNumber, items) 
     return {
         success: errors.length === 0,
         results,
-        errors
+        errors,
     }
 }
 
 /**
- * Buyurtma holati 'completed' dan boshqasiga o'zgarganda qoldiqni qaytarish (Reversal).
- * @param {string} orderId 
- * @param {string} orderNumber 
- * @param {Array} items 
+ * Buyurtma holati 'completed' dan boshqasiga o‘zgarganda qoldiqni qaytarish.
  */
 export async function reverseStockForOrder(orderId, orderNumber, items) {
     if (!items || items.length === 0) return { success: true }
@@ -84,33 +138,72 @@ export async function reverseStockForOrder(orderId, orderNumber, items) {
         if (!item.product_id) continue
 
         try {
-            const { data: product, error: fetchError } = await supabase
+            const { data: raw, error: fetchError } = await supabase
                 .from('products')
-                .select('stock')
+                .select('id, colors, color, product_inventory(quantity, stock_by_color)')
                 .eq('id', item.product_id)
                 .single()
 
             if (fetchError) throw fetchError
 
-            const currentStock = Number(product.stock) || 0
+            const product = mergeProductInventoryRow(raw)
+
             const returnQty = Number(item.quantity) || 0
-            const newStock = currentStock + returnQty
+            if (returnQty <= 0) {
+                results.push({ product_id: item.product_id, success: true, skipped: true })
+                continue
+            }
 
-            await supabase
-                .from('products')
-                .update({ stock: newStock })
-                .eq('id', item.product_id)
+            const currentStock = numStock(product.stock)
+            let newStock
+            /** @type {Record<string, number>|undefined} */
+            let newStockByColor
+            let colorKeyResolved = null
+            let reasonExtra = ''
 
-            await supabase
-                .from('stock_movements')
-                .insert([{
+            if (!productHasColorVariants(product)) {
+                newStock = currentStock + returnQty
+                const err = await upsertProductInventory(item.product_id, newStock, null)
+                if (err) throw err
+            } else {
+                const bucketKey = resolveColorBucketKey(product, item.color)
+                if (bucketKey) {
+                    const map = { ...buildStockByColorMap(product) }
+                    map[bucketKey] = (Number(map[bucketKey]) || 0) + returnQty
+                    newStock = sumStockByColor(map)
+                    newStockByColor = map
+                    colorKeyResolved = bucketKey
+                    const err = await upsertProductInventory(
+                        item.product_id,
+                        newStock,
+                        newStockByColor
+                    )
+                    if (err) throw err
+                } else {
+                    newStock = currentStock + returnQty
+                    reasonExtra =
+                        ' [Rang mos kelmedi — faqat jami zaxira qaytarildi; stock_by_color o‘zgarmadi]'
+                    const err = await upsertProductInventory(
+                        item.product_id,
+                        newStock,
+                        product.stock_by_color ?? null
+                    )
+                    if (err) throw err
+                }
+            }
+
+            await supabase.from('stock_movements').insert([
+                {
                     product_id: item.product_id,
                     change_amount: returnQty,
                     previous_stock: currentStock,
                     new_stock: newStock,
-                    reason: `Qaytarish: Buyurtma №${orderNumber || orderId} (Holat o'zgardi)`,
-                    type: 'reversal'
-                }])
+                    reason: `Qaytarish: Buyurtma №${orderNumber || orderId} (Holat o'zgardi)${reasonExtra}`,
+                    type: 'reversal',
+                    order_id: orderId,
+                    color_key: colorKeyResolved,
+                },
+            ])
 
             results.push({ product_id: item.product_id, success: true })
         } catch (err) {
