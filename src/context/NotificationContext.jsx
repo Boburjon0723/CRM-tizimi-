@@ -161,12 +161,52 @@ export function NotificationProvider({ children }) {
             )
             .subscribe()
 
+        /** Telegram bot: dam olish so‘rovi */
+        const botLeaveChannel = supabase
+            .channel('bot_employee_leave_requests')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'employee_leave_requests' },
+                (payload) => {
+                    const row = payload.new
+                    if (!row) return
+                    const id = row.id
+                    void (async () => {
+                        let label = ''
+                        if (row.employee_id) {
+                            const { data: emp } = await supabase
+                                .from('employees')
+                                .select('name')
+                                .eq('id', row.employee_id)
+                                .maybeSingle()
+                            label = emp?.name ? String(emp.name).trim() : ''
+                        }
+                        setNotifications((prev) => [
+                            {
+                                id: `elr-${id}`,
+                                type: 'bot_leave_request',
+                                title: t('common.notifyBotLeaveTitle'),
+                                message: label || '—',
+                                data: row,
+                                read: false,
+                                timestamp: new Date(),
+                            },
+                            ...prev,
+                        ])
+                        setUnreadCount((c) => c + 1)
+                        playNotificationSound()
+                    })()
+                }
+            )
+            .subscribe()
+
         return () => {
             supabase.removeChannel(orderChannel)
             supabase.removeChannel(messageChannel)
             supabase.removeChannel(botMovementChannel)
             supabase.removeChannel(botAdvanceChannel)
             supabase.removeChannel(botSalaryChannel)
+            supabase.removeChannel(botLeaveChannel)
         }
     }, [language, t])
 

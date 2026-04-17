@@ -1,14 +1,32 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { ShoppingCart, Search, X, Package, Phone, Calendar, SearchX, Loader2 } from 'lucide-react'
 
-export default function OrdersView() {
+function normalizeStatusKey(status) {
+    const s = String(status || '').trim().toLowerCase()
+    if (s === 'yangi' || s === 'new') return 'new'
+    if (s === 'jarayonda' || s === 'pending') return 'pending'
+    if (s === 'tugallangan' || s === 'tugallandi' || s === 'completed') return 'completed'
+    if (s === 'bekor qilingan' || s === 'cancelled' || s === 'canceled') return 'cancelled'
+    return ''
+}
+
+function statusLabelForKey(key) {
+    if (key === 'new') return 'Yangi'
+    if (key === 'pending') return 'Jarayonda'
+    if (key === 'completed') return 'Tugallangan'
+    if (key === 'cancelled') return 'Bekor qilingan'
+    return ''
+}
+
+export default function OrdersView({ initialStatusFilter = null, statusFilterToken = 0 }) {
     const [loading, setLoading] = useState(true)
     const [orders, setOrders] = useState([])
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedOrder, setSelectedOrder] = useState(null)
+    const [statusFilter, setStatusFilter] = useState(initialStatusFilter)
 
     useEffect(() => {
         fetchOrders()
@@ -25,6 +43,10 @@ export default function OrdersView() {
             supabase.removeChannel(channel)
         }
     }, [])
+
+    useEffect(() => {
+        setStatusFilter(initialStatusFilter || null)
+    }, [initialStatusFilter, statusFilterToken])
 
     async function fetchOrders() {
         try {
@@ -54,13 +76,17 @@ export default function OrdersView() {
         }
     }
 
-    const filteredOrders = orders.filter(o => {
+    const filteredOrders = useMemo(() => orders.filter(o => {
+        if (statusFilter) {
+            const key = normalizeStatusKey(o.status)
+            if (key !== statusFilter) return false
+        }
         const cName = o.customer_name || o.customers?.name || ''
         const cPhone = o.customer_phone || o.customers?.phone || ''
         return (o.id && String(o.id).includes(searchQuery)) ||
                (cName && cName.toLowerCase().includes(searchQuery.toLowerCase())) ||
                (cPhone && cPhone.includes(searchQuery))
-    })
+    }), [orders, searchQuery, statusFilter])
 
     const formatCurrency = (amount) => {
         return "$" + Number(amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -89,6 +115,23 @@ export default function OrdersView() {
                 <div>
                     <h1 className="text-2xl font-bold text-white tracking-tight mb-2">Buyurtmalar</h1>
                     <p className="text-sm font-medium text-slate-400">Jami topilgan: {filteredOrders.length} ta</p>
+                    {statusFilter ? (
+                        <div className="mt-2 inline-flex items-center gap-2 rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2.5 py-1.5">
+                            <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-300">
+                                Status:
+                            </span>
+                            <span className="text-xs font-bold text-indigo-100">
+                                {statusLabelForKey(statusFilter)}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setStatusFilter(null)}
+                                className="text-[10px] font-bold text-indigo-200/90 hover:text-white transition-colors"
+                            >
+                                Tozalash
+                            </button>
+                        </div>
+                    ) : null}
                 </div>
 
                 <div className="relative">

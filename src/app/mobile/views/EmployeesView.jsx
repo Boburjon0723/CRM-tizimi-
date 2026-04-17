@@ -4,6 +4,31 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Users, CheckCircle2, AlertCircle, Clock, ChevronRight, Loader2, X, Wallet } from 'lucide-react'
 
+function employeeMapKey(id) {
+    if (id == null || id === '') return ''
+    return String(id).trim().toLowerCase()
+}
+
+function calendarYmd(value) {
+    if (value == null || value === '') return ''
+    const s = String(value).trim()
+    const head = s.length >= 10 ? s.slice(0, 10) : ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(head)) return head
+    const d = new Date(s)
+    if (Number.isNaN(d.getTime())) return ''
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+}
+
+function formatYmdUz(ymd) {
+    if (!ymd || typeof ymd !== 'string') return ''
+    const [y, m, d] = ymd.split('-')
+    if (!y || !m || !d) return ymd
+    return `${d.padStart(2, '0')}.${m.padStart(2, '0')}.${y}`
+}
+
 export default function EmployeesView() {
     const [loading, setLoading] = useState(true)
     const [selectedEmployee, setSelectedEmployee] = useState(null)
@@ -57,7 +82,34 @@ export default function EmployeesView() {
                     .gte('payment_date', startOfMonth)
                     .lte('payment_date', endOfMonth)
 
+                // 4. Fetch approved leave dates (all time), latest first
+                const { data: leaveRows, error: leaveErr } = await supabase
+                    .from('employee_leave_requests')
+                    .select('employee_id, resolved_at, created_at, status')
+                    .eq('status', 'approved')
+                    .order('resolved_at', { ascending: false })
+                    .limit(3000)
+
+                if (leaveErr) {
+                    const msg = String(leaveErr.message || '')
+                    if (!msg.includes('Could not find the table') && !msg.includes('does not exist')) {
+                        console.warn('employee_leave_requests:', leaveErr.message)
+                    }
+                }
+
+                const approvedLeaveDatesByEmployee = {}
+                for (const r of leaveRows || []) {
+                    const k = employeeMapKey(r.employee_id)
+                    if (!k) continue
+                    const iso = r.resolved_at || r.created_at
+                    const ymd = calendarYmd(iso)
+                    if (!ymd) continue
+                    if (!approvedLeaveDatesByEmployee[k]) approvedLeaveDatesByEmployee[k] = new Set()
+                    approvedLeaveDatesByEmployee[k].add(ymd)
+                }
+
                 const processed = (emps || []).map(emp => {
+                    const empKey = employeeMapKey(emp.id)
                     const advSum = (advances || [])
                         .filter(a => a.employee_id === emp.id)
                         .reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
@@ -80,10 +132,20 @@ export default function EmployeesView() {
                         type = 'warning'
                     }
 
+                    const restDaysCount = Math.max(0, Number(emp.rest_days) || 0)
+                    const approvedLeaveDates = [...(approvedLeaveDatesByEmployee[empKey] || [])]
+                        .sort((a, b) => b.localeCompare(a))
+                        .map((ymd) => formatYmdUz(ymd))
+                    const approvedVisibleDates =
+                        restDaysCount > 0 ? approvedLeaveDates.slice(0, restDaysCount) : []
+
                     return {
                         id: emp.id,
                         name: emp.name,
                         position: emp.position,
+                        phone: emp.phone || '',
+                        restDays: restDaysCount,
+                        approvedVisibleDates,
                         status,
                         type,
                         totalPaid,
@@ -219,6 +281,11 @@ export default function EmployeesView() {
                                 <div className="flex-1 min-w-0 px-1">
                                     <h4 className="text-sm font-bold text-white/90 truncate">{emp.name}</h4>
                                     <p className="text-xs text-slate-500 truncate font-medium">{emp.position}</p>
+                                    {emp.approvedVisibleDates?.length > 0 ? (
+                                        <p className="text-[10px] text-slate-400 truncate mt-1">
+                                            Dam (tasdiqlangan): <span className="font-mono">{emp.approvedVisibleDates.join(', ')}</span>
+                                        </p>
+                                    ) : null}
                                 </div>
 
                                 <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -276,6 +343,14 @@ export default function EmployeesView() {
                             <div>
                                 <h2 className="text-xl font-bold text-white tracking-tight leading-tight">{selectedEmployee.name}</h2>
                                 <p className="text-sm font-medium text-slate-400 mt-1">{selectedEmployee.position}</p>
+                                <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2.5 py-1">
+                                    <span className="text-[10px] text-indigo-200/85">Dam (tasdiqlangan):</span>
+                                    <span className="text-[11px] font-mono text-indigo-100">
+                                        {selectedEmployee.approvedVisibleDates?.length > 0
+                                            ? selectedEmployee.approvedVisibleDates.join(', ')
+                                            : 'yo‘q'}
+                                    </span>
+                                </div>
                             </div>
                         </div>
 

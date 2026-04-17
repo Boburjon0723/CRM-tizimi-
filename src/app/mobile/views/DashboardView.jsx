@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { TrendingUp, Users, Wallet, ShoppingCart, MessageCircle, MoreHorizontal, Loader2, Clock, Timer, CheckCircle, XCircle } from 'lucide-react'
 
-export default function DashboardView({ role, setActiveTab }) {
+export default function DashboardView({ role, setActiveTab, onOpenOrdersByStatus }) {
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState({
         employeesCount: 0,
@@ -109,10 +109,10 @@ export default function DashboardView({ role, setActiveTab }) {
     }, [])
 
     const stats = [
-        { label: 'Yangi buyurtmalar', value: data.statusStats.new.toString(), change: 'Yangi', icon: Clock, color: 'bg-blue-500/10 text-blue-500' },
-        { label: 'Jarayonda', value: data.statusStats.pending.toString(), change: 'Jarayonda', icon: Timer, color: 'bg-amber-500/10 text-amber-500' },
-        { label: 'Tugallangan', value: data.statusStats.completed.toString(), change: 'Tugallangan', icon: CheckCircle, color: 'bg-emerald-500/10 text-emerald-500' },
-        { label: 'Bekor qilingan', value: data.statusStats.cancelled.toString(), change: 'Bekor qilingan', icon: XCircle, color: 'bg-rose-500/10 text-rose-500' },
+        { key: 'new', label: 'Yangi buyurtmalar', value: data.statusStats.new.toString(), change: 'Yangi', icon: Clock, color: 'bg-blue-500/10 text-blue-500' },
+        { key: 'pending', label: 'Jarayonda', value: data.statusStats.pending.toString(), change: 'Jarayonda', icon: Timer, color: 'bg-amber-500/10 text-amber-500' },
+        { key: 'completed', label: 'Tugallangan', value: data.statusStats.completed.toString(), change: 'Tugallangan', icon: CheckCircle, color: 'bg-emerald-500/10 text-emerald-500' },
+        { key: 'cancelled', label: 'Bekor qilingan', value: data.statusStats.cancelled.toString(), change: 'Bekor qilingan', icon: XCircle, color: 'bg-rose-500/10 text-rose-500' },
     ]
 
     if (loading) {
@@ -137,7 +137,17 @@ export default function DashboardView({ role, setActiveTab }) {
             {/* Quick Stats Grid */}
             <section className="grid grid-cols-2 gap-4">
                 {stats.map((item, idx) => (
-                    <div key={idx} className="p-4 rounded-3xl bg-white/5 border border-white/5 backdrop-blur-xl hover:bg-white/10 transition-all duration-300 group">
+                    <button
+                        key={idx}
+                        type="button"
+                        onClick={() =>
+                            onOpenOrdersByStatus?.({
+                                statusKey: item.key,
+                                count: Number(item.value) || 0
+                            })
+                        }
+                        className="w-full text-left p-4 rounded-3xl bg-white/5 border border-white/5 backdrop-blur-xl hover:bg-white/10 transition-all duration-300 group active:scale-[0.98]"
+                    >
                         <div className={`w-10 h-10 rounded-2xl flex items-center justify-center mb-3 ${item.color} group-hover:scale-110 transition-transform`}>
                             <item.icon size={20} />
                         </div>
@@ -146,7 +156,7 @@ export default function DashboardView({ role, setActiveTab }) {
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400">
                             {item.change}
                         </span>
-                    </div>
+                    </button>
                 ))}
             </section>
 

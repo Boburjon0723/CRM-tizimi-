@@ -21,8 +21,10 @@ import {
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
+import { normalizeUzbekPhone } from '@/lib/phoneNormalize'
 
 const REPORT_PERIOD_STORAGE_KEY = 'crm_employees_report_ym'
+const MONTHLY_REST_DAYS_LIMIT = 2
 
 function getCurrentYm() {
     const d = new Date()
@@ -89,7 +91,8 @@ export default function Xodimlar() {
         monthly_salary: '',
         bonus_percent: '0',
         worked_days: '0',
-        rest_days: '0'
+        rest_days: '0',
+        phone: ''
     })
     const [reportPeriodYm, setReportPeriodYm] = useState(() => {
         if (typeof window === 'undefined') return getCurrentYm()
@@ -117,6 +120,8 @@ export default function Xodimlar() {
     const [advanceModal, setAdvanceModal] = useState(null)
     const [advanceForm, setAdvanceForm] = useState({ amount: '', advance_date: '', note: '' })
     const [advanceSaving, setAdvanceSaving] = useState(false)
+    /** employee_id (normalize) → tasdiqlangan dam olish sanalari DD.MM.YYYY (yangisi birinchi) */
+    const [approvedLeaveDatesByEmployee, setApprovedLeaveDatesByEmployee] = useState({})
     function formatUzs(n) {
         const v = Number(n) || 0
         return `${v.toLocaleString('uz-UZ')} so'm`
@@ -139,6 +144,14 @@ export default function Xodimlar() {
         const [y, m, d] = part.split('-')
         if (!d || !m || !y) return part
         return `${d}.${m}.${y}`
+    }
+
+    /** YYYY-MM-DD → DD.MM.YYYY */
+    function formatYmdUz(ymd) {
+        if (!ymd || typeof ymd !== 'string') return ''
+        const [y, m, d] = ymd.split('-')
+        if (!y || !m || !d) return ymd
+        return `${d.padStart(2, '0')}.${m.padStart(2, '0')}.${y}`
     }
 
     /**
@@ -343,6 +356,38 @@ export default function Xodimlar() {
                 setPayrollClosuresTableMissing(false)
                 setClosedPeriodYms((closeRows || []).map((r) => r.period_ym).filter(Boolean))
             }
+
+            const { data: leaveRows, error: leaveErr } = await supabase
+                .from('employee_leave_requests')
+                .select('employee_id, resolved_at, created_at, status')
+                .eq('status', 'approved')
+                .order('resolved_at', { ascending: false })
+                .limit(3000)
+
+            if (leaveErr) {
+                const msg = String(leaveErr.message || '')
+                if (!msg.includes('Could not find the table') && !msg.includes('does not exist')) {
+                    console.warn('employee_leave_requests:', leaveErr.message)
+                }
+                setApprovedLeaveDatesByEmployee({})
+            } else {
+                const byKey = {}
+                for (const r of leaveRows || []) {
+                    const k = employeeMapKey(r.employee_id)
+                    if (!k) continue
+                    const iso = r.resolved_at || r.created_at
+                    const ymd = calendarYmdForFilter(iso)
+                    if (!ymd) continue
+                    if (!byKey[k]) byKey[k] = new Set()
+                    byKey[k].add(ymd)
+                }
+                const out = {}
+                for (const k of Object.keys(byKey)) {
+                    const days = [...byKey[k]].sort((a, b) => b.localeCompare(a))
+                    out[k] = days.map((ymd) => formatYmdUz(ymd))
+                }
+                setApprovedLeaveDatesByEmployee(out)
+            }
         } catch (error) {
             console.error('Error loading employees:', error)
         } finally {
@@ -474,19 +519,66 @@ export default function Xodimlar() {
         }
     }
 
+    function scheduleDaysCap() {
+        const m = /^(\d{4})-(\d{2})$/.exec(String(reportPeriodYm || ''))
+        if (!m) return 30
+        const y = Number(m[1])
+        const mo = Number(m[2])
+        if (!Number.isFinite(y) || !Number.isFinite(mo) || mo < 1 || mo > 12) return 30
+        return new Date(y, mo, 0).getDate()
+    }
+
+    function onRestDaysChange(raw) {
+        const W = scheduleDaysCap()
+        const r = Math.max(0, parseInt(String(raw).replace(/\D/g, ''), 10) || 0)
+        const rr = Math.min(MONTHLY_REST_DAYS_LIMIT, r)
+        const w = Math.max(0, W - rr)
+        setForm((f) => ({ ...f, rest_days: String(rr), worked_days: String(w) }))
+    }
+
+    function onWorkedDaysChange(raw) {
+        const W = scheduleDaysCap()
+        const w0 = Math.max(0, parseInt(String(raw).replace(/\D/g, ''), 10) || 0)
+        const ww = Math.min(W, w0)
+        const r = Math.max(0, W - ww)
+        const rr = Math.min(MONTHLY_REST_DAYS_LIMIT, r)
+        const workedNormalized = Math.max(0, W - rr)
+        setForm((f) => ({ ...f, worked_days: String(workedNormalized), rest_days: String(rr) }))
+    }
+
     async function persistEmployee() {
         if (!form.name || !form.position || !form.monthly_salary) {
             alert(t('employees.requiredError'))
             return
         }
+        const phoneTrim = String(form.phone || '').trim()
+        if (phoneTrim) {
+            const n = normalizeUzbekPhone(phoneTrim)
+            if (!n) {
+                void showAlert(t('employees.phoneInvalidWarn'), { variant: 'warning' })
+                return
+            }
+        }
+        const restDaysRaw = parseInt(form.rest_days, 10) || 0
+        if (restDaysRaw > MONTHLY_REST_DAYS_LIMIT) {
+            void showAlert(
+                t('employees.restDaysLimitWarn').replace('{{n}}', String(MONTHLY_REST_DAYS_LIMIT)),
+                { variant: 'warning' }
+            )
+            return
+        }
         try {
+            const W = scheduleDaysCap()
+            const restDaysFinal = Math.min(MONTHLY_REST_DAYS_LIMIT, Math.max(0, restDaysRaw))
+            const workedDaysFinal = Math.max(0, W - restDaysFinal)
             const employeeData = {
                 name: form.name,
                 position: form.position,
                 monthly_salary: parseFloat(form.monthly_salary),
                 bonus_percent: parseFloat(form.bonus_percent) || 0,
-                worked_days: parseInt(form.worked_days) || 0,
-                rest_days: parseInt(form.rest_days) || 0
+                worked_days: workedDaysFinal,
+                rest_days: restDaysFinal,
+                phone: phoneTrim ? normalizeUzbekPhone(phoneTrim) : null
             }
 
             if (editId) {
@@ -498,12 +590,24 @@ export default function Xodimlar() {
                 if (error) throw error
             }
 
-            setForm({ name: '', position: '', monthly_salary: '', bonus_percent: '0', worked_days: '0', rest_days: '0' })
+            setForm({
+                name: '',
+                position: '',
+                monthly_salary: '',
+                bonus_percent: '0',
+                worked_days: '0',
+                rest_days: '0',
+                phone: ''
+            })
             setIsAdding(false)
             await loadEmployees({ silent: true })
         } catch (error) {
             console.error('Error saving employee:', error)
-            await showAlert(t('common.saveError'), { variant: 'error' })
+            const detail = error?.message || error?.error_description || String(error?.code || '')
+            await showAlert(
+                detail ? `${t('common.saveError')}\n\n${detail}` : t('common.saveError'),
+                { variant: 'error' }
+            )
         }
     }
 
@@ -535,14 +639,23 @@ export default function Xodimlar() {
             monthly_salary: item.monthly_salary.toString(),
             bonus_percent: item.bonus_percent?.toString() || '0',
             worked_days: item.worked_days?.toString() || '0',
-            rest_days: item.rest_days?.toString() || '0'
+            rest_days: item.rest_days?.toString() || '0',
+            phone: item.phone ? String(item.phone) : ''
         })
         setEditId(item.id)
         setIsAdding(true)
     }
 
     function handleCancel() {
-        setForm({ name: '', position: '', monthly_salary: '', bonus_percent: '0', worked_days: '0', rest_days: '0' })
+        setForm({
+            name: '',
+            position: '',
+            monthly_salary: '',
+            bonus_percent: '0',
+            worked_days: '0',
+            rest_days: '0',
+            phone: ''
+        })
         setEditId(null)
         setIsAdding(false)
     }
@@ -794,9 +907,22 @@ export default function Xodimlar() {
         )
     }
 
-    const filteredEmployees = employees.filter(x =>
-        x.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        x.position?.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredEmployees = employees.filter((x) => {
+        const q = searchTerm.toLowerCase().trim()
+        if (!q) return true
+        if (x.name?.toLowerCase().includes(q)) return true
+        if (x.position?.toLowerCase().includes(q)) return true
+        const digitsQ = q.replace(/\D/g, '')
+        if (digitsQ.length > 0) {
+            const ph = String(x.phone || '').replace(/\D/g, '')
+            if (ph.includes(digitsQ)) return true
+        }
+        return false
+    })
+
+    const scheduleHintText = t('employees.daysScheduleHint').replace(
+        '{{n}}',
+        String(scheduleDaysCap())
     )
 
     const monthAdvancesGrandTotalRaw = useMemo(
@@ -1219,13 +1345,27 @@ export default function Xodimlar() {
                                     min="0"
                                 />
                             </div>
+                            <div className="space-y-2 md:col-span-2 lg:col-span-3">
+                                <label className="block text-sm font-bold text-gray-700">{t('employees.phoneLabel')}</label>
+                                <input
+                                    type="tel"
+                                    autoComplete="tel"
+                                    placeholder={t('employees.phonePlaceholder')}
+                                    value={form.phone}
+                                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono text-sm"
+                                />
+                            </div>
+                            <div className="md:col-span-2 lg:col-span-3">
+                                <p className="text-xs text-gray-500 leading-relaxed">{scheduleHintText}</p>
+                            </div>
                             <div className="space-y-2">
                                 <label className="block text-sm font-bold text-gray-700">{t('employees.workedDays')}</label>
                                 <input
                                     type="number"
                                     placeholder="0"
                                     value={form.worked_days}
-                                    onChange={(e) => setForm({ ...form, worked_days: e.target.value })}
+                                    onChange={(e) => onWorkedDaysChange(e.target.value)}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                     min="0"
                                     max="31"
@@ -1237,10 +1377,10 @@ export default function Xodimlar() {
                                     type="number"
                                     placeholder="0"
                                     value={form.rest_days}
-                                    onChange={(e) => setForm({ ...form, rest_days: e.target.value })}
+                                    onChange={(e) => onRestDaysChange(e.target.value)}
                                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                     min="0"
-                                    max="31"
+                                    max={String(MONTHLY_REST_DAYS_LIMIT)}
                                 />
                             </div>
                         </div>
@@ -1302,6 +1442,10 @@ export default function Xodimlar() {
                             <tbody>
                                 {filteredEmployees.map((xodim) => {
                                     const empKey = employeeMapKey(xodim.id)
+                                    const approvedLeaveDates = approvedLeaveDatesByEmployee[empKey] || []
+                                    const restDaysCount = Math.max(0, Number(xodim.rest_days) || 0)
+                                    const approvedVisibleDates =
+                                        restDaysCount > 0 ? approvedLeaveDates.slice(0, restDaysCount) : []
                                     const contractTotal = (xodim.monthly_salary || 0) + (xodim.bonus_percent || 0)
                                     const advList = advancesByEmployee[empKey] || []
                                     const advSum = advList.reduce((s, r) => s + (r.amount || 0), 0)
@@ -1319,6 +1463,19 @@ export default function Xodimlar() {
                                             <td className="sticky left-0 z-20 bg-white group-hover:bg-blue-50/50 px-2 py-3 align-top border-b border-gray-100 shadow-[4px_0_12px_-6px_rgba(15,23,42,0.06)] w-[11rem] min-w-[11rem] max-w-[11rem]">
                                                 <div className="flex flex-col gap-1.5 min-w-0">
                                                     <span className="font-bold text-gray-900 break-words leading-snug">{xodim.name}</span>
+                                                    {xodim.phone ? (
+                                                        <span className="text-[11px] font-mono text-gray-500">{xodim.phone}</span>
+                                                    ) : null}
+                                                    {approvedVisibleDates.length > 0 ? (
+                                                        <div className="text-[10px] text-gray-600 leading-snug">
+                                                            <span className="text-gray-500">
+                                                                {t('employees.approvedLeaveDatesLabel')}{' '}
+                                                            </span>
+                                                            <span className="font-mono tabular-nums">
+                                                                {approvedVisibleDates.join(', ')}
+                                                            </span>
+                                                        </div>
+                                                    ) : null}
                                                     {salaryStatusBadge(contractTotal, advSum + salSum)}
                                                 </div>
                                             </td>

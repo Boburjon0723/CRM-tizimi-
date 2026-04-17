@@ -13,6 +13,8 @@ export default function MobilePage() {
     const [activeTab, setActiveTab] = useState('dashboard')
     const [role, setRole] = useState('admin') // Default to admin for dev
     const [showRoleSwitcher, setShowRoleSwitcher] = useState(false)
+    const [ordersStatusFilter, setOrdersStatusFilter] = useState(null)
+    const [ordersStatusFilterToken, setOrdersStatusFilterToken] = useState(0)
 
     // Roles for testing
     const roles = [
@@ -22,12 +24,34 @@ export default function MobilePage() {
         { id: 'staff', label: 'Oddiy Xodim' },
     ]
 
+    const openOrdersByStatus = ({ statusKey, count }) => {
+        const n = Number(count) || 0
+        if (n <= 0) {
+            alert('Bu status bo‘yicha buyurtma yo‘q.')
+            return
+        }
+        setOrdersStatusFilter(statusKey || null)
+        setOrdersStatusFilterToken((v) => v + 1)
+        setActiveTab('orders')
+    }
+
     const renderView = () => {
         switch (activeTab) {
             case 'dashboard':
-                return <DashboardView role={role} setActiveTab={setActiveTab} />
+                return (
+                    <DashboardView
+                        role={role}
+                        setActiveTab={setActiveTab}
+                        onOpenOrdersByStatus={openOrdersByStatus}
+                    />
+                )
             case 'orders':
-                return <OrdersView />
+                return (
+                    <OrdersView
+                        initialStatusFilter={ordersStatusFilter}
+                        statusFilterToken={ordersStatusFilterToken}
+                    />
+                )
             case 'stats':
                 return <StatsView />
             case 'employees':

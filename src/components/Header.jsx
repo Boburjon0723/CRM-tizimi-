@@ -26,7 +26,7 @@ function notificationHref(notification) {
     const ty = notification?.type
     if (ty === 'message') return '/xabarlar'
     if (ty === 'bot_finance') return '/moliya/bolimlar'
-    if (ty === 'bot_advance' || ty === 'bot_salary') return '/xodimlar'
+    if (ty === 'bot_advance' || ty === 'bot_salary' || ty === 'bot_leave_request') return '/xodimlar'
     return '/buyurtmalar'
 }
 
@@ -197,7 +197,8 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                                                 : notification.type === 'bot_finance'
                                                                   ? 'bg-amber-100'
                                                                   : notification.type === 'bot_advance' ||
-                                                                      notification.type === 'bot_salary'
+                                                                      notification.type === 'bot_salary' ||
+                                                                      notification.type === 'bot_leave_request'
                                                                     ? 'bg-violet-100'
                                                                     : 'bg-blue-100'
                                                         }`}
@@ -207,7 +208,8 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                                         ) : notification.type === 'bot_finance' ? (
                                                             <Wallet size={20} className="text-amber-800" />
                                                         ) : notification.type === 'bot_advance' ||
-                                                          notification.type === 'bot_salary' ? (
+                                                          notification.type === 'bot_salary' ||
+                                                          notification.type === 'bot_leave_request' ? (
                                                             <Users size={20} className="text-violet-700" />
                                                         ) : (
                                                             <ShoppingBag size={20} className="text-blue-600" />
