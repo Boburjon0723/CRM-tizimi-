@@ -3,6 +3,7 @@
  * Standart: o‘chiq — service worker bo‘lmaganda deploydan keyin yangi kod darhol ko‘rinadi.
  */
 const enablePwa = process.env.NEXT_PUBLIC_ENABLE_PWA === 'true'
+const isStaticExport = process.env.NEXT_STATIC_EXPORT === 'true'
 
 const withPWA = require("@ducanh2912/next-pwa").default({
   dest: 'public',
@@ -19,7 +20,7 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
+  ...(isStaticExport ? { output: 'export' } : {}),
   trailingSlash: true,
   images: {
     unoptimized: true,
