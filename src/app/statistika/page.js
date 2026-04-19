@@ -16,6 +16,8 @@ import {
     Layers,
     FolderTree,
     Printer,
+    AlertCircle,
+    AlertTriangle,
 } from 'lucide-react'
 import {
     AreaChart,
@@ -35,6 +37,7 @@ import {
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { isDeletedAtMissingError } from '@/lib/orderTrash'
+import CrmAiInsightsPanel from '@/components/CrmAiInsightsPanel'
 
 const LS_MODE = 'crm_stat_date_mode'
 const LS_DAYS = 'crm_stat_filter_days'
@@ -48,6 +51,28 @@ const TOP_N_BAR = 10
 function isOrderCompletedStatus(status) {
     const s = String(status || '').toLowerCase()
     return s === 'completed' || s === 'tugallandi' || s === 'tugallangan'
+}
+
+function dateInPeriodBounds(d, start, end) {
+    if (!(d instanceof Date) || Number.isNaN(d.getTime())) return false
+    return d >= start && d <= end
+}
+
+/** Tugallangan buyurtma uchun hisobot sanasi: `updated_at` (status o‘zgarganda), aks holda `created_at` */
+function completionAnchorDate(o) {
+    const raw =
+        o.updated_at != null && o.updated_at !== ''
+            ? o.updated_at
+            : o.created_at
+    return new Date(raw)
+}
+
+/** Savdo trendi: «hammasi» — yaratilgan kun; «tugallangan» — tugallangan (yangilangan) kun */
+function orderTrendDayKey(o, orderStatusFilter) {
+    if (orderStatusFilter === 'completed') {
+        return completionAnchorDate(o).toLocaleDateString('en-CA')
+    }
+    return new Date(o.created_at).toLocaleDateString('en-CA')
 }
 
 function periodFileStamp(start, end) {
@@ -182,9 +207,22 @@ function defaultRangeStrs() {
     }
 }
 
+/** Buyurtmalar sahifasidagi `parseOrderItemQty` bilan mos: kg/kasr miqdorlar */
 function parseItemQty(v) {
-    const n = parseInt(String(v ?? '1'), 10)
-    return Number.isFinite(n) && n >= 0 ? n : 0
+    const n = Number(v)
+    if (!Number.isFinite(n) || n < 0) return 0
+    return n
+}
+
+/** Mahsulot qatorlari (narx × dona) — kategoriya/mahsulot/kartochka yig‘indilari bir xil asosda */
+function sumOrderLineRevenue(order) {
+    let s = 0
+    for (const item of order?.order_items || []) {
+        const q = parseItemQty(item.quantity)
+        const lineQty = q > 0 ? q : 1
+        s += (Number(item.price) || 0) * lineQty
+    }
+    return s
 }
 
 /** Buyurtmalar sahifasidagi `resolvedOrderItemSizeRaw` bilan mos: model kodi */
@@ -250,6 +288,8 @@ export default function StatistikaPage() {
         finance: [],
         products: [],
     })
+    const [loadError, setLoadError] = useState(null)
+    const [partialWarning, setPartialWarning] = useState(null)
 
     const [dateMode, setDateMode] = useState('preset')
     const [filterRange, setFilterRange] = useState('30')
@@ -277,10 +317,19 @@ export default function StatistikaPage() {
     const loadData = useCallback(async () => {
         try {
             setLoading(true)
+            setLoadError(null)
+            setPartialWarning(null)
             const transPromise = supabase.from('transactions').select('*')
             const productsPromise = supabase.from('products').select('*')
 
             const [financeRes, productsRes] = await Promise.all([transPromise, productsPromise])
+
+            if (financeRes.error) {
+                console.error('Statistika transactions:', financeRes.error)
+            }
+            if (productsRes.error) {
+                console.error('Statistika products:', productsRes.error)
+            }
 
             let ordersRes = await supabase
                 .from('orders')
@@ -326,17 +375,34 @@ export default function StatistikaPage() {
                 )
             }
 
+            if (ordersRes.error) {
+                console.error('Statistika orders:', ordersRes.error)
+                const detail = ordersRes.error?.message
+                    ? ` — ${ordersRes.error.message}`
+                    : ''
+                setLoadError(`${t('statistics.loadErrorOrders')}${detail}`)
+            }
+
+            if (!ordersRes.error && (financeRes.error || productsRes.error)) {
+                const parts = []
+                if (financeRes.error) parts.push(t('statistics.loadPartialFinance'))
+                if (productsRes.error) parts.push(t('statistics.loadPartialProducts'))
+                setPartialWarning(parts.join(' '))
+            }
+
             setData({
                 orders: ordersRes.error ? [] : ordersRes.data || [],
-                finance: financeRes.data || [],
-                products: productsRes.data || [],
+                finance: financeRes.error ? [] : financeRes.data || [],
+                products: productsRes.error ? [] : productsRes.data || [],
             })
         } catch (error) {
             console.error('Error loading statistika:', error)
+            const detail = error?.message ? ` — ${error.message}` : ''
+            setLoadError(`${t('statistics.loadErrorGeneric')}${detail}`)
         } finally {
             setLoading(false)
         }
-    }, [])
+    }, [t])
 
     useEffect(() => {
         loadData()
@@ -377,54 +443,60 @@ export default function StatistikaPage() {
     const printRefCustomers = useRef(null)
     const printRefCustomerModels = useRef(null)
 
-    const ordersInPeriod = useMemo(
+    /** Davr: buyurtma yaratilgan sana (barcha statuslar uchun «hammasi» rejimi) */
+    const ordersCreatedInPeriod = useMemo(
         () =>
-            data.orders.filter((o) => {
-                const d = new Date(o.created_at)
-                return d >= periodStart && d <= periodEnd
-            }),
+            data.orders.filter((o) => dateInPeriodBounds(new Date(o.created_at), periodStart, periodEnd)),
+        [data.orders, periodStart, periodEnd]
+    )
+
+    /**
+     * Davr: tugallangan sana — `orders.updated_at` (status «tugallandi» payti), buyurtmalar jadvalidagi hisobot bilan mos.
+     * Faqat `completed` / `tugallandi` / `tugallangan` qatorlar.
+     */
+    const completedOrdersInPeriod = useMemo(
+        () =>
+            data.orders.filter(
+                (o) =>
+                    isOrderCompletedStatus(o.status) &&
+                    dateInPeriodBounds(completionAnchorDate(o), periodStart, periodEnd)
+            ),
         [data.orders, periodStart, periodEnd]
     )
 
     const filteredOrders = useMemo(() => {
-        if (orderStatusFilter === 'completed') {
-            return ordersInPeriod.filter((o) => isOrderCompletedStatus(o.status))
-        }
-        return ordersInPeriod
-    }, [ordersInPeriod, orderStatusFilter])
+        if (orderStatusFilter === 'completed') return completedOrdersInPeriod
+        return ordersCreatedInPeriod
+    }, [orderStatusFilter, completedOrdersInPeriod, ordersCreatedInPeriod])
 
     const filteredFinance = useMemo(
         () => data.finance.filter((f) => financeRowInBounds(f, periodStart, periodEnd)),
         [data.finance, periodStart, periodEnd]
     )
 
-    /** Davrdagi tugallangan buyurtmalar — kirim kartochkasi va moliya grafikidagi «kirim» ustuni */
-    const completedOrdersInPeriod = useMemo(
-        () => ordersInPeriod.filter((o) => isOrderCompletedStatus(o.status)),
-        [ordersInPeriod]
-    )
-
     const totalIncomeFromCompletedOrders = useMemo(
-        () => completedOrdersInPeriod.reduce((sum, o) => sum + (Number(o.total) || 0), 0),
+        () => completedOrdersInPeriod.reduce((sum, o) => sum + sumOrderLineRevenue(o), 0),
         [completedOrdersInPeriod]
     )
 
-    const salesTrend = {}
-    filteredOrders.forEach((o) => {
-        const day = new Date(o.created_at).toLocaleDateString('en-CA')
-        salesTrend[day] = (salesTrend[day] || 0) + (Number(o.total) || 0)
-    })
-    const salesChartData = Object.entries(salesTrend)
-        .map(([date, amount]) => ({ date, amount }))
-        .sort((a, b) => a.date.localeCompare(b.date))
+    const salesChartData = useMemo(() => {
+        const salesTrend = {}
+        for (const o of filteredOrders) {
+            const day = orderTrendDayKey(o, orderStatusFilter)
+            salesTrend[day] = (salesTrend[day] || 0) + sumOrderLineRevenue(o)
+        }
+        return Object.entries(salesTrend)
+            .map(([date, amount]) => ({ date, amount }))
+            .sort((a, b) => a.date.localeCompare(b.date))
+    }, [filteredOrders, orderStatusFilter])
 
     /** Kirim: tugallangan buyurtmalar (kun bo‘yicha); chiqim: moliya jadvalidagi xarajatlar */
     const financeChartData = useMemo(() => {
         const trend = {}
         for (const o of completedOrdersInPeriod) {
-            const day = new Date(o.created_at).toLocaleDateString('en-CA')
+            const day = completionAnchorDate(o).toLocaleDateString('en-CA')
             if (!trend[day]) trend[day] = { date: day, income: 0, expense: 0 }
-            trend[day].income += Number(o.total) || 0
+            trend[day].income += sumOrderLineRevenue(o)
         }
         for (const f of filteredFinance) {
             if (f.type !== 'expense') continue
@@ -480,9 +552,19 @@ export default function StatistikaPage() {
         [categoryAnalyticsRows]
     )
 
+    /** Kategoriya jadvali/diagramma: mahsulot qatorlari (narx × dona); kartochkalar bilan bir xil asos */
+    const revenueFromOrderLines = useMemo(
+        () => categoryAnalyticsRows.reduce((sum, r) => sum + r.revenue, 0),
+        [categoryAnalyticsRows]
+    )
+    const categoryTotalsQty = useMemo(
+        () => categoryAnalyticsRows.reduce((sum, r) => sum + r.qty, 0),
+        [categoryAnalyticsRows]
+    )
+
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-    const totalSales = filteredOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0)
+    const totalSales = filteredOrders.reduce((sum, o) => sum + sumOrderLineRevenue(o), 0)
     const totalExpense = filteredFinance
         .filter((f) => f.type === 'expense')
         .reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
@@ -566,7 +648,7 @@ export default function StatistikaPage() {
             }
             const c = map.get(key)
             c.orders += 1
-            c.total += Number(o.total) || 0
+            c.total += sumOrderLineRevenue(o)
             for (const item of o.order_items || []) {
                 const q = parseItemQty(item.quantity)
                 c.itemQty += q > 0 ? q : 1
@@ -651,6 +733,63 @@ export default function StatistikaPage() {
                 full: r.name,
             })),
         [customerAnalyticsRows]
+    )
+
+    /** Google Gemini API ga yuboriladigan yig‘ma (shaxsiy telefon yo‘q) */
+    const crmAiSummary = useMemo(
+        () => ({
+            periodLabel,
+            orderStatusFilter,
+            dateMode,
+            filterRange,
+            monthValue,
+            rangeFrom,
+            rangeTo,
+            ordersInPeriod: filteredOrders.length,
+            completedInPeriod: completedOrdersInPeriod.length,
+            totalSalesUsd: Math.round(Number(totalSales) * 100) / 100,
+            totalIncomeCompletedUsd: Math.round(Number(totalIncomeFromCompletedOrders) * 100) / 100,
+            totalExpenseUsd: Math.round(Number(totalExpense) * 100) / 100,
+            revenueFromOrderLinesUsd: Math.round(Number(revenueFromOrderLines) * 100) / 100,
+            topCategories: categoryAnalyticsRows.slice(0, 6).map((r) => ({
+                name: r.name,
+                qty: Math.round(r.qty * 1000) / 1000,
+                revenue: Math.round(r.revenue * 100) / 100,
+            })),
+            topProducts: productAnalyticsRows
+                .filter((r) => r.qty > 0)
+                .slice(0, 6)
+                .map((r) => ({
+                    name: r.name,
+                    qty: Math.round(r.qty * 1000) / 1000,
+                    revenue: Math.round(r.revenue * 100) / 100,
+                })),
+            topCustomers: customerAnalyticsRows.slice(0, 6).map((c) => ({
+                name: c.name,
+                orders: c.orders,
+                totalUsd: Math.round(Number(c.total) * 100) / 100,
+            })),
+            unsoldCatalogProducts: unsoldCount,
+        }),
+        [
+            periodLabel,
+            orderStatusFilter,
+            dateMode,
+            filterRange,
+            monthValue,
+            rangeFrom,
+            rangeTo,
+            filteredOrders.length,
+            completedOrdersInPeriod.length,
+            totalSales,
+            totalIncomeFromCompletedOrders,
+            totalExpense,
+            revenueFromOrderLines,
+            categoryAnalyticsRows,
+            productAnalyticsRows,
+            customerAnalyticsRows,
+            unsoldCount,
+        ]
     )
 
     const exportFileBase = useMemo(
@@ -956,12 +1095,36 @@ export default function StatistikaPage() {
                         type="button"
                         onClick={() => loadData()}
                         className="p-2.5 bg-white hover:bg-gray-50 rounded-xl shadow-sm border border-gray-200 transition-all text-gray-600 hover:text-blue-600"
-                        title={t('statistics.loading')}
+                        title={t('statistics.refreshData')}
                     >
                         <RefreshCcw size={20} />
                     </button>
                 </div>
             </div>
+
+            {loadError ? (
+                <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950">
+                    <div className="flex gap-2 min-w-0">
+                        <AlertCircle size={20} className="shrink-0 mt-0.5" aria-hidden />
+                        <p className="min-w-0 break-words">{loadError}</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => loadData()}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-bold text-red-800 hover:bg-red-100"
+                    >
+                        <RefreshCcw size={14} />
+                        {t('dashboard.retryLoad')}
+                    </button>
+                </div>
+            ) : null}
+
+            {!loadError && partialWarning ? (
+                <div className="mb-4 flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                    <AlertTriangle size={20} className="shrink-0 mt-0.5" aria-hidden />
+                    <p className="min-w-0 break-words">{partialWarning}</p>
+                </div>
+            ) : null}
 
             <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm text-blue-950">
                 <span className="font-bold">{t('statistics.activePeriod')}:</span>{' '}
@@ -974,6 +1137,10 @@ export default function StatistikaPage() {
                     )
                 </span>
             </div>
+
+            {!loadError ? (
+                <CrmAiInsightsPanel t={t} language={language} summary={crmAiSummary} />
+            ) : null}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
@@ -1240,6 +1407,19 @@ export default function StatistikaPage() {
                                     </tr>
                                 ))}
                             </tbody>
+                            {categoryAnalyticsRows.length > 0 ? (
+                                <tfoot>
+                                    <tr className="bg-amber-50/90 font-bold text-gray-900 border-t-2 border-amber-200">
+                                        <td className="px-3 py-2.5" colSpan={2}>
+                                            {t('statistics.categoryFooterTotal')}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right font-mono tabular-nums">{categoryTotalsQty}</td>
+                                        <td className="px-3 py-2.5 text-right font-mono tabular-nums">
+                                            ${formatUsd(revenueFromOrderLines)}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            ) : null}
                         </table>
                         {categoryAnalyticsRows.length === 0 ? (
                             <div className="text-center py-10 text-gray-400">{t('statistics.noData')}</div>

@@ -293,6 +293,7 @@ export default function Mahsulotlar() {
         description_ru: '',
         description_en: '',
         is_active: true, // web_active
+        show_in_new: false, // katalog vitrinasi «Yangi» bo‘limi (category_id o‘zgarmaydi)
         features: [], // xususiyatlar
         images: [], // ko'p rasmlar
         imageUrlInput: '', // temporary input
@@ -590,6 +591,7 @@ export default function Mahsulotlar() {
                 description_ru: form.description_ru,
                 description_en: form.description_en,
                 is_active: form.is_active,
+                show_in_new: !!form.show_in_new,
                 color: form.colors?.[0] || form.color || '', // preserve first for legacy
                 colors: form.colors || [],
                 size: form.size, // Kod
@@ -628,6 +630,7 @@ export default function Mahsulotlar() {
                 description_ru: '',
                 description_en: '',
                 is_active: true,
+                show_in_new: false,
                 features: [],
                 images: [],
                 imageUrlInput: '',
@@ -715,6 +718,7 @@ export default function Mahsulotlar() {
             description_ru: item.description_ru || '',
             description_en: item.description_en || '',
             is_active: item.is_active ?? true,
+            show_in_new: item.show_in_new === true,
             color: item.color || '',
             colors: item.colors || (item.color ? [item.color] : []),
             size: item.size || '',
@@ -746,6 +750,7 @@ export default function Mahsulotlar() {
             description_ru: '',
             description_en: '',
             is_active: true,
+            show_in_new: false,
             features: [],
             images: [],
             imageUrlInput: '',
@@ -757,7 +762,7 @@ export default function Mahsulotlar() {
             reviews: '0',
             model_3d_url: '',
             is_kg: false,
-            rope_weight_kg: ''
+            rope_weight_kg: '',
         })
         setEditId(null)
         setIsModalOpen(false)
@@ -1463,6 +1468,7 @@ export default function Mahsulotlar() {
                                 description_ru: '',
                                 description_en: '',
                                 is_active: true,
+                                show_in_new: false,
                                 features: [],
                                 images: [],
                                 imageUrlInput: '',
@@ -1473,6 +1479,8 @@ export default function Mahsulotlar() {
                                 rating: '0',
                                 reviews: '0',
                                 model_3d_url: '',
+                                is_kg: false,
+                                rope_weight_kg: '',
                             })
                             setIsModalOpen(true)
                         }}
@@ -2415,6 +2423,22 @@ export default function Mahsulotlar() {
                                             <option key={cat.id} value={cat.id}>{cat.name}</option>
                                         ))}
                                     </select>
+                                    <label className="mt-3 flex items-start gap-3 cursor-pointer rounded-xl border border-emerald-100 bg-emerald-50/80 px-3 py-2.5">
+                                        <input
+                                            type="checkbox"
+                                            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                            checked={!!form.show_in_new}
+                                            onChange={(e) =>
+                                                setForm({ ...form, show_in_new: e.target.checked })
+                                            }
+                                        />
+                                        <span className="text-sm font-medium text-emerald-900">
+                                            Katalog vitrinasida «Yangi» bo‘limida ko‘rsatish
+                                            <span className="mt-0.5 block text-xs font-normal text-emerald-800/90">
+                                                Kategoriya o‘zgarmaydi; mahsulot o‘z guruhida ham chiqadi.
+                                            </span>
+                                        </span>
+                                    </label>
                                 </div>
 
                                 {isRopeCategory && (

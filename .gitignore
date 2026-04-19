@@ -31,6 +31,11 @@ yarn-error.log*
 .env*.local
 .env
 
+# PWA dev build (next-pwa)
+/public/sw.js
+/public/sw.js.map
+/public/swe-worker-development.js
+
 # vercel
 .vercel
 
