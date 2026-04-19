@@ -6,28 +6,69 @@ import Header from '@/components/Header'
 import {
     TrendingUp,
     TrendingDown,
-    DollarSign,
     ShoppingCart,
-    Package,
     Calendar,
-    Filter,
-    RefreshCcw
+    RefreshCcw,
 } from 'lucide-react'
 import {
-    AreaChart, Area,
-    BarChart, Bar,
-    XAxis, YAxis,
+    AreaChart,
+    Area,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    PieChart, Pie, Cell,
-    Legend
+    PieChart,
+    Pie,
+    Cell,
+    Legend,
 } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 
 const STAT_FILTER_RANGE_KEY = 'crm_stat_filter_days'
 const VALID_FILTER_RANGES = ['7', '30', '90', '365']
+
+function isOrderCompletedStatus(status) {
+    const s = String(status || '').toLowerCase()
+    return s === 'completed' || s === 'tugallandi' || s === 'tugallangan'
+}
+
+function isDeletedAtMissingError(err) {
+    const m = String(err?.message || err?.code || err || '')
+    return /deleted_at|42703|PGRST204|schema cache|does not exist|column/i.test(m)
+}
+
+function startOfDay(d) {
+    const x = new Date(d)
+    x.setHours(0, 0, 0, 0)
+    return x
+}
+
+function endOfDay(d) {
+    const x = new Date(d)
+    x.setHours(23, 59, 59, 999)
+    return x
+}
+
+function dateInBounds(d, start, end) {
+    if (!(d instanceof Date) || Number.isNaN(d.getTime())) return false
+    return d >= start && d <= end
+}
+
+/** Tugallangan buyurtma: hisobot sanasi — `updated_at`, bo‘lmasa `created_at` */
+function completionAnchorDate(o) {
+    const raw = o.updated_at != null && o.updated_at !== '' ? o.updated_at : o.created_at
+    return new Date(raw)
+}
+
+function parseLineQty(v) {
+    const n = Number(v)
+    if (!Number.isFinite(n) || n < 0) return 0
+    return n
+}
 
 export default function StatistikaPage() {
     const { toggleSidebar } = useLayout()
@@ -36,19 +77,24 @@ export default function StatistikaPage() {
     const [data, setData] = useState({
         orders: [],
         finance: [],
-        products: []
+        products: [],
     })
-    const [filterRange, setFilterRange] = useState('30') // days
+    const [filterRange, setFilterRange] = useState('30')
 
     useEffect(() => {
+        try {
+            const raw = localStorage.getItem(STAT_FILTER_RANGE_KEY)
+            if (raw && VALID_FILTER_RANGES.includes(raw)) setFilterRange(raw)
+        } catch {
+            /* ignore */
+        }
         loadData()
     }, [])
 
     async function loadData() {
         try {
             setLoading(true)
-            // Load Orders with items for category analysis
-            const ordersPromise = supabase.from('orders').select(`
+            let ordersQuery = supabase.from('orders').select(`
                 *,
                 order_items (
                     quantity,
@@ -60,20 +106,33 @@ export default function StatistikaPage() {
                     )
                 )
             `)
+            ordersQuery = ordersQuery.is('deleted_at', null)
+            let ordersRes = await ordersQuery
+
+            if (ordersRes.error && isDeletedAtMissingError(ordersRes.error)) {
+                ordersRes = await supabase.from('orders').select(`
+                    *,
+                    order_items (
+                        quantity,
+                        price,
+                        product_name,
+                        products (
+                            name,
+                            categories (name)
+                        )
+                    )
+                `)
+            }
 
             const transPromise = supabase.from('transactions').select('*')
             const productsPromise = supabase.from('products').select('*')
 
-            const [ordersRes, financeRes, productsRes] = await Promise.all([
-                ordersPromise,
-                transPromise,
-                productsPromise
-            ])
+            const [financeRes, productsRes] = await Promise.all([transPromise, productsPromise])
 
             setData({
-                orders: ordersRes.data || [],
+                orders: ordersRes.error ? [] : ordersRes.data || [],
                 finance: financeRes.data || [],
-                products: productsRes.data || []
+                products: productsRes.data || [],
             })
         } catch (error) {
             console.error('Error loading statistika:', error)
@@ -82,40 +141,87 @@ export default function StatistikaPage() {
         }
     }
 
-    // Processing data for charts
+    const onFilterRangeChange = useCallback((v) => {
+        if (VALID_FILTER_RANGES.includes(v)) {
+            setFilterRange(v)
+            try {
+                localStorage.setItem(STAT_FILTER_RANGE_KEY, v)
+            } catch {
+                /* ignore */
+            }
+        }
+    }, [])
+
     const now = new Date()
-    const startDate = new Date()
-    startDate.setDate(now.getDate() - parseInt(filterRange))
+    const days = parseInt(filterRange, 10) || 30
+    const periodEnd = endOfDay(now)
+    const periodStart = startOfDay(now)
+    periodStart.setDate(periodStart.getDate() - (days - 1))
 
-    const filteredOrders = data.orders.filter(o => new Date(o.created_at) >= startDate)
-    const filteredFinance = data.finance.filter(f => new Date(f.date) >= startDate)
+    /** Yaratilgan sana bo‘yicha davr */
+    const filteredOrders = data.orders.filter((o) =>
+        dateInBounds(new Date(o.created_at), periodStart, periodEnd)
+    )
 
-    // 1. Sales Trend (by day)
+    /** Tugallangan sana (updated_at) bo‘yicha davr — kirim kartochkasi */
+    const completedOrdersInPeriod = data.orders.filter(
+        (o) =>
+            isOrderCompletedStatus(o.status) && dateInBounds(completionAnchorDate(o), periodStart, periodEnd)
+    )
+
+    const filteredFinance = data.finance.filter((f) => {
+        const raw = f.date
+        if (raw == null || raw === '') return false
+        const d =
+            typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(String(raw).trim())
+                ? new Date(`${String(raw).trim()}T12:00:00`)
+                : new Date(raw)
+        return dateInBounds(d, periodStart, periodEnd)
+    })
+
+    // Savdo trendi: yaratilgan kun bo‘yicha
     const salesTrend = {}
-    filteredOrders.forEach(o => {
-        const day = new Date(o.created_at).toLocaleDateString('en-CA') // YYYY-MM-DD
-        salesTrend[day] = (salesTrend[day] || 0) + (o.total || 0)
+    filteredOrders.forEach((o) => {
+        const day = new Date(o.created_at).toLocaleDateString('en-CA')
+        salesTrend[day] = (salesTrend[day] || 0) + (Number(o.total) || 0)
     })
     const salesChartData = Object.entries(salesTrend)
         .map(([date, amount]) => ({ date, amount }))
         .sort((a, b) => a.date.localeCompare(b.date))
 
-    // 2. Income vs Expense
+    // Moliya grafik: kirim — tugallangan buyurtmalar (kun = tugallangan sana); chiqim — jadval
     const financeTrend = {}
-    filteredFinance.forEach(f => {
-        const day = f.date
+    completedOrdersInPeriod.forEach((o) => {
+        const day = completionAnchorDate(o).toLocaleDateString('en-CA')
         if (!financeTrend[day]) financeTrend[day] = { date: day, income: 0, expense: 0 }
-        if (f.type === 'income') financeTrend[day].income += (f.amount || 0)
-        else financeTrend[day].expense += (f.amount || 0)
+        financeTrend[day].income += Number(o.total) || 0
+    })
+    filteredFinance.forEach((f) => {
+        const raw = f.date
+        let day = ''
+        if (typeof raw === 'string' && raw.trim()) {
+            day = raw.trim().slice(0, 10)
+        } else if (raw != null && raw !== '') {
+            try {
+                day = new Date(raw).toLocaleDateString('en-CA')
+            } catch {
+                return
+            }
+        }
+        if (!day) return
+        if (!financeTrend[day]) financeTrend[day] = { date: day, income: 0, expense: 0 }
+        if (f.type === 'expense') financeTrend[day].expense += Number(f.amount) || 0
     })
     const financeChartData = Object.values(financeTrend).sort((a, b) => a.date.localeCompare(b.date))
 
     const catSales = {}
-    filteredOrders.forEach(o => {
+    filteredOrders.forEach((o) => {
         if (o.order_items) {
-            o.order_items.forEach(item => {
+            o.order_items.forEach((item) => {
                 const cat = item.products?.categories?.name || 'Boshqa'
-                const amount = (item.price || 0) * (item.quantity || 1)
+                const q = parseLineQty(item.quantity)
+                const lineQty = q > 0 ? q : 1
+                const amount = (Number(item.price) || 0) * lineQty
                 catSales[cat] = (catSales[cat] || 0) + amount
             })
         }
@@ -124,17 +230,21 @@ export default function StatistikaPage() {
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.total || 0), 0)
-    const totalIncome = filteredFinance.filter(f => f.type === 'income').reduce((sum, f) => sum + (f.amount || 0), 0)
-    const totalExpense = filteredFinance.filter(f => f.type === 'expense').reduce((sum, f) => sum + (f.amount || 0), 0)
+    const totalSales = filteredOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0)
+    /** Tugallangan buyurtmalar — davr tugallangan sana bo‘yicha (buyurtmalar jadvali) */
+    const totalIncome = completedOrdersInPeriod.reduce((sum, o) => sum + (Number(o.total) || 0), 0)
+    const totalExpense = filteredFinance
+        .filter((f) => f.type === 'expense')
+        .reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
 
-    // Top Selling Products
     const productSales = {}
-    filteredOrders.forEach(o => {
+    filteredOrders.forEach((o) => {
         if (o.order_items) {
-            o.order_items.forEach(item => {
-                const name = item.product_name || item.products?.name || 'Noma\'lum'
-                productSales[name] = (productSales[name] || 0) + ((item.price || 0) * (item.quantity || 1))
+            o.order_items.forEach((item) => {
+                const name = item.product_name || item.products?.name || "Noma'lum"
+                const q = parseLineQty(item.quantity)
+                const lineQty = q > 0 ? q : 1
+                productSales[name] = (productSales[name] || 0) + (Number(item.price) || 0) * lineQty
             })
         }
     })
@@ -153,7 +263,6 @@ export default function StatistikaPage() {
             </div>
         )
     }
-
 
     return (
         <div className="max-w-7xl mx-auto px-6 pb-8">
@@ -174,7 +283,8 @@ export default function StatistikaPage() {
                     </select>
                 </div>
                 <button
-                    onClick={loadData}
+                    type="button"
+                    onClick={() => loadData()}
                     className="p-3 bg-white hover:bg-gray-50 rounded-xl shadow-sm border border-gray-200 transition-all text-gray-600 hover:text-blue-600"
                 >
                     <RefreshCcw size={20} />
@@ -189,7 +299,7 @@ export default function StatistikaPage() {
                         </div>
                         <div>
                             <p className="text-sm font-medium text-blue-100">{t('statistics.totalSalesPeriod')}</p>
-                            <p className="text-2xl font-bold mt-1">${(totalSales).toLocaleString()}</p>
+                            <p className="text-2xl font-bold mt-1">${totalSales.toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
@@ -200,7 +310,7 @@ export default function StatistikaPage() {
                         </div>
                         <div>
                             <p className="text-sm font-medium text-green-100">{t('statistics.totalIncome')}</p>
-                            <p className="text-2xl font-bold mt-1">+${(totalIncome).toLocaleString()}</p>
+                            <p className="text-2xl font-bold mt-1">+${totalIncome.toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
@@ -211,7 +321,7 @@ export default function StatistikaPage() {
                         </div>
                         <div>
                             <p className="text-sm font-medium text-red-100">{t('statistics.totalExpense')}</p>
-                            <p className="text-2xl font-bold mt-1">-${(totalExpense).toLocaleString()}</p>
+                            <p className="text-2xl font-bold mt-1">-${totalExpense.toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
@@ -237,9 +347,20 @@ export default function StatistikaPage() {
                                 <YAxis hide />
                                 <Tooltip
                                     formatter={(val) => `$${val.toLocaleString()}`}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    contentStyle={{
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                                    }}
                                 />
-                                <Area type="monotone" dataKey="amount" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSales)" strokeWidth={3} />
+                                <Area
+                                    type="monotone"
+                                    dataKey="amount"
+                                    stroke="#3b82f6"
+                                    fillOpacity={1}
+                                    fill="url(#colorSales)"
+                                    strokeWidth={3}
+                                />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
@@ -255,7 +376,11 @@ export default function StatistikaPage() {
                                 <YAxis hide />
                                 <Tooltip
                                     formatter={(val) => `$${val.toLocaleString()}`}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    contentStyle={{
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                                    }}
                                     cursor={{ fill: 'transparent' }}
                                 />
                                 <Legend wrapperStyle={{ paddingTop: '20px' }} />
@@ -286,7 +411,11 @@ export default function StatistikaPage() {
                                 </Pie>
                                 <Tooltip
                                     formatter={(val) => `$${val.toLocaleString()}`}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    contentStyle={{
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                                    }}
                                 />
                                 <Legend verticalAlign="bottom" iconType="circle" />
                             </PieChart>
@@ -298,14 +427,25 @@ export default function StatistikaPage() {
                     <h3 className="text-lg font-bold mb-6 text-gray-800">{t('statistics.topSellingProducts')}</h3>
                     <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
                         {topProducts.map((prod, idx) => (
-                            <div key={idx} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-xl transition-colors group">
+                            <div
+                                key={idx}
+                                className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-xl transition-colors group"
+                            >
                                 <div className="flex items-center gap-4">
-                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${idx < 3 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    <div
+                                        className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                            idx < 3 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+                                        }`}
+                                    >
                                         {idx + 1}
                                     </div>
-                                    <span className="text-sm font-bold text-gray-700 group-hover:text-blue-600 transition-colors">{prod.name}</span>
+                                    <span className="text-sm font-bold text-gray-700 group-hover:text-blue-600 transition-colors">
+                                        {prod.name}
+                                    </span>
                                 </div>
-                                <span className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">${prod.total?.toLocaleString()}</span>
+                                <span className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                                    ${prod.total?.toLocaleString()}
+                                </span>
                             </div>
                         ))}
                         {topProducts.length === 0 && (
