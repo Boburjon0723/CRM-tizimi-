@@ -49,7 +49,11 @@ import {
     clearNewOrderDraft,
     draftHasMeaningfulContent,
     generateDisplayOrderNumber,
-    exportOrdersToCsv,
+    buildCrmQatorlarExcelRows,
+    exportOrdersExcelRowsToFile,
+    readOrdersImportWorkbookRows,
+    groupImportedExcelRowsToOrders,
+    buildItemPayloadsFromExpandedLines,
     skuBucketKeyForOrderItem,
     dedupeOrderItemsKeepNewest,
     resolvedModelCodeForExpandedRow,
@@ -181,6 +185,8 @@ function BuyurtmalarPageContent() {
     const editIdRef = useRef(null)
     /** `handleEdit` ketma-ket chaqiruvlarida eski fetch formani buzmasin */
     const editLoadSeqRef = useRef(0)
+    const excelImportInputRef = useRef(null)
+    const [excelImportBusy, setExcelImportBusy] = useState(false)
 
     useEffect(() => {
         formRef.current = form
@@ -536,7 +542,8 @@ function BuyurtmalarPageContent() {
                         colorChoices: [],
                         colorQtyByColor: {},
                         resolveError: l.variants?.length ? t('orders.pickColorVariant') : '',
-                        readyForSort: false
+                        readyForSort: false,
+                        keepSeparate: false
                     }
                 })
             )
@@ -566,7 +573,8 @@ function BuyurtmalarPageContent() {
                         colorChoices: [],
                         colorQtyByColor: {},
                         resolveError: '',
-                        readyForSort: false
+                        readyForSort: false,
+                        keepSeparate: false
                     }
                     setOrderLines(mergeDuplicateSourceLineIntoTarget(snapshot, targetId, resolvedLine, p))
                 }
@@ -587,7 +595,8 @@ function BuyurtmalarPageContent() {
                     colorChoices: [],
                     colorQtyByColor: {},
                     resolveError: '',
-                    readyForSort: false
+                    readyForSort: false,
+                    keepSeparate: orderLinesHasDuplicateProduct(snapshot, productIdStr, lineId)
                 }
             })
         )
@@ -637,7 +646,8 @@ function BuyurtmalarPageContent() {
                     color: '',
                     image_url: product.image_url || '',
                     resolveError: '',
-                    readyForSort: false
+                    readyForSort: false,
+                    keepSeparate: false
                 }
             } else {
                 nextLine = {
@@ -651,7 +661,8 @@ function BuyurtmalarPageContent() {
                     color: colorOpts[0] || product.color || '',
                     image_url: product.image_url || '',
                     resolveError: '',
-                    readyForSort: false
+                    readyForSort: false,
+                    keepSeparate: false
                 }
             }
 
@@ -670,7 +681,10 @@ function BuyurtmalarPageContent() {
                 }
             }
 
-            setOrderLines((p) => p.map((l) => (l.id === lineId ? nextLine : l)))
+            const lineForSet = orderLinesHasDuplicateProduct(prevSnapshot, product.id, lineId)
+                ? { ...nextLine, keepSeparate: true }
+                : nextLine
+            setOrderLines((p) => p.map((l) => (l.id === lineId ? lineForSet : l)))
             return
         }
 
@@ -825,8 +839,16 @@ function BuyurtmalarPageContent() {
                     source: normalizeSourceForDb(form.source)
                 }
 
+                const sourceLineIndexMap = new Map()
                 const makeItemPayloads = (orderId) =>
                     expandedRows.map((line, idx) => {
+                        const sourceLineKeyRaw =
+                            line.source_line_id != null && String(line.source_line_id).trim() !== ''
+                                ? String(line.source_line_id).trim()
+                                : `row_${idx}`
+                        if (!sourceLineIndexMap.has(sourceLineKeyRaw)) {
+                            sourceLineIndexMap.set(sourceLineKeyRaw, sourceLineIndexMap.size)
+                        }
                         const prod = products.find((p) => String(p.id) === String(line.product_id))
                         const qtyRaw = parseOrderItemQty(line.quantity)
                         const qty = qtyRaw > 0 ? qtyRaw : 1
@@ -862,7 +884,10 @@ function BuyurtmalarPageContent() {
                             color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
                             image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null,
                             line_note: lineNoteDb,
-                            line_index: idx
+                            __separateKey: line.source_line_id != null && String(line.source_line_id).trim() !== ''
+                                ? String(line.source_line_id).trim()
+                                : '',
+                            line_index: sourceLineIndexMap.get(sourceLineKeyRaw) ?? idx
                         }
                     })
 
@@ -2036,6 +2061,228 @@ function BuyurtmalarPageContent() {
 
     const highlightOrderId = searchParams.get('highlight')
 
+    function resolveProductForExcelImportRow(row) {
+        const pid = row.product_id
+        if (pid !== undefined && pid !== null && String(pid).trim() !== '') {
+            const p = products.find((x) => String(x.id) === String(pid).trim())
+            if (p) return { list: [p], reason: null }
+        }
+        const code = String(row.model_code || '').trim()
+        if (!code) return { list: [], reason: 'empty' }
+        return getProductsByModelCode(code)
+    }
+
+    async function persistImportedExcelOrderGroup(group) {
+        const first = group[0]
+        const linesForMerge = []
+        for (const row of group) {
+            const res = resolveProductForExcelImportRow(row)
+            if (!res.list?.length) {
+                const msg =
+                    res.reason === 'empty'
+                        ? t('orders.codeEmpty')
+                        : res.reason === 'ambiguous'
+                          ? t('orders.codeAmbiguous')
+                          : t('orders.codeNotFound')
+                throw new Error(msg)
+            }
+            if (res.list.length > 1) {
+                throw new Error(
+                    `${t('orders.codeAmbiguous')} (${String(row.model_code || '').trim() || '—'})`
+                )
+            }
+            const product = res.list[0]
+            const qty = parseOrderItemQty(row.quantity)
+            if (qty <= 0) throw new Error(t('orders.excelImportBadQty'))
+            const up = Number(row.unit_price)
+            const price =
+                Number.isFinite(up) && up >= 0
+                    ? Math.round(up * 100) / 100
+                    : Number(product.sale_price) || 0
+            linesForMerge.push({
+                product_id: product.id,
+                product_name: String(row.product_name || '').trim() || displayProductName(product),
+                product_price: price,
+                quantity: String(qty),
+                color: String(row.color || '').trim(),
+                codeInput:
+                    String(row.model_code || '').trim() ||
+                    (product.size ? String(product.size) : ''),
+                line_note: String(row.line_note || '').trim()
+            })
+        }
+        const expandedRows = mergeExpandedRowsForSubmit(linesForMerge, products)
+        if (!expandedRows.length) throw new Error(t('orders.orderLinesEmpty'))
+        const itemPayloads = mergeOrderItemPayloadsForDb(
+            buildItemPayloadsFromExpandedLines('new', expandedRows, products),
+            products
+        )
+        if (!itemPayloads.length) throw new Error(t('orders.orderLinesEmpty'))
+        const totalSum =
+            Math.round(itemPayloads.reduce((s, p) => s + (Number(p.subtotal) || 0), 0) * 100) / 100
+
+        const st = normalizeStatusForSelect(first.order_status || 'completed')
+        const statusDb = st === 'completed' ? 'completed' : st
+
+        const baseOrderPayload = {
+            customer_id: null,
+            customer_name: (first.customer_name || '').trim() || 'Mijoz',
+            customer_phone: (first.customer_phone || '').trim(),
+            total: totalSum,
+            status: statusDb,
+            note: (first.order_note || '').trim(),
+            source: normalizeSourceForDb(first.order_source || 'dokon')
+        }
+        const pd = first.payment_detail ?? first.payment_method_detail
+        if (pd != null && String(pd).trim()) {
+            baseOrderPayload.payment_method_detail = String(pd).trim()
+        }
+
+        const displayOrderNo = generateDisplayOrderNumber()
+        let insertPayload = { ...baseOrderPayload, order_number: displayOrderNo }
+        const rawCa = first.order_created_at
+        const parseImportedCreatedAtIso = (raw) => {
+            const s = String(raw ?? '').trim()
+            if (!s) return null
+            const direct = new Date(s)
+            if (!Number.isNaN(direct.getTime())) return direct.toISOString()
+            const m = s.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?$/)
+            if (!m) return null
+            const dd = Number(m[1])
+            const mm = Number(m[2])
+            const yyRaw = Number(m[3])
+            const hh = Number(m[4] || 0)
+            const mi = Number(m[5] || 0)
+            const yy = yyRaw < 100 ? 2000 + yyRaw : yyRaw
+            const dt = new Date(yy, mm - 1, dd, hh, mi, 0)
+            if (Number.isNaN(dt.getTime())) return null
+            return dt.toISOString()
+        }
+        const createdAtIso = parseImportedCreatedAtIso(rawCa)
+        if (createdAtIso) {
+            insertPayload.created_at = createdAtIso
+        }
+
+        let ins = await supabase.from('orders').insert([insertPayload]).select().single()
+        const errMsg = ins.error ? String(ins.error.message || ins.error) : ''
+        if (ins.error && /order_number|column.*does not exist|schema cache/i.test(errMsg)) {
+            insertPayload = {
+                ...baseOrderPayload,
+                note: `${t('orders.orderNumberPrefix')} ${displayOrderNo}\n${baseOrderPayload.note || ''}`
+            }
+            if (createdAtIso) insertPayload.created_at = createdAtIso
+            ins = await supabase.from('orders').insert([insertPayload]).select().single()
+        }
+        if (ins.error) throw ins.error
+
+        const orderId = ins.data?.id
+        if (!orderId) throw new Error('orders.insert: no id')
+        const rowsInsert = itemPayloads.map((p, idx) => ({
+            ...p,
+            order_id: orderId,
+            line_index: typeof p.line_index === 'number' ? p.line_index : idx
+        }))
+
+        const { error: itemError } = await supabase.from('order_items').insert(rowsInsert)
+        if (itemError) {
+            await supabase.from('orders').delete().eq('id', orderId)
+            throw itemError
+        }
+
+        if (baseOrderPayload.status === 'completed') {
+            await deductStockForCompletedOrder(orderId, displayOrderNo, rowsInsert)
+        }
+    }
+
+    async function handleExportSelectedOrdersExcel(includeImages = true) {
+        if (!selectedOrders.length) {
+            void showAlert(t('orders.excelExportSelectFirst'), { variant: 'warning' })
+            return
+        }
+        const rows = buildCrmQatorlarExcelRows(selectedOrders, products, {
+            onlyCompleted: false,
+            includePhotoColumn: includeImages
+        })
+        if (!rows.length) {
+            void showAlert(t('orders.excelExportNoLines'), { variant: 'warning' })
+            return
+        }
+        const totals = rows.reduce(
+            (acc, row) => {
+                const qty = Number(row?.['Кол-во'])
+                const sum = Number(row?.['Сумма'])
+                if (Number.isFinite(qty)) acc.qty += qty
+                if (Number.isFinite(sum)) acc.sum += sum
+                return acc
+            },
+            { qty: 0, sum: 0 }
+        )
+        const qtyLabel = Number.isInteger(totals.qty) ? String(totals.qty) : String(Math.round(totals.qty * 1000) / 1000)
+        const sumLabel = formatUsd(Math.round(totals.sum * 100) / 100)
+        const stamp = new Date().toISOString().slice(0, 10)
+        await exportOrdersExcelRowsToFile(rows, `crm-buyurtmalar-${stamp}.xlsx`, 'CRM_qatorlar', {
+            includeEmbeddedImages: includeImages
+        })
+        showToast(
+            `${selectedOrders.length} ${t('orders.excelExportToastOrders')}, ${rows.length} ${t('orders.excelExportToastLines')} — ${t('orders.excelExportToastTotalQty')}: ${qtyLabel}, ${t('orders.excelExportToastTotalAmount')}: $${sumLabel} — ${includeImages ? t('orders.excelExportSavedWithImages') : t('orders.excelExportSavedWithoutImages')}`,
+            { type: 'success' }
+        )
+    }
+
+    async function handleExcelImportFileChange(e) {
+        const file = e.target.files?.[0]
+        if (e.target) e.target.value = ''
+        if (!file || excelImportBusy) return
+        setExcelImportBusy(true)
+        try {
+            const buf = await file.arrayBuffer()
+            const rawRows = readOrdersImportWorkbookRows(buf)
+            if (!rawRows.length) {
+                await showAlert(t('orders.excelImportNoRows'), { variant: 'warning' })
+                return
+            }
+            const groups = groupImportedExcelRowsToOrders(rawRows)
+            const validGroups = groups.filter((g) => g.length)
+            if (!validGroups.length) {
+                await showAlert(t('orders.excelImportNoRows'), { variant: 'warning' })
+                return
+            }
+            const ok = await showConfirm(
+                `${t('orders.excelImportConfirm')} (${validGroups.length})`,
+                { variant: 'info' }
+            )
+            if (!ok) return
+
+            let okCount = 0
+            const errLines = []
+            for (let gi = 0; gi < validGroups.length; gi++) {
+                try {
+                    await persistImportedExcelOrderGroup(validGroups[gi])
+                    okCount++
+                } catch (err) {
+                    errLines.push(`${gi + 1}. ${err?.message || String(err)}`)
+                }
+            }
+            await loadData({ silent: true })
+            if (errLines.length) {
+                await showAlert(
+                    `${t('orders.excelImportPartial')} ${okCount}/${validGroups.length}\n\n${errLines.join('\n')}`,
+                    { variant: 'warning' }
+                )
+            } else {
+                showToast(`${okCount} ${t('orders.excelImportDone')}`, { type: 'success' })
+            }
+        } catch (err) {
+            console.error(err)
+            await showAlert(err?.message || String(err), {
+                title: t('orders.excelImportErrorTitle'),
+                variant: 'error'
+            })
+        } finally {
+            setExcelImportBusy(false)
+        }
+    }
+
     useEffect(() => {
         if (loading || !highlightOrderId || ordersListView !== 'active') return
         const inList = filteredOrders.some((o) => String(o.id) === highlightOrderId)
@@ -2171,6 +2418,11 @@ function BuyurtmalarPageContent() {
                 setMergeSourceOrderIds={setMergeSourceOrderIds}
                 setIsAdding={setIsAdding}
                 createEmptyOrderLine={createEmptyOrderLine}
+                handleExportSelectedOrdersExcel={handleExportSelectedOrdersExcel}
+                selectedOrdersCount={selectedOrders.length}
+                excelImportInputRef={excelImportInputRef}
+                handleExcelImportFileChange={handleExcelImportFileChange}
+                excelImportBusy={excelImportBusy}
             />
 
             <OrderFormDialog

@@ -521,7 +521,7 @@ export default function StatistikaPage() {
     /** Kategoriya: sotilgan dona + qator summasi (diagramma — summa ulushi) */
     const categoryAnalyticsRows = useMemo(() => {
         const map = new Map()
-        for (const o of filteredOrders) {
+        for (const o of completedOrdersInPeriod) {
             for (const item of o.order_items || []) {
                 const catRaw = item.products?.categories?.name
                 const cat =
@@ -564,7 +564,7 @@ export default function StatistikaPage() {
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-    const totalSales = filteredOrders.reduce((sum, o) => sum + sumOrderLineRevenue(o), 0)
+    const totalSales = completedOrdersInPeriod.reduce((sum, o) => sum + sumOrderLineRevenue(o), 0)
     const totalExpense = filteredFinance
         .filter((f) => f.type === 'expense')
         .reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
@@ -583,7 +583,7 @@ export default function StatistikaPage() {
                 revenue: 0,
             })
         }
-        for (const o of filteredOrders) {
+        for (const o of completedOrdersInPeriod) {
             for (const item of o.order_items || []) {
                 const qty = parseItemQty(item.quantity)
                 const q = qty > 0 ? qty : 1
@@ -626,7 +626,7 @@ export default function StatistikaPage() {
     /** Mijozlar: buyurtma jadvalidagi ism/telefon/id */
     const customerAnalyticsRows = useMemo(() => {
         const map = new Map()
-        for (const o of filteredOrders) {
+        for (const o of completedOrdersInPeriod) {
             const nameRaw = (o.customer_name || o.customers?.name || '').trim()
             const phoneRaw = (o.customer_phone || o.customers?.phone || '').trim()
             const name = nameRaw || t('common.unknown')
@@ -660,14 +660,14 @@ export default function StatistikaPage() {
             return b.orders - a.orders
         })
         return list
-    }, [filteredOrders, t])
+    }, [completedOrdersInPeriod, t])
 
     /** Mijoz × model (katalog kodi): qaysi modeldan qancha olgani */
     const customerModelAnalyticsRows = useMemo(() => {
         const totalByCust = new Map(customerAnalyticsRows.map((c) => [c.key, Number(c.total) || 0]))
         const agg = new Map()
 
-        for (const o of filteredOrders) {
+        for (const o of completedOrdersInPeriod) {
             const nameRaw = (o.customer_name || o.customers?.name || '').trim()
             const phoneRaw = (o.customer_phone || o.customers?.phone || '').trim()
             const name = nameRaw || t('common.unknown')
@@ -710,7 +710,7 @@ export default function StatistikaPage() {
             return String(a.modelCode).localeCompare(String(b.modelCode), 'uz', { numeric: true, sensitivity: 'base' })
         })
         return list
-    }, [customerAnalyticsRows, data.products, filteredOrders, t])
+    }, [customerAnalyticsRows, data.products, completedOrdersInPeriod, t])
 
     const topProductsBarData = useMemo(
         () =>

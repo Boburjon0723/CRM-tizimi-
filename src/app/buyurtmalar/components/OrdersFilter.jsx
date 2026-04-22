@@ -12,6 +12,10 @@ import {
   Printer,
   ChevronDown,
   Layers,
+  FileSpreadsheet,
+  Image,
+  ImageOff,
+  Upload,
 } from 'lucide-react';
 
 export default function OrdersFilter({
@@ -43,11 +47,22 @@ export default function OrdersFilter({
   setMergeSourceOrderIds,
   setIsAdding,
   createEmptyOrderLine,
+  handleExportSelectedOrdersExcel,
+  selectedOrdersCount,
+  excelImportInputRef,
+  handleExcelImportFileChange,
+  excelImportBusy,
 }) {
   const printDetailsRef = useRef(null);
+  const excelDetailsRef = useRef(null);
 
   const closePrintMenu = () => {
     const el = printDetailsRef.current;
+    if (el && typeof el.open === 'boolean') el.open = false;
+  };
+
+  const closeExcelMenu = () => {
+    const el = excelDetailsRef.current;
     if (el && typeof el.open === 'boolean') el.open = false;
   };
 
@@ -190,6 +205,76 @@ export default function OrdersFilter({
                 </button>
               </div>
             </details>
+
+            {ordersListView === 'active' && (
+              <>
+                <details ref={excelDetailsRef} className="relative">
+                  <summary
+                    className={`inline-flex list-none items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs h-[38px] [&::-webkit-details-marker]:hidden ${
+                      selectedOrdersCount > 0
+                        ? 'cursor-pointer bg-slate-700 hover:bg-slate-800 text-white'
+                        : 'cursor-not-allowed bg-gray-100 text-gray-400 pointer-events-none'
+                    }`}
+                    title={t('orders.excelExportSelectedTitle')}
+                    aria-label={t('orders.excelExportSelectedTitle')}
+                  >
+                    <FileSpreadsheet size={15} />
+                    <span className="hidden sm:inline">{t('orders.excelExportSelected')}</span>
+                    {selectedOrdersCount > 0 && (
+                      <span className="min-w-[1.1rem] rounded-full bg-white/20 px-1 text-center text-[10px] font-bold tabular-nums leading-none py-0.5">
+                        {selectedOrdersCount}
+                      </span>
+                    )}
+                    <ChevronDown size={14} className="opacity-90" />
+                  </summary>
+                  <div className="absolute right-0 top-full z-40 mt-1 min-w-[min(100vw-2rem,17rem)] rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-slate-50"
+                      onClick={() => {
+                        handleExportSelectedOrdersExcel(true);
+                        closeExcelMenu();
+                      }}
+                    >
+                      <Image size={14} className="shrink-0 text-slate-700" />
+                      <span>{t('orders.excelExportModeWithImages')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-slate-50"
+                      onClick={() => {
+                        handleExportSelectedOrdersExcel(false);
+                        closeExcelMenu();
+                      }}
+                    >
+                      <ImageOff size={14} className="shrink-0 text-slate-700" />
+                      <span>{t('orders.excelExportModeWithoutImages')}</span>
+                    </button>
+                  </div>
+                </details>
+                <input
+                  ref={excelImportInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                  className="hidden"
+                  onChange={handleExcelImportFileChange}
+                />
+                <button
+                  type="button"
+                  disabled={excelImportBusy}
+                  onClick={() => excelImportInputRef.current?.click()}
+                  className={`inline-flex items-center justify-center gap-1 border px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs h-[38px] ${
+                    excelImportBusy
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-200'
+                  }`}
+                  title={t('orders.excelImportTitle')}
+                >
+                  <Upload size={15} />
+                  <span className="hidden sm:inline">{t('orders.excelImport')}</span>
+                </button>
+              </>
+            )}
 
             <button
               type="button"

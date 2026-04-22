@@ -5,7 +5,9 @@ import { NotificationProvider } from '@/context/NotificationContext'
 import { DialogProvider } from '@/context/DialogContext'
 import { ThemeProvider } from '@/context/ThemeContext'
 import AuthWrapper from '@/components/AuthWrapper'
+import AIAgent from '@/components/AIAgent'
 import ReactQueryProvider from '@/components/ReactQueryProvider'
+import ChunkErrorRecovery from '@/components/ChunkErrorRecovery'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -40,7 +42,9 @@ export default function RootLayout({ children }) {
                             <LayoutProvider>
                                 <NotificationProvider>
                                     <DialogProvider>
+                                        <ChunkErrorRecovery />
                                         <AuthWrapper>{children}</AuthWrapper>
+                                        <AIAgent />
                                     </DialogProvider>
                                 </NotificationProvider>
                             </LayoutProvider>

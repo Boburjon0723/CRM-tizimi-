@@ -25,6 +25,7 @@ import {
     Palette,
     ListTree,
     ChevronDown,
+    Printer,
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -735,6 +736,97 @@ export default function Mahsulotlar() {
         setEditId(item.id)
         setIsModalOpen(true)
     }
+
+    const handlePrintAllProducts = () => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert('Popup bloklangan! Iltimos, popupga ruxsat bering.');
+            return;
+        }
+
+        const titleText = t('common.products');
+        const imgHeader = t('products.image');
+        const nameHeader = t('products.name');
+        const codeHeader = t('products.tableCode');
+        const catHeader = t('products.category');
+        const priceHeader = t('products.salePrice');
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${titleText}</title>
+                <meta charset="utf-8">
+                <style>
+                    @page { margin: 10mm; }
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #333; }
+                    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
+                    .header h1 { margin: 0; color: #1e40af; font-size: 24px; }
+                    .header p { margin: 5px 0 0; color: #666; font-size: 14px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                    th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 13px; }
+                    th { background-color: #f8fafc; color: #475569; font-weight: bold; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
+                    tr:nth-child(even) { background-color: #fdfdfd; }
+                    .img-container { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 4px; border: 1px solid #eee; background: #fff; }
+                    img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                    .price { font-family: monospace; font-weight: bold; color: #111; }
+                    .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+                    @media print {
+                        .no-print { display: none; }
+                        table { page-break-inside: auto; }
+                        tr { page-break-inside: avoid; page-break-after: auto; }
+                        thead { display: table-header-group; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>${titleText}</h1>
+                    <p>Sana: ${new Date().toLocaleDateString()} | Jami: ${filteredProducts.length} ta mahsulot</p>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 70px;">${imgHeader}</th>
+                            <th>${nameHeader}</th>
+                            <th>${codeHeader}</th>
+                            <th>${catHeader}</th>
+                            <th style="width: 120px;">${priceHeader}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filteredProducts.map(item => `
+                            <tr>
+                                <td>
+                                    <div class="img-container">
+                                        ${item.images?.[0] ? `<img src="${item.images[0]}" />` : '-'}
+                                    </div>
+                                </td>
+                                <td style="font-weight: 600;">${displayProductTitle(item)}</td>
+                                <td style="color: #64748b;">${item.size || '-'}</td>
+                                <td><span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${item.categories?.name || '-'}</span></td>
+                                <td class="price">${item.sale_price?.toLocaleString()} $ ${item.is_kg ? '/ kg' : ''}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <div class="footer">
+                    CRM Tizimi - ${new Date().getFullYear()}
+                </div>
+                <script>
+                    window.onload = () => {
+                        setTimeout(() => {
+                            window.print();
+                        }, 500);
+                    };
+                </script>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
 
     function handleCancel() {
         setForm({
@@ -1488,6 +1580,15 @@ export default function Mahsulotlar() {
                     >
                         <Plus size={16} />
                         <span className="hidden sm:inline">{t('common.add')}</span>
+                    </button>
+                    <button
+                        onClick={handlePrintAllProducts}
+                        disabled={filteredProducts.length === 0}
+                        className="inline-flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg transition-all shadow-sm font-bold text-xs disabled:opacity-50"
+                        title={t('common.print')}
+                    >
+                        <Printer size={16} />
+                        <span className="hidden sm:inline">{t('common.print')}</span>
                     </button>
                 </div>
             </div>
