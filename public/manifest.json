@@ -1,0 +1,29 @@
+{
+    "name": "Nuur Home CRM",
+    "short_name": "NuurHome",
+    "description": "CRM tizimi - Buyurtmalarni boshqarish",
+    "start_url": "/mobile",
+    "display": "standalone",
+    "background_color": "#031c24",
+    "theme_color": "#031c24",
+    "icons": [
+        {
+            "src": "/apple-touch-icon.png",
+            "sizes": "180x180",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/favicon.svg",
+            "sizes": "512x512",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

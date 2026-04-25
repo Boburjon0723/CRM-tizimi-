@@ -1,0 +1,1886 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { sendTelegramNotification } from '@/utils/telegram'
+import Header from '@/components/Header'
+import { Save, Globe, Smartphone, Monitor, Layout, Image, Palette, Type, Settings, FileText, AlertCircle, Plus, X, Trash2, Eye, EyeOff, Wallet, TrendingUp, Heart, Award, Mail } from 'lucide-react'
+import { useLayout } from '@/context/LayoutContext'
+import { useLanguage } from '@/context/LanguageContext'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
+
+function getMissionImagesArrayFromSettings(s) {
+  if (!s) return []
+  try {
+    if (s.about_mission_images != null && s.about_mission_images !== '') {
+      const arr = typeof s.about_mission_images === 'string' ? JSON.parse(s.about_mission_images) : s.about_mission_images
+      if (Array.isArray(arr) && arr.length) return arr.filter(Boolean)
+    }
+  } catch {
+    /* ignore */
+  }
+  if (s.about_mission_image) return [s.about_mission_image]
+  return []
+}
+
+export default function Vebsayt() {
+  const { toggleSidebar } = useLayout()
+  const { t } = useLanguage()
+  const [settings, setSettings] = useState({
+    site_name: 'Mening Sexim',
+    logo_url: '',
+    banner_text: 'Sifatli mahsulotlar eng arzon narxlarda!',
+    banner_text_uz: '',
+    banner_text_ru: '',
+    banner_text_en: '',
+    phone: '+998901234567',
+    address: 'Toshkent, Chilonzor tumani',
+    work_hours: 'Dushanba-Shanba: 9:00-20:00',
+    telegram_url: '@mysayt',
+    instagram_url: '@mysayt',
+    facebook_url: 'mysayt',
+    humo_card: '',
+    uzcard_card: '',
+    visa_card: '',
+    hero_desktop_url: '',
+    hero_mobile_url: ''
+  })
+
+  const [categories, setCategories] = useState([])
+  const [newCategory, setNewCategory] = useState('')
+  const [newCategoryRu, setNewCategoryRu] = useState('')
+  const [newCategoryEn, setNewCategoryEn] = useState('')
+  const [categoryImage, setCategoryImage] = useState('')
+  const [uploadingCategory, setUploadingCategory] = useState(false)
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
+  const [uploadingAboutHero, setUploadingAboutHero] = useState(false)
+  const [uploadingAboutMission, setUploadingAboutMission] = useState(false)
+
+  const [banners, setBanners] = useState([])
+  const [siteBenefits, setSiteBenefits] = useState([])
+  const [editingBenefit, setEditingBenefit] = useState(null)
+  const [benefitForm, setBenefitForm] = useState({
+    icon: 'truck',
+    title_uz: '',
+    title_ru: '',
+    title_en: '',
+    desc_uz: '',
+    desc_ru: '',
+    desc_en: '',
+    sort_order: 0,
+    is_active: true
+  })
+  const [products, setProducts] = useState([])
+  const [webOrders, setWebOrders] = useState([])
+  const [reviews, setReviews] = useState([])
+  const [subscriptions, setSubscriptions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('sozlamalar')
+  const [isAddingBanner, setIsAddingBanner] = useState(false)
+  const [bannerForm, setBannerForm] = useState({
+    title: '',
+    title_uz: '',
+    title_ru: '',
+    title_en: '',
+    subtitle: '',
+    subtitle_uz: '',
+    subtitle_ru: '',
+    subtitle_en: '',
+    image_url: '',
+    link: '',
+    active: true
+  })
+
+  const [albumImages, setAlbumImages] = useState([])
+  const [editingAlbumImage, setEditingAlbumImage] = useState(null)
+  const [uploadingAlbumImage, setUploadingAlbumImage] = useState(false)
+  const [albumImageForm, setAlbumImageForm] = useState({
+    image_url: '',
+    title_uz: '',
+    title_ru: '',
+    title_en: '',
+    sort_order: 0,
+    is_active: true,
+    format: 'portrait'
+  })
+
+  useEffect(() => {
+    loadData()
+    subscribeToOrders()
+  }, [])
+
+  async function loadData() {
+    try {
+      // Load website settings
+      const { data: settingsData } = await supabase.from('settings').select('*').limit(1).single()
+      if (settingsData) setSettings(settingsData)
+
+      // Load banners
+      const { data: bannersData } = await supabase.from('banners').select('*').order('created_at', { ascending: false })
+      setBanners(bannersData || [])
+
+      // Load site_benefits
+      const { data: benefitsData } = await supabase.from('site_benefits').select('*').order('sort_order', { ascending: true })
+      setSiteBenefits(benefitsData || [])
+
+      // Load categories
+      const { data: categoriesData } = await supabase.from('categories').select('*').order('name')
+      setCategories(categoriesData || [])
+
+      // Load products for web display
+      const { data: productsData } = await supabase.from('products').select('*').order('created_at', { ascending: false })
+      setProducts(productsData || [])
+
+      let webOrd = await supabase
+        .from('orders')
+        .select('*, order_items(product_name, quantity)')
+        .eq('source', 'website')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+      if (webOrd.error && isDeletedAtMissingError(webOrd.error)) {
+        webOrd = await supabase
+          .from('orders')
+          .select('*, order_items(product_name, quantity)')
+          .eq('source', 'website')
+          .order('created_at', { ascending: false })
+      }
+      setWebOrders(webOrd.error ? [] : webOrd.data || [])
+
+      // Load reviews
+      const { data: reviewsData } = await supabase
+        .from('reviews')
+        .select(`
+          *,
+          products (name)
+        `)
+        .order('created_at', { ascending: false })
+      setReviews(reviewsData || [])
+
+      // Load subscriptions
+      const { data: subsData } = await supabase.from('newsletter_subscriptions').select('*').order('created_at', { ascending: false })
+      setSubscriptions(subsData || [])
+
+      // Load album_images
+      const { data: albumData } = await supabase.from('album_images').select('*').order('sort_order', { ascending: true })
+      setAlbumImages(albumData || [])
+
+    } catch (error) {
+      console.error('Error loading data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function subscribeToOrders() {
+    const subscription = supabase
+      .channel('website_orders')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, payload => {
+        if (payload.new.source === 'website') {
+          playNotificationSound()
+          setWebOrders(prev => [payload.new, ...prev])
+          sendTelegramNotification(`${t('website.orders.newOrderAlert')}!\nMijoz: ${payload.new.customer_name}\nTel: ${payload.new.customer_phone}\nSumma: ${payload.new.total}`)
+        }
+      })
+      .subscribe()
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }
+
+  function playNotificationSound() {
+    const audio = new Audio('/notification.mp3')
+    audio.play().catch(e => console.log('Audio play failed:', e))
+  }
+
+  async function handleSaveSettings() {
+    try {
+      // Ensure we have an ID for upsert to prevent duplication
+      const { data, error } = await supabase
+        .from('settings')
+        .upsert([{
+          ...settings,
+          // If settings has an ID, use it. Otherwise, let Postgres/Supabase handle it.
+          // In our loadData, we fetch the first row, so it should have an ID.
+        }])
+        .select()
+
+      if (error) throw error
+      if (data && data[0]) setSettings(data[0])
+      alert(t('website.saveSuccess'))
+    } catch (error) {
+      console.error('Error saving settings:', error)
+      alert(t('common.saveError'))
+    }
+  }
+
+
+  async function handleSaveBanner() {
+    if (!bannerForm.title_uz && !bannerForm.title_ru && !bannerForm.title_en) return alert(t('website.banners.requiredError'))
+    try {
+      const bannerData = {
+        ...bannerForm,
+        title: bannerForm.title_ru || bannerForm.title_uz || bannerForm.title_en,
+        subtitle: bannerForm.subtitle_ru || bannerForm.subtitle_uz || bannerForm.subtitle_en
+      }
+      const { error } = await supabase.from('banners').upsert([bannerData])
+      if (error) throw error
+      setIsAddingBanner(false)
+      setBannerForm({ title: '', title_uz: '', title_ru: '', title_en: '', subtitle: '', subtitle_uz: '', subtitle_ru: '', subtitle_en: '', image_url: '', link: '', active: true })
+      loadData()
+      alert(t('website.banners.saveSuccess'))
+    } catch (error) {
+      console.error('Error saving banner:', error)
+      alert(t('common.saveError'))
+    }
+  }
+
+  async function handleToggleBanner(id, currentStatus) {
+    try {
+      await supabase.from('banners').update({ active: !currentStatus }).eq('id', id)
+      loadData()
+    } catch (error) {
+      console.error('Error toggling banner:', error)
+    }
+  }
+
+  async function handleDeleteBanner(id) {
+    if (!confirm(t('common.deleteConfirm'))) return
+    try {
+      await supabase.from('banners').delete().eq('id', id)
+      loadData()
+    } catch (error) {
+      console.error('Error deleting banner:', error)
+    }
+  }
+
+  async function handleSaveBenefit() {
+    try {
+      const data = { ...benefitForm, updated_at: new Date().toISOString() }
+      if (editingBenefit) {
+        await supabase.from('site_benefits').update(data).eq('id', editingBenefit.id)
+      } else {
+        await supabase.from('site_benefits').insert([data])
+      }
+      setEditingBenefit(null)
+      setBenefitForm({ icon: 'truck', title_uz: '', title_ru: '', title_en: '', desc_uz: '', desc_ru: '', desc_en: '', sort_order: 0, is_active: true })
+      loadData()
+      alert(t('website.saveSuccess'))
+    } catch (err) {
+      console.error(err)
+      alert(t('common.saveError'))
+    }
+  }
+
+  async function handleDeleteBenefit(id) {
+    if (!confirm(t('common.deleteConfirm'))) return
+    try {
+      await supabase.from('site_benefits').delete().eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function handleToggleBenefit(id, active) {
+    try {
+      await supabase.from('site_benefits').update({ is_active: !active }).eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function handleSaveAlbumImage() {
+    try {
+      const data = { ...albumImageForm, updated_at: new Date().toISOString() }
+      if (editingAlbumImage) {
+        await supabase.from('album_images').update(data).eq('id', editingAlbumImage.id)
+      } else {
+        if (!albumImageForm.image_url?.trim()) return alert("Rasmni fayldan yuklang")
+        await supabase.from('album_images').insert([data])
+      }
+      setEditingAlbumImage(null)
+      setAlbumImageForm({ image_url: '', title_uz: '', title_ru: '', title_en: '', sort_order: 0, is_active: true, format: 'portrait' })
+      loadData()
+      alert(t('website.saveSuccess'))
+    } catch (err) {
+      console.error(err)
+      alert(t('common.saveError'))
+    }
+  }
+
+  async function handleDeleteAlbumImage(id) {
+    if (!confirm(t('common.deleteConfirm'))) return
+    try {
+      await supabase.from('album_images').delete().eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function handleDeleteAllAlbumImages() {
+    if (albumImages.length === 0) return
+    if (!confirm(`Barcha ${albumImages.length} ta albom rasmini o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi.`)) return
+    try {
+      const ids = albumImages.map(i => i.id)
+      const { error } = await supabase.from('album_images').delete().in('id', ids)
+      if (error) throw error
+      setAlbumImages([])
+      loadData()
+      alert(t('website.saveSuccess'))
+    } catch (err) {
+      console.error(err)
+      alert(t('common.saveError'))
+    }
+  }
+
+  async function handleToggleAlbumImage(id, active) {
+    try {
+      await supabase.from('album_images').update({ is_active: !active }).eq('id', id)
+      loadData()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const BENEFIT_ICONS = ['truck', 'shield-check', 'credit-card', 'package', 'headphones', 'award', 'zap']
+
+  async function handleToggleProduct(id, currentStatus) {
+    try {
+      await supabase.from('products').update({ is_active: !currentStatus }).eq('id', id)
+      loadData()
+    } catch (error) {
+      console.error('Error toggling product:', error)
+    }
+  }
+
+  async function handleOrderStatusChange(id, newStatus) {
+    try {
+      // Find the order to get customer ID since order_items might not be available here directly
+      const order = webOrders.find(o => o.id === id)
+
+      await supabase.from('orders').update({ status: newStatus }).eq('id', id)
+      loadData()
+
+      if (newStatus === 'completed' || newStatus === 'Tugallandi') {
+        // Here we could update customer LTV or purchase dates if we wanted
+      }
+    } catch (error) {
+      console.error('Error updating order:', error)
+    }
+  }
+
+  async function handleCategoryImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+
+    try {
+      setUploadingCategory(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Math.random()}.${fileExt}`
+      const filePath = `categories/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('products') // Using products bucket, but we can change if needed
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data } = supabase.storage
+        .from('products')
+        .getPublicUrl(filePath)
+
+      setCategoryImage(data.publicUrl)
+    } catch (error) {
+      console.error('Error uploading category image:', error)
+      alert(t('common.saveError'))
+    } finally {
+      setUploadingCategory(false)
+    }
+  }
+
+  async function handleAboutHeroImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    try {
+      setUploadingAboutHero(true)
+      const ext = file.name.split('.').pop()
+      const path = `about/hero_${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('products').upload(path, file)
+      if (error) throw error
+      const { data } = supabase.storage.from('products').getPublicUrl(path)
+      setSettings(s => ({ ...s, about_hero_image: data.publicUrl }))
+    } catch (err) {
+      console.error(err)
+      alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
+    } finally {
+      setUploadingAboutHero(false)
+    }
+  }
+
+  async function handleAboutMissionImageUpload(e) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    try {
+      setUploadingAboutMission(true)
+      const newUrls = []
+      for (const file of files) {
+        const ext = file.name.split('.').pop()
+        const path = `about/mission_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`
+        const { error } = await supabase.storage.from('products').upload(path, file)
+        if (error) throw error
+        const { data } = supabase.storage.from('products').getPublicUrl(path)
+        newUrls.push(data.publicUrl)
+      }
+      setSettings((s) => {
+        const prev = getMissionImagesArrayFromSettings(s)
+        const next = [...prev, ...newUrls]
+        return {
+          ...s,
+          about_mission_images: JSON.stringify(next),
+          about_mission_image: next[0] || s.about_mission_image || ''
+        }
+      })
+    } catch (err) {
+      console.error(err)
+      alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
+    } finally {
+      setUploadingAboutMission(false)
+    }
+    e.target.value = ''
+  }
+
+  function removeMissionImageAt(idx) {
+    setSettings((s) => {
+      const prev = getMissionImagesArrayFromSettings(s)
+      const next = prev.filter((_, i) => i !== idx)
+      return {
+        ...s,
+        about_mission_images: next.length ? JSON.stringify(next) : null,
+        about_mission_image: next[0] || ''
+      }
+    })
+  }
+
+  async function handleAlbumImageUpload(e) {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    const isMultiple = files.length > 1
+    try {
+      setUploadingAlbumImage(true)
+      if (!isMultiple) {
+        const file = files[0]
+        const ext = file.name.split('.').pop()
+        const path = `album/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+        const { error } = await supabase.storage.from('products').upload(path, file)
+        if (error) throw error
+        const { data } = supabase.storage.from('products').getPublicUrl(path)
+        setAlbumImageForm(f => ({ ...f, image_url: data.publicUrl }))
+      } else {
+        const maxSort = albumImages.length ? Math.max(...albumImages.map(i => i.sort_order ?? 0), -1) + 1 : 0
+        const format = albumImageForm.format || 'portrait'
+        let success = 0
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i]
+          const ext = file.name.split('.').pop()
+          const path = `album/${Date.now()}_${i}_${Math.random().toString(36).slice(2)}.${ext}`
+          const { error } = await supabase.storage.from('products').upload(path, file)
+          if (error) throw error
+          const { data } = supabase.storage.from('products').getPublicUrl(path)
+          const insertData = {
+            image_url: data.publicUrl,
+            title_uz: '',
+            title_ru: '',
+            title_en: '',
+            sort_order: maxSort + i,
+            is_active: true,
+            format,
+            updated_at: new Date().toISOString()
+          }
+          const { error: insertErr } = await supabase.from('album_images').insert([insertData])
+          if (!insertErr) success++
+        }
+        if (success > 0) {
+          loadData()
+          setAlbumImageForm(f => ({ ...f, image_url: '', title_uz: '', title_ru: '', title_en: '' }))
+          alert(`${success} ta rasm muvaffaqiyatli qo'shildi`)
+        }
+      }
+    } catch (err) {
+      console.error(err)
+      alert('Rasm yuklashda xatolik: ' + (err?.message || ''))
+    } finally {
+      setUploadingAlbumImage(false)
+    }
+    e.target.value = ''
+  }
+
+  function handleEditCategory(cat) {
+    setNewCategory(cat.name_uz || cat.name || '')
+    setNewCategoryRu(cat.name_ru || '')
+    setNewCategoryEn(cat.name_en || '')
+    setCategoryImage(cat.image_url || '')
+    setEditingCategoryId(cat.id)
+  }
+
+  function handleCancelEditCategory() {
+    setNewCategory('')
+    setNewCategoryRu('')
+    setNewCategoryEn('')
+    setCategoryImage('')
+    setEditingCategoryId(null)
+  }
+
+  async function handleSaveCategory() {
+    if (!newCategory.trim() && !newCategoryRu.trim() && !newCategoryEn.trim()) return
+    const name = newCategory || newCategoryRu || newCategoryEn
+    try {
+      if (editingCategoryId) {
+        const { error } = await supabase.from('categories').update({
+          name,
+          name_uz: newCategory || name,
+          name_ru: newCategoryRu || name,
+          name_en: newCategoryEn || name,
+          image_url: categoryImage
+        }).eq('id', editingCategoryId)
+        if (error) throw error
+        handleCancelEditCategory()
+      } else {
+        const { error } = await supabase.from('categories').insert([{
+          name,
+          name_uz: newCategory || name,
+          name_ru: newCategoryRu || name,
+          name_en: newCategoryEn || name,
+          image_url: categoryImage
+        }])
+        if (error) throw error
+        handleCancelEditCategory()
+      }
+      loadData()
+      alert(t('website.categories.saveSuccess'))
+    } catch (error) {
+      console.error('Error saving category:', error)
+      alert(t('common.saveError'))
+    }
+  }
+
+  async function handleDeleteCategory(id) {
+    if (!confirm(t('website.categories.deleteConfirm'))) return
+    try {
+      const { error } = await supabase.from('categories').delete().eq('id', id)
+      if (error) throw error
+      if (editingCategoryId === id) handleCancelEditCategory()
+      loadData()
+    } catch (error) {
+      console.error('Error deleting category:', error)
+      alert(t('website.categories.deleteError'))
+    }
+  }
+
+  // ... (handlers for settings, banners, products, orders remain)
+
+  async function handleReviewStatus(id, newStatus) {
+    try {
+      await supabase.from('reviews').update({ status: newStatus }).eq('id', id)
+      loadData()
+    } catch (error) {
+      console.error('Error updating review:', error)
+    }
+  }
+
+  async function handleDeleteReview(id) {
+    if (!confirm(t('common.deleteConfirm'))) return
+    try {
+      await supabase.from('reviews').delete().eq('id', id)
+      loadData()
+    } catch (error) {
+      console.error('Error deleting review:', error)
+    }
+  }
+
+  async function handleDeleteSubscription(id) {
+    if (!confirm(t('website.subscriptions.deleteConfirm'))) return
+    try {
+      const { error } = await supabase.from('newsletter_subscriptions').delete().eq('id', id)
+      if (error) throw error
+      loadData()
+    } catch (error) {
+      console.error('Error deleting subscription:', error)
+      alert(t('common.saveError'))
+    }
+  }
+
+  const tabs = [
+    { id: 'sozlamalar', icon: Settings, label: t('website.tabs.settings') },
+    { id: 'biz-haqimizda', icon: FileText, label: t('website.tabs.about') },
+    { id: 'foyda-kartalari', icon: Award, label: t('website.tabs.benefits') || 'Foyda kartalari' },
+    { id: 'albom-rasmlari', icon: Image, label: t('website.tabs.albumImages') || 'Albom rasmlari' },
+    { id: 'banners', icon: Image, label: t('website.tabs.banners') },
+    { id: 'kategoriyalar', icon: Layout, label: t('website.tabs.categories') },
+    { id: 'mahsulotlar', icon: FileText, label: t('website.tabs.products') },
+    { id: 'buyurtmalar', icon: Globe, label: t('website.tabs.orders') },
+    { id: 'sharhlar', icon: AlertCircle, label: t('website.tabs.reviews') },
+    { id: 'obunalar', icon: Mail, label: t('website.tabs.subscriptions') }
+  ]
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="flex items-center justify-center h-screen">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600"></div>
+          <div className="ml-4 font-bold text-blue-600">{t('common.loading')}</div>
+        </div>
+      </div>
+    )
+  }
+
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 md:px-6">
+      <Header title={t('common.website')} toggleSidebar={toggleSidebar} />
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-blue-100">{t('website.totalBanners')}</p>
+              <p className="text-3xl font-bold mt-2">{banners.length}</p>
+            </div>
+            <div className="p-3 bg-white/20 rounded-xl">
+              <Image className="text-white" size={24} />
+            </div>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-6 rounded-2xl shadow-lg shadow-green-200">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-green-100">{t('website.visibleOnWeb')}</p>
+              <p className="text-3xl font-bold mt-2">{products.filter(p => p.is_active).length}</p>
+            </div>
+            <div className="p-3 bg-white/20 rounded-xl">
+              <Monitor className="text-white" size={24} />
+            </div>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg shadow-purple-200">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-purple-100">{t('website.webOrders')}</p>
+              <p className="text-3xl font-bold mt-2">{webOrders.length}</p>
+            </div>
+            <div className="p-3 bg-white/20 rounded-xl">
+              <Globe className="text-white" size={24} />
+            </div>
+          </div>
+        </div>
+        <div className="bg-gradient-to-br from-red-500 to-red-600 text-white p-6 rounded-2xl shadow-lg shadow-red-200">
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-sm font-medium text-red-100">{t('website.newReviews')}</p>
+              <p className="text-3xl font-bold mt-2">{reviews.filter(r => r.status === 'pending').length}</p>
+            </div>
+            <div className="p-3 bg-white/20 rounded-xl">
+              <AlertCircle className="text-white" size={24} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-8 overflow-x-auto bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+        {tabs.map(tab => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === tab.id
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                : 'bg-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                }`}
+            >
+              <Icon size={20} />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Content */}
+      {activeTab === 'sozlamalar' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
+          <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <Settings className="text-blue-600" />
+            {t('website.settings.title')}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.siteName')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.siteName')}
+                value={settings.site_name || ''}
+                onChange={(e) => setSettings({ ...settings, site_name: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.logoUrl')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.logoUrl')}
+                value={settings.logo_url || ''}
+                onChange={(e) => setSettings({ ...settings, logo_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.heroDesktop')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.heroDesktop')}
+                value={settings.hero_desktop_url || ''}
+                onChange={(e) => setSettings({ ...settings, hero_desktop_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.heroMobile')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.heroMobile')}
+                value={settings.hero_mobile_url || ''}
+                onChange={(e) => setSettings({ ...settings, hero_mobile_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-4 md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <label className="text-sm font-bold text-gray-700 block mb-2">{t('website.settings.bannerText')}</label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">UZ</span>
+                  <input
+                    type="text"
+                    placeholder="Sifatli mahsulotlar..."
+                    value={settings.banner_text_uz || ''}
+                    onChange={(e) => setSettings({ ...settings, banner_text_uz: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">RU</span>
+                  <input
+                    type="text"
+                    placeholder="Качественные товары..."
+                    value={settings.banner_text_ru || ''}
+                    onChange={(e) => setSettings({ ...settings, banner_text_ru: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">EN</span>
+                  <input
+                    type="text"
+                    placeholder="Quality products..."
+                    value={settings.banner_text_en || ''}
+                    onChange={(e) => setSettings({ ...settings, banner_text_en: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.phone')}</label>
+              <input
+                type="tel"
+                placeholder={t('website.settings.phone')}
+                value={settings.phone || ''}
+                onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.address')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.address')}
+                value={settings.address || ''}
+                onChange={(e) => setSettings({ ...settings, address: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.workHours')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.workHours')}
+                value={settings.work_hours || ''}
+                onChange={(e) => setSettings({ ...settings, work_hours: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.email')}</label>
+              <input
+                type="email"
+                placeholder="info@pardacenter.uz"
+                value={settings.email || ''}
+                onChange={(e) => setSettings({ ...settings, email: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-600">{t('website.settings.latitude')}</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  placeholder="41.311158"
+                  value={settings.latitude || ''}
+                  onChange={(e) => setSettings({ ...settings, latitude: e.target.value })}
+                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-600">{t('website.settings.longitude')}</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  placeholder="69.279737"
+                  value={settings.longitude || ''}
+                  onChange={(e) => setSettings({ ...settings, longitude: e.target.value })}
+                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.telegram')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.telegram')}
+                value={settings.telegram_url || ''}
+                onChange={(e) => setSettings({ ...settings, telegram_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.instagram')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.instagram')}
+                value={settings.instagram_url || ''}
+                onChange={(e) => setSettings({ ...settings, instagram_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-gray-600">{t('website.settings.facebook')}</label>
+              <input
+                type="text"
+                placeholder={t('website.settings.facebook')}
+                value={settings.facebook_url || ''}
+                onChange={(e) => setSettings({ ...settings, facebook_url: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+              />
+            </div>
+
+            <div className="col-span-1 md:col-span-2 border-t border-gray-100 pt-6 mt-2">
+              <h4 className="font-bold mb-4 flex items-center gap-2 text-gray-800">
+                <Wallet size={20} className="text-green-600" />
+                {t('website.settings.paymentInfo')}
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-2">
+                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">{t('website.settings.humo')}</label>
+                  <input
+                    type="text"
+                    placeholder="8600 ...."
+                    value={settings.humo_card || ''}
+                    onChange={(e) => setSettings({ ...settings, humo_card: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-gray-50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">{t('website.settings.uzcard')}</label>
+                  <input
+                    type="text"
+                    placeholder="8600 ...."
+                    value={settings.uzcard_card || ''}
+                    onChange={(e) => setSettings({ ...settings, uzcard_card: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-gray-50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-xs text-gray-500 font-bold uppercase tracking-wide">{t('website.settings.visa')}</label>
+                  <input
+                    type="text"
+                    placeholder="4000 ...."
+                    value={settings.visa_card || ''}
+                    onChange={(e) => setSettings({ ...settings, visa_card: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl font-mono text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-gray-50"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="mt-8 flex justify-end">
+            <button
+              onClick={handleSaveSettings}
+              className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 font-bold transition-all"
+            >
+              <Save size={20} />
+              {t('common.save')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'biz-haqimizda' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
+          <h3 className="text-2xl font-bold text-gray-800 mb-8 flex items-center gap-2">
+            <FileText className="text-blue-600" />
+            {t('website.about.title')}
+          </h3>
+
+          <div className="space-y-8">
+            {/* Hero Section */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border border-blue-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Layout size={20} className="text-blue-600" />
+                {t('website.about.heroSection')}
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.heroTitle')}</label>
+                  <input
+                    type="text"
+                    placeholder="We bring elegance to your home"
+                    value={settings.about_hero_title || ''}
+                    onChange={(e) => setSettings({ ...settings, about_hero_title: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.heroSubtitle')}</label>
+                  <textarea
+                    placeholder="Specializing in premium products..."
+                    rows={3}
+                    value={settings.about_hero_subtitle || ''}
+                    onChange={(e) => setSettings({ ...settings, about_hero_subtitle: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all resize-none"
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.heroImage')}</label>
+                  <div className="flex gap-4 items-center flex-wrap">
+                    <div className="w-24 h-24 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                      {settings.about_hero_image ? (
+                        <img src={settings.about_hero_image} alt="Hero" className="w-full h-full object-cover" />
+                      ) : (
+                        <Image size={32} className="text-gray-400" />
+                      )}
+                    </div>
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 text-sm font-bold transition-colors">
+                      <input type="file" className="hidden" accept="image/*" onChange={handleAboutHeroImageUpload} disabled={uploadingAboutHero} />
+                      {uploadingAboutHero ? 'Yuklanmoqda...' : 'Fayldan yuklash'}
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Statistics Section */}
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border border-green-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <TrendingUp size={20} className="text-green-600" />
+                {t('website.about.statsSection')}
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2, 3, 4].map((num) => (
+                  <div key={num} className="bg-white p-4 rounded-lg border border-gray-200">
+                    <p className="text-xs font-bold text-gray-500 mb-2">Statistika #{num}</p>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="10,000+"
+                        value={settings[`stat${num}_value`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`stat${num}_value`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all text-sm"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Happy Customers"
+                        value={settings[`stat${num}_label`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`stat${num}_label`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all text-sm"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Mission & Vision Section */}
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border border-purple-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Heart size={20} className="text-purple-600" />
+                {t('website.about.missionSection')}
+              </h4>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionTitle')}</label>
+                  <input
+                    type="text"
+                    placeholder="Crafting details that matter"
+                    value={settings.about_mission_title || ''}
+                    onChange={(e) => setSettings({ ...settings, about_mission_title: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionText1')}</label>
+                  <textarea
+                    placeholder="Started as a small family business..."
+                    rows={3}
+                    value={settings.about_mission_text1 || ''}
+                    onChange={(e) => setSettings({ ...settings, about_mission_text1: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all resize-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionText2')}</label>
+                  <textarea
+                    placeholder="Our mission is to provide..."
+                    rows={3}
+                    value={settings.about_mission_text2 || ''}
+                    onChange={(e) => setSettings({ ...settings, about_mission_text2: e.target.value })}
+                    className="w-full border border-gray-200 p-3 rounded-xl focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all resize-none"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-600">{t('website.about.missionImage')}</label>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap gap-3">
+                      {getMissionImagesArrayFromSettings(settings).map((url, idx) => (
+                        <div
+                          key={`${url}-${idx}`}
+                          className="relative w-24 h-24 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0"
+                        >
+                          <img src={url} alt="" className="w-full h-full object-contain" />
+                          <button
+                            type="button"
+                            onClick={() => removeMissionImageAt(idx)}
+                            className="absolute top-0.5 right-0.5 p-1 rounded-md bg-red-600 text-white shadow-md hover:bg-red-700"
+                            title="O‘chirish"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {getMissionImagesArrayFromSettings(settings).length === 0 && (
+                        <div className="w-24 h-24 rounded-xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
+                          <Image size={32} className="text-gray-400" />
+                        </div>
+                      )}
+                    </div>
+                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl hover:bg-purple-700 text-sm font-bold transition-colors w-fit">
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        multiple
+                        onChange={handleAboutMissionImageUpload}
+                        disabled={uploadingAboutMission}
+                      />
+                      {uploadingAboutMission ? 'Yuklanmoqda...' : "Rasm qo'shish (bir nechta tanlash mumkin)"}
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-400">{t('website.about.missionImageHint')}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Values Section */}
+            <div className="bg-gradient-to-br from-orange-50 to-yellow-50 p-6 rounded-xl border border-orange-100">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <Award size={20} className="text-orange-600" />
+                {t('website.about.valuesSection')}
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[1, 2, 3].map((num) => (
+                  <div key={num} className="bg-white p-4 rounded-lg border border-gray-200">
+                    <p className="text-xs font-bold text-gray-500 mb-3">Qadriyat #{num}</p>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder="Premium Quality"
+                        value={settings[`value${num}_title`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`value${num}_title`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all text-sm font-semibold"
+                      />
+                      <textarea
+                        placeholder="We use only the finest materials..."
+                        rows={4}
+                        value={settings[`value${num}_desc`] || ''}
+                        onChange={(e) => setSettings({ ...settings, [`value${num}_desc`]: e.target.value })}
+                        className="w-full border border-gray-200 p-2 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition-all text-sm resize-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex justify-end pt-4">
+              <button
+                onClick={handleSaveSettings}
+                className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 font-bold transition-all"
+              >
+                <Save size={20} />
+                {t('common.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'foyda-kartalari' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
+          <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <Award className="text-blue-600" />
+            {t('website.tabs.benefits') || "Foyda kartalari (Tez Yetkazib Berish, Sifat Kafolati, xavfsiz To'lov)"}
+          </h3>
+          <p className="text-gray-500 text-sm mb-6">Bosh sahifadagi uchta kartani CRM orqali boshqaring.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-gray-600">Icon</label>
+              <select
+                value={benefitForm.icon}
+                onChange={(e) => setBenefitForm({ ...benefitForm, icon: e.target.value })}
+                className="w-full border border-gray-200 p-3 rounded-xl bg-white"
+              >
+                {BENEFIT_ICONS.map(ic => (
+                  <option key={ic} value={ic}>{ic}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-gray-600">Tartib (sort_order)</label>
+              <input type="number" min="0" value={benefitForm.sort_order} onChange={(e) => setBenefitForm({ ...benefitForm, sort_order: parseInt(e.target.value) || 0 })} className="w-full border border-gray-200 p-3 rounded-xl" />
+            </div>
+            {['uz', 'ru', 'en'].map(lang => (
+              <div key={lang} className="space-y-2 md:col-span-2">
+                <label className="text-sm font-bold text-gray-600">Sarlavha ({lang.toUpperCase()})</label>
+                <input type="text" placeholder={lang === 'uz' ? 'Tez Yetkazib Berish' : ''} value={benefitForm[`title_${lang}`] || ''} onChange={(e) => setBenefitForm({ ...benefitForm, [`title_${lang}`]: e.target.value })} className="w-full border border-gray-200 p-3 rounded-xl" />
+              </div>
+            ))}
+            {['uz', 'ru', 'en'].map(lang => (
+              <div key={lang} className="space-y-2 md:col-span-2">
+                <label className="text-sm font-bold text-gray-600">Tavsif ({lang.toUpperCase()})</label>
+                <input type="text" placeholder={lang === 'uz' ? '100$ dan yuqori buyurtmalar uchun bepul' : ''} value={benefitForm[`desc_${lang}`] || ''} onChange={(e) => setBenefitForm({ ...benefitForm, [`desc_${lang}`]: e.target.value })} className="w-full border border-gray-200 p-3 rounded-xl" />
+              </div>
+            ))}
+            <div className="md:col-span-2 flex gap-3">
+              {editingBenefit && (
+                <button onClick={() => { setEditingBenefit(null); setBenefitForm({ icon: 'truck', title_uz: '', title_ru: '', title_en: '', desc_uz: '', desc_ru: '', desc_en: '', sort_order: 0, is_active: true }); }} className="px-6 py-3 border border-gray-300 rounded-xl font-bold">{t('common.cancel')}</button>
+              )}
+              <button onClick={handleSaveBenefit} className="flex items-center gap-2 bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 font-bold">
+                <Save size={20} />
+                {editingBenefit ? t('common.save') : (t('common.add') || "Qo'shish")}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {siteBenefits.map(b => (
+              <div key={b.id} className="flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-4">
+                  <span className="text-xs font-mono bg-gray-200 px-2 py-1 rounded">{b.icon}</span>
+                  <span className="font-bold text-gray-900">{b.title_uz || b.title_ru || b.title_en}</span>
+                  {!b.is_active && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Yashirin</span>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => handleToggleBenefit(b.id, b.is_active)} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${b.is_active ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{b.is_active ? t('common.hide') : t('common.show')}</button>
+                  <button onClick={() => { setEditingBenefit(b); setBenefitForm({ icon: b.icon || 'truck', title_uz: b.title_uz || '', title_ru: b.title_ru || '', title_en: b.title_en || '', desc_uz: b.desc_uz || '', desc_ru: b.desc_ru || '', desc_en: b.desc_en || '', sort_order: b.sort_order || 0, is_active: b.is_active }); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-100 text-blue-700">{t('common.edit')}</button>
+                  <button onClick={() => handleDeleteBenefit(b.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700">{t('common.delete')}</button>
+                </div>
+              </div>
+            ))}
+            {siteBenefits.length === 0 && <p className="text-gray-400 text-center py-8">{t('common.noData')}</p>}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'albom-rasmlari' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 md:p-8 fade-in">
+          <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center gap-2">
+            <Image className="text-blue-600 w-5 h-5 sm:w-6 sm:h-6" />
+            {t('website.tabs.albumImages') || "Albom rasmlari"}
+          </h3>
+          <p className="text-gray-500 text-xs sm:text-sm mb-4 sm:mb-6">Albom sahifasida mahsulotlar bilan birga ko&apos;rinadigan qo&apos;shimcha rasmlar. Bir yoki ko&apos;p rasmni fayldan yuklang.</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8 bg-gray-50 p-4 sm:p-6 rounded-2xl border border-gray-100">
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-xs sm:text-sm font-bold text-gray-600">Rasm * (fayldan yuklash)</label>
+              <div className="flex gap-3 items-center">
+                <div className="w-20 h-24 sm:w-24 sm:h-28 rounded-xl bg-white border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {albumImageForm.image_url ? (
+                    <img src={albumImageForm.image_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Image size={28} className="text-gray-300" />
+                  )}
+                </div>
+                <label className="cursor-pointer bg-white border border-gray-200 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm font-medium text-gray-600">
+                  <input type="file" className="hidden" accept="image/*" multiple onChange={handleAlbumImageUpload} disabled={uploadingAlbumImage} />
+                  {uploadingAlbumImage ? (
+                    <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent animate-spin rounded-full" />
+                  ) : (
+                    <Image size={20} className="text-gray-500" />
+                  )}
+                  {uploadingAlbumImage ? 'Yuklanmoqda...' : 'Rasm tanlash (bir yoki ko\'p)'}
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-bold text-gray-600">Tartib (sort_order)</label>
+              <input
+                type="number"
+                min="0"
+                value={albumImageForm.sort_order}
+                onChange={(e) => setAlbumImageForm({ ...albumImageForm, sort_order: parseInt(e.target.value) || 0 })}
+                className="w-full border border-gray-200 p-2.5 sm:p-3 rounded-xl"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs sm:text-sm font-bold text-gray-600">Rasm formati (ta&apos;sir)</label>
+              <select
+                value={albumImageForm.format || 'portrait'}
+                onChange={(e) => setAlbumImageForm({ ...albumImageForm, format: e.target.value })}
+                className="w-full border border-gray-200 p-2.5 sm:p-3 rounded-xl bg-white"
+              >
+                <option value="portrait">Portrait (4:5) — baland</option>
+                <option value="square">Square (1:1) — kvadrat</option>
+                <option value="landscape">Landscape (3:2) — keng</option>
+                <option value="large">Large — katta bento (2 ustun)</option>
+              </select>
+            </div>
+            {['uz', 'ru', 'en'].map(lang => (
+              <div key={lang} className="space-y-2 md:col-span-2">
+                <label className="text-xs sm:text-sm font-bold text-gray-600">Sarlavha ({lang.toUpperCase()})</label>
+                <input
+                  type="text"
+                  placeholder={lang === 'uz' ? 'Rasm sarlavhasi' : ''}
+                  value={albumImageForm[`title_${lang}`] || ''}
+                  onChange={(e) => setAlbumImageForm({ ...albumImageForm, [`title_${lang}`]: e.target.value })}
+                  className="w-full border border-gray-200 p-2.5 sm:p-3 rounded-xl"
+                />
+              </div>
+            ))}
+            <div className="md:col-span-2 flex flex-wrap gap-2 sm:gap-3">
+              {editingAlbumImage && (
+                <button
+                  onClick={() => {
+                    setEditingAlbumImage(null)
+                    setAlbumImageForm({ image_url: '', title_uz: '', title_ru: '', title_en: '', sort_order: 0, is_active: true, format: 'portrait' })
+                  }}
+                  className="px-4 sm:px-6 py-2.5 sm:py-3 border border-gray-300 rounded-xl font-bold text-sm sm:text-base"
+                >
+                  {t('common.cancel')}
+                </button>
+              )}
+              <button
+                onClick={handleSaveAlbumImage}
+                className="flex items-center gap-2 bg-blue-600 text-white px-6 sm:px-8 py-2.5 sm:py-3 rounded-xl hover:bg-blue-700 font-bold text-sm sm:text-base"
+              >
+                <Save size={18} />
+                {editingAlbumImage ? t('common.save') : (t('common.add') || "Qo'shish")}
+              </button>
+            </div>
+          </div>
+
+          {albumImages.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <span className="text-sm text-gray-600">Rasmlar: {albumImages.length} ta</span>
+              <button
+                onClick={handleDeleteAllAlbumImages}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-100 text-red-700 hover:bg-red-200 font-bold text-sm transition-colors"
+              >
+                <Trash2 size={18} />
+                Barcha rasmlarni o&apos;chirish
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {albumImages.map(img => (
+              <div
+                key={img.id}
+                className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-3 sm:gap-4 p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-100"
+              >
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                  {img.image_url && (
+                    <img
+                      src={img.image_url}
+                      alt={img.title_uz || img.title_ru || img.title_en || 'Album'}
+                      className="w-full sm:w-16 h-24 sm:h-16 object-cover rounded-lg border border-gray-200 flex-shrink-0"
+                      onError={(e) => { e.target.style.display = 'none' }}
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold text-gray-900 text-sm sm:text-base block truncate">{img.title_uz || img.title_ru || img.title_en || '—'}</span>
+                    <span className="text-xs text-gray-500">Tartib: {img.sort_order ?? 0} · Format: {img.format || 'portrait'}</span>
+                    {!img.is_active && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded ml-2">Yashirin</span>}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5 sm:gap-2 w-full sm:w-auto">
+                  <button onClick={() => handleToggleAlbumImage(img.id, img.is_active)} className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex-1 sm:flex-none ${img.is_active ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>{img.is_active ? t('common.hide') : t('common.show')}</button>
+                  <button onClick={() => { setEditingAlbumImage(img); setAlbumImageForm({ image_url: img.image_url || '', title_uz: img.title_uz || '', title_ru: img.title_ru || '', title_en: img.title_en || '', sort_order: img.sort_order ?? 0, is_active: img.is_active, format: img.format || 'portrait' }); }} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-100 text-blue-700 flex-1 sm:flex-none">{t('common.edit')}</button>
+                  <button onClick={() => handleDeleteAlbumImage(img.id)} className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-red-100 text-red-700 flex-1 sm:flex-none">{t('common.delete')}</button>
+                </div>
+              </div>
+            ))}
+            {albumImages.length === 0 && <p className="text-gray-400 text-center py-8 text-sm sm:text-base">{t('common.noData')}</p>}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'banners' && (
+        <div className="space-y-6 fade-in">
+          <div className="flex justify-end">
+            <button
+              onClick={() => setIsAddingBanner(!isAddingBanner)}
+              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 transition-all"
+            >
+              {isAddingBanner ? <X size={20} /> : <Plus size={20} />}
+              {isAddingBanner ? t('common.cancel') : t('website.banners.newBanner')}
+            </button>
+          </div>
+
+          {isAddingBanner && (
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800 mb-4">{t('website.banners.newBanner')}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {/* Title Inputs */}
+                <div className="space-y-4 col-span-1 md:col-span-2 bg-blue-50/30 p-4 rounded-xl border border-blue-100/50">
+                  <label className="text-sm font-bold text-blue-800 block mb-2">{t('website.banners.title')}</label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">UZ</span>
+                      <input
+                        type="text"
+                        placeholder="Premium Sifat"
+                        value={bannerForm.title_uz || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, title_uz: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">RU</span>
+                      <input
+                        type="text"
+                        placeholder="Премиум Качество"
+                        value={bannerForm.title_ru || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, title_ru: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">EN</span>
+                      <input
+                        type="text"
+                        placeholder="Premium Quality"
+                        value={bannerForm.title_en || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, title_en: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subtitle Inputs */}
+                <div className="space-y-4 col-span-1 md:col-span-2 bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50">
+                  <label className="text-sm font-bold text-indigo-800 block mb-2">{t('website.banners.subtitle')}</label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">UZ</span>
+                      <input
+                        type="text"
+                        placeholder="Yangi kolleksiya"
+                        value={bannerForm.subtitle_uz || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, subtitle_uz: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">RU</span>
+                      <input
+                        type="text"
+                        placeholder="Новая коллекция"
+                        value={bannerForm.subtitle_ru || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, subtitle_ru: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase ml-1">EN</span>
+                      <input
+                        type="text"
+                        placeholder="New collection"
+                        value={bannerForm.subtitle_en || ''}
+                        onChange={(e) => setBannerForm({ ...bannerForm, subtitle_en: e.target.value })}
+                        className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder={t('website.banners.imageUrl')}
+                  value={bannerForm.image_url}
+                  onChange={(e) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
+                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all col-span-1 md:col-span-2"
+                />
+                <input
+                  type="text"
+                  placeholder={t('website.banners.link')}
+                  value={bannerForm.link}
+                  onChange={(e) => setBannerForm({ ...bannerForm, link: e.target.value })}
+                  className="w-full border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all col-span-1 md:col-span-2"
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSaveBanner}
+                  className="bg-green-600 text-white px-8 py-3 rounded-xl hover:bg-green-700 font-bold shadow-green-200 shadow-lg transition-all"
+                >
+                  {t('common.save')}
+                </button>
+              </div>
+            </div>
+          )}
+
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {banners.map(banner => (
+              <div key={banner.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden group hover:shadow-md transition-all">
+                <div className="relative h-48 overflow-hidden">
+                  <img
+                    src={banner.image_url}
+                    alt={banner.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  {!banner.active && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                      <span className="bg-red-500 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg">{t('common.inactive')}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="p-5">
+                  <h4 className="font-bold text-lg mb-1 text-gray-900">{banner.title}</h4>
+                  <p className="text-sm text-gray-500 mb-6 line-clamp-2">{banner.subtitle}</p>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <button
+                      onClick={() => handleToggleBanner(banner.id, banner.active)}
+                      className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-colors ${banner.active
+                        ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                        : 'bg-green-50 text-green-700 hover:bg-green-100'
+                        }`}
+                    >
+                      {banner.active ? <EyeOff size={16} /> : <Eye size={16} />}
+                      {banner.active ? t('common.hide') : t('common.show')}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBannerForm(banner);
+                        setIsAddingBanner(true);
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                    >
+                      <Settings size={16} />
+                      {t('common.edit')}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteBanner(banner.id)}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                  >
+                    <Trash2 size={16} />
+                    {t('common.delete')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+
+      {activeTab === 'kategoriyalar' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 fade-in">
+          <h3 className="text-xl font-bold text-gray-800 mb-6">{t('website.tabs.categories')}</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 bg-gray-50 p-6 rounded-2xl border border-dashed border-gray-200">
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">Kategoriya nomi (UZ)</label>
+              <input
+                type="text"
+                placeholder="Masalan: Parda aksessuarlari"
+                className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+              />
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">Название категории (RU)</label>
+              <input
+                type="text"
+                placeholder="Например: Аксессуары для штор"
+                className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                value={newCategoryRu}
+                onChange={(e) => setNewCategoryRu(e.target.value)}
+              />
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">Category Name (EN)</label>
+              <input
+                type="text"
+                placeholder="Example: Curtain accessories"
+                className="w-full border border-gray-200 p-4 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                value={newCategoryEn}
+                onChange={(e) => setNewCategoryEn(e.target.value)}
+              />
+            </div>
+            <div className="space-y-4">
+              <label className="text-sm font-bold text-gray-600 block">{t('website.categories.image')}</label>
+              <div className="flex gap-4 items-center">
+                <div className="w-16 h-16 rounded-xl bg-white border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {categoryImage ? (
+                    <img src={categoryImage} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Layout className="text-gray-300" size={24} />
+                  )}
+                </div>
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder={t('website.categories.image')}
+                    className="flex-1 border border-gray-200 p-3 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm bg-white"
+                    value={categoryImage}
+                    onChange={(e) => setCategoryImage(e.target.value)}
+                  />
+                  <label className="cursor-pointer bg-white border border-gray-200 p-3 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center">
+                    <input type="file" className="hidden" onChange={handleCategoryImageUpload} accept="image/*" />
+                    {uploadingCategory ? <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent animate-spin rounded-full"></div> : <Image size={20} className="text-gray-500" />}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="md:col-span-2 flex justify-end gap-3">
+              {editingCategoryId && (
+                <button
+                  onClick={handleCancelEditCategory}
+                  className="px-6 py-4 rounded-xl font-bold border border-gray-300 text-gray-600 hover:bg-gray-50 flex items-center gap-2 transition-all"
+                >
+                  <X size={20} /> {t('common.cancel')}
+                </button>
+              )}
+              <button
+                onClick={handleSaveCategory}
+                className="bg-blue-600 text-white px-10 py-4 rounded-xl hover:bg-blue-700 font-bold shadow-lg shadow-blue-200 flex items-center gap-2 transition-all"
+                disabled={uploadingCategory}
+              >
+                {editingCategoryId ? <><Settings size={20} /> {t('common.save')}</> : <><Plus size={20} /> {t('website.categories.addCategory')}</>}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl overflow-hidden border border-gray-100">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-sm uppercase tracking-wider font-bold">
+                  <th className="px-6 py-4 w-20">{t('common.image')}</th>
+                  <th className="px-6 py-4">Nomi (UZ)</th>
+                  <th className="px-6 py-4">Название (RU)</th>
+                  <th className="px-6 py-4">Name (EN)</th>
+                  <th className="px-6 py-4 text-right">{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {categories.map(cat => (
+                  <tr key={cat.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-3">
+                      <div className="w-10 h-10 rounded-lg bg-gray-100 border border-gray-200 overflow-hidden">
+                        {cat.image_url ? (
+                          <img src={cat.image_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-300">
+                            <Layout size={16} />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 font-bold text-gray-800">{cat.name_uz || cat.name}</td>
+                    <td className="px-6 py-4 text-gray-600">{cat.name_ru}</td>
+                    <td className="px-6 py-4 text-gray-600">{cat.name_en}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => handleEditCategory(cat)} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors" title={t('common.edit')}>
+                          <Settings size={20} />
+                        </button>
+                        <button onClick={() => handleDeleteCategory(cat.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title={t('common.delete')}>
+                          <Trash2 size={20} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {categories.length === 0 && (
+                  <tr>
+                    <td colSpan="3" className="px-6 py-12 text-center text-gray-400">
+                      {t('website.categories.noCategories') || t('common.noData')}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'mahsulotlar' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden fade-in">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px] text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
+                  <th className="px-6 py-4">{t('common.image')}</th>
+                  <th className="px-6 py-4">{t('common.products')}</th>
+                  <th className="px-6 py-4">{t('website.categories.addCategory')}</th>
+                  <th className="px-6 py-4">{t('products.price')}</th>
+                  <th className="px-6 py-4">{t('products.stock')}</th>
+                  <th className="px-6 py-4">{t('common.status')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {products.map(product => (
+                  <tr key={product.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-3">
+                      <div className="w-12 h-12 rounded-lg bg-gray-100 overflow-hidden border border-gray-200">
+                        {product.image_url ? (
+                          <img src={product.image_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <Image size={20} />
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 font-bold text-gray-900">{product.name}</td>
+                    <td className="px-6 py-3 text-gray-600">
+                      <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold uppercase">{product.category || '-'}</span>
+                    </td>
+                    <td className="px-6 py-3 font-medium text-gray-700 font-mono">${product.sale_price?.toLocaleString()}</td>
+                    <td className="px-6 py-3">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${product.stock > 10 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {product.stock} {t('products.unit')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3">
+                      <button
+                        onClick={() => handleToggleProduct(product.id, product.is_active)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-colors ${product.is_active
+                          ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                          : 'bg-red-100 text-red-700 hover:bg-red-200'
+                          }`}
+                      >
+                        {product.is_active ? <Eye size={14} /> : <EyeOff size={14} />}
+                        {product.is_active ? t('common.show') : t('common.hide')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'buyurtmalar' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden fade-in">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
+                  <th className="px-6 py-4">{t('website.orders.customer')}</th>
+                  <th className="px-6 py-4">{t('website.orders.phone')}</th>
+                  <th className="px-6 py-4">{t('common.products')}</th>
+                  <th className="px-6 py-4">{t('common.quantity')}</th>
+                  <th className="px-6 py-4">{t('website.orders.amount')}</th>
+                  <th className="px-6 py-4">{t('common.payment')}</th>
+                  <th className="px-6 py-4">{t('common.status')}</th>
+                  <th className="px-6 py-4">{t('common.date')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {webOrders.map(order => {
+                  const firstItem = order.order_items?.[0] || {};
+                  return (
+                    <tr key={order.id} className="hover:bg-blue-50/30 transition-colors">
+                      <td className="px-6 py-4 font-bold text-gray-900">{order.customer_name || order.customers?.name || t('common.user')}</td>
+                      <td className="px-6 py-4 text-gray-600">{order.customer_phone || order.customers?.phone || '-'}</td>
+                      <td className="px-6 py-4 text-gray-800">{firstItem.product_name || firstItem.products?.name || t('common.noData')}</td>
+                      <td className="px-6 py-4 font-bold text-center">{firstItem.quantity || order.quantity || 1}</td>
+                      <td className="px-6 py-4 font-bold text-green-600 font-mono">
+                        ${order.total?.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-bold uppercase text-gray-500 bg-gray-100 px-2 py-0.5 rounded w-fit">
+                            {order.payment_method_detail || t('common.unknown')}
+                          </span>
+                          {order.receipt_url && (
+                            <a
+                              href={order.receipt_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"
+                            >
+                              <FileText size={12} />
+                              {t('common.viewReceipt')}
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <select
+                          value={order.status}
+                          onChange={(e) => handleOrderStatusChange(order.id, e.target.value)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase cursor-pointer outline-none border-none focus:ring-2 focus:ring-opacity-50 transition-all ${order.status === 'new' || order.status === 'Yangi' ? 'bg-blue-100 text-blue-800 focus:ring-blue-400' :
+                            order.status === 'pending' || order.status === 'Qabul qilindi' ? 'bg-yellow-100 text-yellow-800 focus:ring-yellow-400' :
+                              order.status === 'shipping' || order.status === 'Yetkazilmoqda' ? 'bg-purple-100 text-purple-800 focus:ring-purple-400' :
+                                order.status === 'completed' || order.status === 'Tugallandi' ? 'bg-green-100 text-green-800 focus:ring-green-400' :
+                                  'bg-gray-100 text-gray-800 focus:ring-gray-400'
+                            }`}
+                        >
+                          <option value="new">{t('orders.statusNew')}</option>
+                          <option value="pending">{t('orders.statusAccepted')}</option>
+                          <option value="completed">{t('orders.statusCompleted')}</option>
+                          <option value="cancelled">{t('orders.statusCancelled')}</option>
+                        </select>
+                      </td>
+                      <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">
+                        {new Date(order.created_at).toLocaleDateString(t('common.langCode') === 'uz' ? 'uz-UZ' : t('common.langCode') === 'ru' ? 'ru-RU' : 'en-US')}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {activeTab === 'sharhlar' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden fade-in">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px] text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
+                  <th className="px-6 py-4">{t('website.reviews.product')}</th>
+                  <th className="px-6 py-4">{t('website.reviews.rating')}</th>
+                  <th className="px-6 py-4">{t('website.reviews.comment')}</th>
+                  <th className="px-6 py-4">{t('website.reviews.status')}</th>
+                  <th className="px-6 py-4">{t('common.date')}</th>
+                  <th className="px-6 py-4">{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {reviews.map(review => (
+                  <tr key={review.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-4 font-bold text-gray-900">{review.products?.name || t('common.unknown')}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex text-yellow-400 gap-0.5">
+                        {[...Array(5)].map((_, i) => (
+                          <span key={i} className={i < review.rating ? "fill-current" : "text-gray-200"}>★</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 max-w-xs truncate text-gray-600 italic" title={review.comment}>"{review.comment}"</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${review.status === 'approved' ? 'bg-green-100 text-green-700' :
+                        review.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                        {review.status === 'approved' ? t('common.approved') :
+                          review.status === 'rejected' ? t('common.rejected') : t('common.pending')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">{new Date(review.created_at).toLocaleDateString(t('common.langCode') === 'uz' ? 'uz-UZ' : t('common.langCode') === 'ru' ? 'ru-RU' : 'en-US')}</td>
+                    <td className="px-6 py-4 flex gap-2">
+                      <button onClick={() => handleReviewStatus(review.id, 'approved')} className="text-green-600 hover:bg-green-100 p-2 rounded-lg transition-colors" title={t('common.approve')}><Eye size={18} /></button>
+                      <button onClick={() => handleReviewStatus(review.id, 'rejected')} className="text-yellow-600 hover:bg-yellow-100 p-2 rounded-lg transition-colors" title={t('common.hide')}><EyeOff size={18} /></button>
+                      <button onClick={() => handleDeleteReview(review.id)} className="text-red-600 hover:bg-red-100 p-2 rounded-lg transition-colors" title={t('common.delete')}><Trash2 size={18} /></button>
+                    </td>
+                  </tr>
+                ))}
+                {reviews.length === 0 && <tr><td colSpan="6" className="text-center py-12 text-gray-400">{t('website.reviews.noReviews')}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'obunalar' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden fade-in">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px] text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100 text-gray-500 text-xs uppercase tracking-wider font-bold">
+                  <th className="px-6 py-4">{t('website.subscriptions.email')}</th>
+                  <th className="px-6 py-4">{t('website.subscriptions.date')}</th>
+                  <th className="px-6 py-4">{t('common.status')}</th>
+                  <th className="px-6 py-4 text-right">{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {subscriptions.map(sub => (
+                  <tr key={sub.id} className="hover:bg-blue-50/30 transition-colors">
+                    <td className="px-6 py-4 font-bold text-gray-900">{sub.email}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-gray-500 uppercase">
+                      {new Date(sub.created_at).toLocaleString(t('common.langCode') === 'uz' ? 'uz-UZ' : t('common.langCode') === 'ru' ? 'ru-RU' : 'en-US')}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase ${sub.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                        {sub.status === 'active' ? t('common.active') : sub.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleDeleteSubscription(sub.id)}
+                        className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {subscriptions.length === 0 && (
+                  <tr>
+                    <td colSpan="4" className="text-center py-12 text-gray-400">
+                      {t('website.subscriptions.noSubscriptions')}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
