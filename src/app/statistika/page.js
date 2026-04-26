@@ -13,6 +13,7 @@ import {
     RefreshCcw,
     Users,
     FileDown,
+    FileUp,
     Layers,
     FolderTree,
     Printer,
@@ -45,6 +46,7 @@ const LS_MONTH = 'crm_stat_month'
 const LS_FROM = 'crm_stat_from'
 const LS_TO = 'crm_stat_to'
 const LS_STATUS = 'crm_stat_order_status'
+const LS_SELECTED_ORDER_IDS = 'crm_selected_order_ids'
 const VALID_FILTER_RANGES = ['7', '30', '90', '365']
 const TOP_N_BAR = 10
 
@@ -152,9 +154,17 @@ function printAnalyticsBlock(el) {
           box-sizing: border-box !important;
           box-shadow: none !important;
         }
-        .${PRINT_CLONE_CLASS} .stat-analytics-print-scroll {
+        .${PRINT_CLONE_CLASS} .stat-analytics-print-scroll,
+        .${PRINT_CLONE_CLASS}.stat-analytics-print-scroll {
           max-height: none !important;
           overflow: visible !important;
+        }
+        .${PRINT_CLONE_CLASS} table {
+          break-inside: auto;
+        }
+        .${PRINT_CLONE_CLASS} tr {
+          break-inside: avoid;
+          page-break-inside: avoid;
         }
         .${PRINT_CLONE_CLASS} thead {
           position: static !important;
@@ -214,6 +224,66 @@ function parseItemQty(v) {
     return n
 }
 
+function normalizeExcelHeaderKey(key) {
+    return String(key || '')
+        .trim()
+        .replace(/\uFEFF/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+}
+
+function normalizeColorKey(color) {
+    const raw = String(color || '').trim()
+    if (!raw || raw === '—') return '—'
+    return normalizeExcelHeaderKey(raw)
+}
+
+function parseProductColors(raw) {
+    if (Array.isArray(raw)) return raw.map((x) => String(x || '').trim()).filter(Boolean)
+    const s = String(raw || '').trim()
+    if (!s) return []
+    if (s.startsWith('[') || s.startsWith('{')) {
+        try {
+            const j = JSON.parse(s)
+            if (Array.isArray(j)) return j.map((x) => String(x || '').trim()).filter(Boolean)
+        } catch {
+            /* ignore */
+        }
+    }
+    return [s]
+}
+
+function resolvedOrderItemColor(oi, productsList) {
+    const direct = String(oi?.color || '').trim()
+    if (direct) return direct
+    const embColor = String(oi?.products?.color || '').trim()
+    if (embColor) return embColor
+    const embColors = parseProductColors(oi?.products?.colors)
+    if (embColors.length === 1) return embColors[0]
+    const p =
+        oi?.product_id && productsList?.length
+            ? productsList.find((x) => String(x.id) === String(oi.product_id))
+            : null
+    const pColor = String(p?.color || '').trim()
+    if (pColor) return pColor
+    const pColors = parseProductColors(p?.colors)
+    if (pColors.length === 1) return pColors[0]
+    return '—'
+}
+
+function parseExcelNumeric(v, fallback = 0) {
+    if (v == null) return fallback
+    const s = String(v).trim()
+    if (!s) return fallback
+    const n = Number(s.replace(/\s+/g, '').replace(',', '.'))
+    return Number.isFinite(n) ? n : fallback
+}
+
+function isMissingRelationError(err) {
+    const code = String(err?.code || '')
+    const msg = String(err?.message || '')
+    return code === '42P01' || /does not exist|relation .* does not exist/i.test(msg)
+}
 /** Mahsulot qatorlari (narx × dona) — kategoriya/mahsulot/kartochka yig‘indilari bir xil asosda */
 function sumOrderLineRevenue(order) {
     let s = 0
@@ -290,6 +360,16 @@ export default function StatistikaPage() {
     })
     const [loadError, setLoadError] = useState(null)
     const [partialWarning, setPartialWarning] = useState(null)
+    const [importedFileName, setImportedFileName] = useState('')
+    const [importedProductRows, setImportedProductRows] = useState([])
+    const [importedRawRowsCount, setImportedRawRowsCount] = useState(0)
+    const [excelImportError, setExcelImportError] = useState('')
+    const [excelImportBusy, setExcelImportBusy] = useState(false)
+    const importInputRef = useRef(null)
+    const [partnerReportRows, setPartnerReportRows] = useState([])
+    const [partnerReportBatchesCount, setPartnerReportBatchesCount] = useState(0)
+    const [latestBatchLabel, setLatestBatchLabel] = useState('')
+    const [selectedOrderIds, setSelectedOrderIds] = useState([])
 
     const [dateMode, setDateMode] = useState('preset')
     const [filterRange, setFilterRange] = useState('30')
@@ -311,6 +391,13 @@ export default function StatistikaPage() {
         setRangeTo(dt)
         const st = readLs(LS_STATUS, 'completed')
         if (st === 'all' || st === 'completed') setOrderStatusFilter(st)
+        const rawSelectedOrders = readLs(LS_SELECTED_ORDER_IDS, '[]')
+        try {
+            const parsed = JSON.parse(rawSelectedOrders)
+            if (Array.isArray(parsed)) setSelectedOrderIds(parsed.map((x) => String(x)))
+        } catch {
+            setSelectedOrderIds([])
+        }
         setHydrated(true)
     }, [])
 
@@ -404,10 +491,78 @@ export default function StatistikaPage() {
         }
     }, [t])
 
+    const loadPartnerReports = useCallback(async () => {
+        try {
+            const { data: latestBatch, error: latestBatchError } = await supabase
+                .from('partner_report_batches')
+                .select('id, file_name, created_at')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+            if (latestBatchError) {
+                if (isMissingRelationError(latestBatchError)) return
+                console.error('partner_report_batches latest load:', latestBatchError)
+                return
+            }
+            if (!latestBatch?.id) {
+                setPartnerReportRows([])
+                setLatestBatchLabel('')
+                const { count } = await supabase
+                    .from('partner_report_batches')
+                    .select('id', { head: true, count: 'exact' })
+                setPartnerReportBatchesCount(Number(count) || 0)
+                return
+            }
+
+            const { data: lines, error } = await supabase
+                .from('partner_report_lines')
+                .select('product_name, product_code, color, qty, amount, partner_report_batches(partner_name)')
+                .eq('batch_id', latestBatch.id)
+            if (error) {
+                if (isMissingRelationError(error)) return
+                console.error('partner_report_lines load:', error)
+                return
+            }
+            const map = new Map()
+            for (const r of lines || []) {
+                const productName = String(r.product_name || '').trim()
+                const code = String(r.product_code || '').trim()
+                if (!productName || !code) continue
+                const customerName = String(r.partner_report_batches?.partner_name || '').trim() || 'Mijoz'
+                const color = String(r.color || '').trim() || '—'
+                const key = `${customerName}|||${productName}|||${code}|||${color}`
+                if (!map.has(key)) {
+                    map.set(key, { key, customerName, productName, code, color, qty: 0, amount: 0 })
+                }
+                const x = map.get(key)
+                x.qty += Number(r.qty) || 0
+                x.amount += Number(r.amount) || 0
+            }
+            const rows = Array.from(map.values()).sort((a, b) => {
+                const c = String(a.customerName).localeCompare(String(b.customerName), 'uz')
+                if (c !== 0) return c
+                if (b.qty !== a.qty) return b.qty - a.qty
+                return String(a.productName).localeCompare(String(b.productName), 'uz')
+            })
+            setPartnerReportRows(rows)
+            const dt = latestBatch.created_at ? new Date(latestBatch.created_at).toLocaleString('en-CA') : ''
+            setLatestBatchLabel(`${latestBatch.file_name || 'import'}${dt ? ` · ${dt}` : ''}`)
+
+            const { count } = await supabase
+                .from('partner_report_batches')
+                .select('id', { head: true, count: 'exact' })
+            setPartnerReportBatchesCount(Number(count) || 0)
+        } catch (e) {
+            console.error('loadPartnerReports error:', e)
+        }
+    }, [])
     useEffect(() => {
         loadData()
     }, [loadData])
 
+    useEffect(() => {
+        loadPartnerReports()
+    }, [loadPartnerReports])
     const { start: periodStart, end: periodEnd } = useMemo(
         () => getPeriodBounds(dateMode, filterRange, monthValue, rangeFrom, rangeTo),
         [dateMode, filterRange, monthValue, rangeFrom, rangeTo]
@@ -442,6 +597,8 @@ export default function StatistikaPage() {
     const printRefProducts = useRef(null)
     const printRefCustomers = useRef(null)
     const printRefCustomerModels = useRef(null)
+    const printRefUnsold = useRef(null)
+    const printRefExcelImport = useRef(null)
 
     /** Davr: buyurtma yaratilgan sana (barcha statuslar uchun «hammasi» rejimi) */
     const ordersCreatedInPeriod = useMemo(
@@ -734,6 +891,211 @@ export default function StatistikaPage() {
             })),
         [customerAnalyticsRows]
     )
+
+    const importCustomerOptions = useMemo(() => {
+        const map = new Map()
+        for (const o of data.orders || []) {
+            const name = String(o.customer_name || o.customers?.name || '').trim()
+            const phone = String(o.customer_phone || o.customers?.phone || '').trim()
+            if (!name) continue
+            const key = phone ? `${name} / ${phone}` : name
+            if (!map.has(key)) map.set(key, { key, label: key })
+        }
+        return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'uz'))
+    }, [data.orders])
+
+    const orderSelectionOptions = useMemo(() => {
+        return (data.orders || [])
+            .map((o) => {
+                const id = String(o.id)
+                const num = String(o.order_number || '').trim() || `#${id.slice(0, 8)}`
+                const customerName = String(o.customer_name || o.customers?.name || 'Mijoz').trim()
+                const date = o.created_at ? new Date(o.created_at).toLocaleDateString('en-CA') : '—'
+                const total = Math.round((Number(o.total) || 0) * 100) / 100
+                return { id, label: `${num} · ${customerName} · ${date} · $${formatUsd(total)}` }
+            })
+            .sort((a, b) => b.label.localeCompare(a.label))
+    }, [data.orders])
+
+    const importedTotals = useMemo(
+        () =>
+            importedProductRows.reduce(
+                (acc, r) => {
+                    acc.qty += Number(r.qty) || 0
+                    acc.amount += Number(r.amount) || 0
+                    return acc
+                },
+                { qty: 0, amount: 0 }
+            ),
+        [importedProductRows]
+    )
+
+    const filteredPartnerReportRows = useMemo(() => partnerReportRows, [partnerReportRows])
+
+    const partnerReportTotals = useMemo(
+        () =>
+            filteredPartnerReportRows.reduce(
+                (acc, r) => {
+                    acc.qty += Number(r.qty) || 0
+                    acc.amount += Number(r.amount) || 0
+                    return acc
+                },
+                { qty: 0, amount: 0 }
+            ),
+        [filteredPartnerReportRows]
+    )
+
+    const partnerReportUnsoldProducts = useMemo(() => {
+        const soldByCode = new Map()
+        for (const r of filteredPartnerReportRows) {
+            const codeKey = normalizeExcelHeaderKey(r.code)
+            if (!codeKey) continue
+            soldByCode.set(codeKey, (soldByCode.get(codeKey) || 0) + (Number(r.qty) || 0))
+        }
+
+        const selectedSet = new Set((selectedOrderIds || []).map((x) => String(x)))
+        const orderNeeds = new Map()
+        for (const order of data.orders || []) {
+            const oid = String(order?.id || '')
+            if (!oid || !selectedSet.has(oid)) continue
+            for (const item of order?.order_items || []) {
+                const code = String(resolvedOrderItemModelCode(item, data.products) || '').trim()
+                if (!code) continue
+                const codeKey = normalizeExcelHeaderKey(code)
+                if (!codeKey) continue
+                const itemName = String(item?.product_name || item?.products?.name || code).trim() || code
+                const needQtyRaw = parseItemQty(item?.quantity)
+                const needQty = needQtyRaw > 0 ? needQtyRaw : 1
+                if (!orderNeeds.has(codeKey)) {
+                    orderNeeds.set(codeKey, { id: codeKey, name: itemName, code, orderedQty: 0 })
+                }
+                orderNeeds.get(codeKey).orderedQty += needQty
+            }
+        }
+
+        const unsold = []
+        for (const [codeKey, p] of orderNeeds.entries()) {
+            const soldQty = Number(soldByCode.get(codeKey) || 0)
+            const remainingQty = Math.max(0, Math.round((p.orderedQty - soldQty) * 1000) / 1000)
+            if (remainingQty <= 0) continue
+            unsold.push({
+                id: p.id,
+                name: p.name,
+                code: p.code,
+                orderedQty: Math.round(p.orderedQty * 1000) / 1000,
+                soldQty: Math.round(soldQty * 1000) / 1000,
+                remainingQty,
+            })
+        }
+        return unsold.sort((a, b) => b.remainingQty - a.remainingQty)
+    }, [filteredPartnerReportRows, data.orders, data.products, selectedOrderIds])
+
+    const handleImportStatsExcel = useCallback(async (e) => {
+        const file = e.target.files?.[0]
+        if (e.target) e.target.value = ''
+        if (!file || excelImportBusy) return
+        setExcelImportBusy(true)
+        setExcelImportError('')
+        try {
+            const buf = await file.arrayBuffer()
+            const wb = XLSX.read(buf, { type: 'array' })
+            const sheetName = wb.SheetNames[0]
+            const sheet = wb.Sheets[sheetName]
+            if (!sheet) throw new Error('Excel varaq topilmadi.')
+            const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+            if (!rawRows.length) throw new Error('Excel faylda qatorlar yo`q.')
+
+            const mapRows = rawRows.map((raw) => {
+                const n = {}
+                for (const [k, v] of Object.entries(raw || {})) {
+                    n[normalizeExcelHeaderKey(k)] = v
+                }
+                const productName = String(n['наименование'] || n['product_name'] || n['mahsulot'] || '').trim()
+                const code = String(n['код'] || n['model_code'] || n['kod'] || '').trim()
+                const color = String(n['цвет'] || n['color'] || n['rang'] || '').trim()
+                const qty = parseExcelNumeric(n['кол-во'] ?? n['quantity'] ?? n['miqdor'], 0)
+                const unitPrice = parseExcelNumeric(n['цена'] ?? n['unit_price'] ?? n['narx'], 0)
+                const amountRaw = parseExcelNumeric(n['сумма'] ?? n['line_total'], NaN)
+                const amount = Number.isFinite(amountRaw) ? amountRaw : Math.round(unitPrice * qty * 100) / 100
+                return { productName, code, color, qty, unitPrice, amount }
+            })
+
+            const filtered = mapRows.filter((r) => r.productName && r.code && r.qty > 0)
+            if (!filtered.length) {
+                throw new Error('Majburiy ustunlar bo`yicha yaroqli qator topilmadi (Наименование, Код, Кол-во).')
+            }
+            setImportedRawRowsCount(filtered.length)
+
+            const byProduct = new Map()
+            for (const r of filtered) {
+                const key = normalizeExcelHeaderKey(r.code)
+                if (!key) continue
+                if (!byProduct.has(key)) {
+                    byProduct.set(key, {
+                        key,
+                        productName: r.productName,
+                        code: r.code,
+                        color: r.color || '—',
+                        qty: 0,
+                        amount: 0,
+                    })
+                }
+                const x = byProduct.get(key)
+                if ((!x.productName || x.productName === '—') && r.productName) x.productName = r.productName
+                if (x.color !== r.color && r.color) x.color = 'Aralash'
+                x.qty += r.qty
+                x.amount += r.amount
+            }
+
+            const rows = Array.from(byProduct.values())
+            rows.sort((a, b) => {
+                if (b.qty !== a.qty) return b.qty - a.qty
+                return String(a.productName).localeCompare(String(b.productName), 'uz')
+            })
+            const { data: batch, error: batchError } = await supabase
+                .from('partner_report_batches')
+                .insert([
+                    {
+                        partner_name: 'Import',
+                        file_name: file.name || 'excel-import',
+                        report_date: new Date().toISOString().slice(0, 10),
+                    },
+                ])
+                .select('id')
+                .single()
+            if (batchError) {
+                if (isMissingRelationError(batchError)) {
+                    throw new Error(
+                        "DB jadvallari topilmadi. Avval `supabase_partner_reports.sql` ni Supabase SQL Editor'da ishga tushiring."
+                    )
+                }
+                throw batchError
+            }
+
+            const rowsInsert = rows.map((r) => ({
+                batch_id: batch.id,
+                product_name: r.productName,
+                product_code: r.code,
+                color: r.color === '—' ? null : r.color,
+                qty: Math.round((Number(r.qty) || 0) * 1000) / 1000,
+                unit_price: 0,
+                amount: Math.round((Number(r.amount) || 0) * 100) / 100,
+            }))
+            const { error: linesError } = await supabase.from('partner_report_lines').insert(rowsInsert)
+            if (linesError) throw linesError
+
+            setImportedProductRows(rows)
+            setImportedFileName(file.name || '')
+            await loadPartnerReports()
+        } catch (err) {
+            setImportedProductRows([])
+            setImportedFileName('')
+            setImportedRawRowsCount(0)
+            setExcelImportError(err?.message || String(err))
+        } finally {
+            setExcelImportBusy(false)
+        }
+    }, [excelImportBusy, loadPartnerReports])
 
     /** Google Gemini API ga yuboriladigan yig‘ma (shaxsiy telefon yo‘q) */
     const crmAiSummary = useMemo(
@@ -1099,6 +1461,22 @@ export default function StatistikaPage() {
                     >
                         <RefreshCcw size={20} />
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => importInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-900 hover:bg-emerald-100"
+                        title="Excel import (faqat statistika bo`limi uchun)"
+                    >
+                        <FileUp size={16} />
+                        {excelImportBusy ? 'Import...' : 'Excel import (statistika)'}
+                    </button>
+                    <input
+                        ref={importInputRef}
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        className="hidden"
+                        onChange={handleImportStatsExcel}
+                    />
                 </div>
             </div>
 
@@ -1126,6 +1504,12 @@ export default function StatistikaPage() {
                 </div>
             ) : null}
 
+            {excelImportError ? (
+                <div className="mb-4 flex gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+                    <AlertCircle size={20} className="shrink-0 mt-0.5" aria-hidden />
+                    <p className="min-w-0 break-words">{excelImportError}</p>
+                </div>
+            ) : null}
             <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm text-blue-950">
                 <span className="font-bold">{t('statistics.activePeriod')}:</span>{' '}
                 <span className="font-mono tabular-nums">{periodLabel}</span>
@@ -1136,6 +1520,206 @@ export default function StatistikaPage() {
                         : t('statistics.orderStatusAll')}
                     )
                 </span>
+            </div>
+
+            <div className="mb-8 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-bold text-emerald-900">Excel import mahsulot statistikasi</h3>
+                    {importedFileName && !importedProductRows.length ? (
+                        <span className="text-xs font-medium text-emerald-800">
+                            Fayl: <span className="font-mono">{importedFileName}</span>
+                        </span>
+                    ) : null}
+                </div>
+                {importedProductRows.length ? (
+                    <>
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-xs text-emerald-900">
+                                Excel qatorlari: <b>{importedRawRowsCount || importedProductRows.length}</b> · Unikal nomenklatura:{' '}
+                                <b>{importedProductRows.length}</b> · Jami miqdor:{' '}
+                                <b>{Math.round(importedTotals.qty * 1000) / 1000}</b> · Jami summa:{' '}
+                                <b>${formatUsd(importedTotals.amount)}</b>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => printAnalyticsBlock(printRefExcelImport.current)}
+                                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-300 bg-white px-2 py-1 text-[11px] font-bold text-emerald-900 hover:bg-emerald-100"
+                                title="Excel import jadvalini chop etish"
+                            >
+                                <Printer size={12} />
+                                Chop etish
+                            </button>
+                        </div>
+                        <div
+                            ref={printRefExcelImport}
+                            className="stat-analytics-print-scroll max-h-[360px] overflow-auto rounded-xl border border-emerald-100 bg-white p-3"
+                        >
+                            {importedFileName ? (
+                                <p className="mb-2 text-xs font-medium text-emerald-800">
+                                    Fayl: <span className="font-mono">{importedFileName}</span>
+                                </p>
+                            ) : null}
+                            <table className="w-full text-sm">
+                                <thead className="sticky top-0 z-10 bg-emerald-100/80 text-left text-xs uppercase text-emerald-900">
+                                    <tr>
+                                        <th className="px-3 py-2">#</th>
+                                        <th className="px-3 py-2">Mahsulot</th>
+                                        <th className="px-3 py-2">Kod</th>
+                                        <th className="px-3 py-2">Rang</th>
+                                        <th className="px-3 py-2 text-right">Miqdor</th>
+                                        <th className="px-3 py-2 text-right">Summa</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-emerald-50">
+                                    {importedProductRows.map((row, idx) => (
+                                        <tr key={row.key} className="hover:bg-emerald-50/60">
+                                            <td className="px-3 py-2">{idx + 1}</td>
+                                            <td className="px-3 py-2 font-medium">{row.productName}</td>
+                                            <td className="px-3 py-2 font-mono">{row.code}</td>
+                                            <td className="px-3 py-2">{row.color}</td>
+                                            <td className="px-3 py-2 text-right font-mono">{Math.round(row.qty * 1000) / 1000}</td>
+                                            <td className="px-3 py-2 text-right font-mono">${formatUsd(row.amount)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                ) : (
+                    <p className="text-sm text-emerald-900/80">
+                        Excel import tugmasi orqali fayl yuklang. Majburiy ustunlar: <b>Наименование</b>, <b>Код</b>, <b>Кол-во</b>.
+                    </p>
+                )}
+            </div>
+
+            <div className="mb-8 rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-bold text-indigo-900">Hamkor hisobotlari (jamlangan)</h3>
+                    <span className="text-xs text-indigo-800">
+                        Batchlar: <b>{partnerReportBatchesCount}</b>
+                    </span>
+                </div>
+                {latestBatchLabel ? (
+                    <p className="mb-2 text-xs text-indigo-800">
+                        Hisob-kitob manbasi: <b>oxirgi import</b> — {latestBatchLabel}
+                    </p>
+                ) : null}
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold text-indigo-900">Buyurtmalar tanlovi</span>
+                </div>
+                <div className="mb-3 rounded-lg border border-indigo-200 bg-white p-2">
+                    <p className="mb-1 text-xs font-semibold text-indigo-900">
+                        Buyurtmalar ro`yxatidan belgilang (1 yoki undan ko`p):
+                    </p>
+                    <div className="max-h-[160px] overflow-auto rounded border border-indigo-100 p-2">
+                        {orderSelectionOptions.map((o) => {
+                            const checked = selectedOrderIds.includes(o.id)
+                            return (
+                                <label
+                                    key={o.id}
+                                    className="mb-1 flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-xs hover:bg-indigo-50"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={(e) => {
+                                            const next = e.target.checked
+                                                ? [...selectedOrderIds, o.id]
+                                                : selectedOrderIds.filter((x) => x !== o.id)
+                                            setSelectedOrderIds(next)
+                                            writeLs(LS_SELECTED_ORDER_IDS, JSON.stringify(next))
+                                        }}
+                                        className="mt-0.5"
+                                    />
+                                    <span className="font-mono">{o.label}</span>
+                                </label>
+                            )
+                        })}
+                    </div>
+                    <p className="mt-1 text-[11px] text-indigo-700">Tanlangan buyurtmalar: {selectedOrderIds.length}</p>
+                </div>
+                {filteredPartnerReportRows.length ? (
+                    <>
+                        <div className="mb-3 text-xs text-indigo-900">
+                            Nomenklatura: <b>{filteredPartnerReportRows.length}</b> · Jami miqdor:{' '}
+                            <b>{Math.round(partnerReportTotals.qty * 1000) / 1000}</b> · Jami summa:{' '}
+                            <b>${formatUsd(partnerReportTotals.amount)}</b>
+                        </div>
+                        <div className="mb-3 text-xs text-indigo-900">
+                            Tanlangan buyurtmalarda sotilmay qolgan kodlar:{' '}
+                            <b>{partnerReportUnsoldProducts.length}</b>
+                            <button
+                                type="button"
+                                onClick={() => printAnalyticsBlock(printRefUnsold.current)}
+                                className="ml-3 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-800 hover:bg-slate-100"
+                                title="Sotilmagan jadvalni chop etish"
+                            >
+                                <Printer size={12} />
+                                Chop etish
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                            <div className="max-h-[320px] overflow-auto rounded-xl border border-indigo-100 bg-white">
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0 z-10 bg-indigo-100/80 text-left text-xs uppercase text-indigo-900">
+                                        <tr>
+                                            <th className="px-3 py-2">#</th>
+                                            <th className="px-3 py-2">Mijoz</th>
+                                            <th className="px-3 py-2">Mahsulot</th>
+                                            <th className="px-3 py-2">Kod</th>
+                                            <th className="px-3 py-2 text-right">Miqdor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-indigo-50">
+                                        {(importedProductRows.length ? importedProductRows : filteredPartnerReportRows)
+                                            .slice(0, 200)
+                                            .map((row, idx) => (
+                                                <tr key={`left-${row.key || idx}`} className="hover:bg-indigo-50/60">
+                                                    <td className="px-3 py-2">{idx + 1}</td>
+                                                    <td className="px-3 py-2">{row.customerName || 'Import'}</td>
+                                                    <td className="px-3 py-2 font-medium">{row.productName}</td>
+                                                    <td className="px-3 py-2 font-mono">{row.code}</td>
+                                                    <td className="px-3 py-2 text-right font-mono">
+                                                        {Math.round((Number(row.qty) || 0) * 1000) / 1000}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div ref={printRefUnsold} className="stat-analytics-print-scroll max-h-[320px] overflow-auto rounded-xl border border-indigo-100 bg-white">
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0 z-10 bg-indigo-100/80 text-left text-xs uppercase text-indigo-900">
+                                        <tr>
+                                            <th className="px-3 py-2">#</th>
+                                            <th className="px-3 py-2">Sotilmagan mahsulot</th>
+                                            <th className="px-3 py-2">Kod</th>
+                                            <th className="px-3 py-2 text-right">Buyurtma</th>
+                                            <th className="px-3 py-2 text-right">Hisobotda sotilgan</th>
+                                            <th className="px-3 py-2 text-right">Qolgan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-indigo-50">
+                                        {partnerReportUnsoldProducts.map((row, idx) => (
+                                            <tr key={`unsold-${row.id}`} className="hover:bg-indigo-50/60">
+                                                <td className="px-3 py-2">{idx + 1}</td>
+                                                <td className="px-3 py-2 font-medium">{row.name}</td>
+                                                <td className="px-3 py-2 font-mono">{row.code}</td>
+                                                <td className="px-3 py-2 text-right font-mono">{row.orderedQty}</td>
+                                                <td className="px-3 py-2 text-right font-mono">{row.soldQty}</td>
+                                                <td className="px-3 py-2 text-right font-mono font-bold text-indigo-900">{row.remainingQty}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <p className="text-sm text-indigo-900/80">
+                        Hali hamkor hisobotlari saqlanmagan. Import qilsangiz, bu yerda jamlanma ko‘rinadi.
+                    </p>
+                )}
             </div>
 
             {!loadError ? (

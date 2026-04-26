@@ -14,9 +14,42 @@ export function escapeHtml(s) {
         .replace(/"/g, '&quot;')
 }
 
+/**
+ * Excel / RU locale: "1,5", NBSP; AQSH: "1,234.56" — forma va import bir xil.
+ * @param {unknown} v
+ * @returns {number}
+ */
+function coerceLocaleNumber(v) {
+    if (v == null || v === '') return NaN
+    if (typeof v === 'number') return Number.isFinite(v) ? v : NaN
+    let s = String(v)
+        .trim()
+        .replace(/\u00a0/g, '')
+        .replace(/\s/g, '')
+    if (!s) return NaN
+    const hasComma = s.includes(',')
+    const hasDot = s.includes('.')
+    if (hasComma && !hasDot) {
+        const parts = s.split(',')
+        if (parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
+            s = `${parts[0]}.${parts[1]}`
+        }
+    } else if (hasComma && hasDot) {
+        const lastComma = s.lastIndexOf(',')
+        const lastDot = s.lastIndexOf('.')
+        if (lastComma > lastDot) {
+            s = s.replace(/\./g, '').replace(',', '.')
+        } else {
+            s = s.replace(/,/g, '')
+        }
+    }
+    const n = Number(s)
+    return Number.isFinite(n) ? n : NaN
+}
+
 /** Buyurtma qatoridagi miqdor/narx — chop etish va yig‘indilarda satr qo‘shilishini oldini olish uchun */
 export function parseOrderItemQty(v) {
-    const n = Number(v)
+    const n = coerceLocaleNumber(v)
     if (!Number.isFinite(n) || n < 0) return 0
     return n
 }
@@ -43,8 +76,15 @@ export function orderItemQtyDisplay(oi, productsList) {
 }
 
 export function parseOrderItemPrice(v) {
-    const n = Number(v)
+    const n = coerceLocaleNumber(v)
     return Number.isFinite(n) ? n : 0
+}
+
+/** Excel import: bo‘sh katak → null; "12,5" → raqam; noto‘g‘ri matn → null (katalog narxi ishlatiladi). */
+export function parseOptionalMoneyCell(v) {
+    if (v == null || String(v).trim() === '') return null
+    const n = coerceLocaleNumber(v)
+    return Number.isFinite(n) ? n : null
 }
 
 /** API / jadvalda: `line_note` (bazadan) yoki eski variant */
@@ -177,13 +217,86 @@ export function normalizeModelKey(s) {
     return coreNormalizeModelKey(s)
 }
 
+const COLOR_ALIAS_TO_CANONICAL = new Map([
+    ['qora', 'black'],
+    ['qorarang', 'black'],
+    ['qorarngi', 'black'],
+    ['black', 'black'],
+    ['blck', 'black'],
+    ['черный', 'black'],
+    ['чёрный', 'black'],
+    ['oq', 'white'],
+    ['oqrang', 'white'],
+    ['white', 'white'],
+    ['белый', 'white'],
+    ['kok', 'blue'],
+    ['kokrang', 'blue'],
+    ['blue', 'blue'],
+    ['синий', 'blue'],
+    ['moviy', 'blue'],
+    ['toqkok', 'navy'],
+    ['toqqok', 'navy'],
+    ['darkblue', 'navy'],
+    ['navy', 'navy'],
+    ['тёмносиний', 'navy'],
+    ['темносиний', 'navy'],
+    ['yashil', 'green'],
+    ['green', 'green'],
+    ['зеленый', 'green'],
+    ['зелёный', 'green'],
+    ['qizil', 'red'],
+    ['red', 'red'],
+    ['красный', 'red'],
+    ['sariq', 'yellow'],
+    ['yellow', 'yellow'],
+    ['желтый', 'yellow'],
+    ['жёлтый', 'yellow'],
+    ['kulrang', 'gray'],
+    ['kulrangi', 'gray'],
+    ['gray', 'gray'],
+    ['grey', 'gray'],
+    ['серый', 'gray'],
+    ['pushti', 'pink'],
+    ['pink', 'pink'],
+    ['розовый', 'pink'],
+    ['bej', 'beige'],
+    ['beige', 'beige'],
+    ['бежевый', 'beige'],
+    ['jigarrang', 'brown'],
+    ['brown', 'brown'],
+    ['коричневый', 'brown'],
+    ['siyohrang', 'black'],
+    ['maroon', 'burgundy'],
+    ['bordo', 'burgundy'],
+    ['burgundy', 'burgundy'],
+    ['бордовый', 'burgundy'],
+    ['fiolet', 'purple'],
+    ['binafsha', 'purple'],
+    ['purple', 'purple'],
+    ['фиолетовый', 'purple'],
+])
+
+function canonicalizeColorToken(color) {
+    const raw = String(color ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\u00a0/g, ' ')
+        .replace(/\s+/g, '')
+        .replace(/[(){}\[\].,;:/\\'"`~!@#$%^&*+=?|<>_-]/g, '')
+    if (!raw) return ''
+    const withoutRang = raw.endsWith('rang') ? raw.slice(0, -4) : raw
+    const normalized = withoutRang || raw
+    return COLOR_ALIAS_TO_CANONICAL.get(normalized) || normalized
+}
+
 /**
  * Buyurtma qatori rangi uchun yagona kalit: null/bo‘sh va «—» bitta (`normalizeModelKey('')` ≠ `normalizeModelKey('—')` bo‘lmasin).
  * Aks holda dedupe turli kalit, `orderItemsToOrderLines` esa bitta SKUda miqdorni qo‘shib yuborardi — tahrirda 2x.
  */
 export function normalizeOrderItemColorKey(color) {
     const raw = (color != null ? String(color) : '').trim() || '—'
-    return normalizeModelKey(raw)
+    if (raw === '—') return '—'
+    return normalizeModelKey(canonicalizeColorToken(raw))
 }
 
 /** Supabase qatorida ko‘rinadigan nom (asosiy nom bo‘sh bo‘lsa — lokalizatsiya) */
@@ -298,7 +411,7 @@ export function expandOrderLineForSubmit(line) {
         }
         return rows
     }
-    const q = parseFloat(String(line.quantity ?? '0')) || 0
+    const q = parseOrderItemQty(line.quantity ?? '0')
     if (q <= 0) return []
     return [
         {
@@ -707,9 +820,9 @@ export function canonicalizeExcelImportRow(r) {
         o.line_total != null &&
         String(o.line_total).trim() !== ''
     ) {
-        const sum = Number(String(o.line_total).replace(',', '.'))
-        const qty = Number(String(o.quantity ?? '').replace(',', '.'))
-        if (Number.isFinite(sum) && Number.isFinite(qty) && qty > 0) {
+        const sum = parseOrderItemPrice(o.line_total)
+        const qty = parseOrderItemQty(o.quantity ?? '')
+        if (Number.isFinite(sum) && qty > 0) {
             o.unit_price = Math.round((sum / qty) * 100) / 100
         }
     }
@@ -744,6 +857,7 @@ export function groupImportedExcelRowsToOrders(rows) {
                 return v != null && String(v).trim() !== ''
             })
         )
+
     const hasExplicitGrouping = normalized.some((r) => {
         const ig = r.import_group ?? r.import_gr
         if (ig != null && String(ig).trim() !== '') return true
@@ -751,25 +865,29 @@ export function groupImportedExcelRowsToOrders(rows) {
         if (r.order_number != null && String(r.order_number).trim() !== '') return true
         return false
     })
+
     if (!hasExplicitGrouping) {
-        /** Shablon rejimi: ketma-ket qatorlarda `Клиент + Дата` almashsa yangi buyurtma boshlanadi. */
-        const groups = []
-        let current = []
-        let prevMarker = ''
+        /**
+         * Shablon rejimi: explicit `order_id/order_number/import_group` bo‘lmasa
+         * bir xil klient satrlarini bitta buyurtma (yana) yig‘amiz.
+         * Avvalgi `Клиент + Дата` bo‘yicha bo‘linish bir klient uchun 3-4 ta buyurtma yaratib yuborardi.
+         */
+        const map = new Map()
         for (const r of normalized) {
-            const marker = `${String(r.customer_name || '').trim()}|${String(r.order_created_at || '').trim()}`
-            const idxVal = Number(r.line_index)
-            const startsByIndex = Number.isFinite(idxVal) ? idxVal <= 1 : false
-            const startsByMarker = marker !== '' && prevMarker !== '' && marker !== prevMarker
-            if ((startsByMarker || startsByIndex) && current.length) {
-                groups.push(current)
-                current = []
-            }
-            current.push(r)
-            if (marker !== '') prevMarker = marker
+            const key = `${String(r.customer_name || '').trim()}|${String(r.customer_phone || '').trim()}`
+            const resolvedKey = key === '|' ? '__single_import__' : key
+            if (!map.has(resolvedKey)) map.set(resolvedKey, [])
+            map.get(resolvedKey).push(r)
         }
-        if (current.length) groups.push(current)
-        return groups
+        return Array.from(map.values()).map((lines) => {
+            lines.sort((a, b) => {
+                const ai = Number(a.line_index)
+                const bi = Number(b.line_index)
+                if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi
+                return 0
+            })
+            return lines
+        })
     }
     const map = new Map()
     for (const r of normalized) {
@@ -860,7 +978,8 @@ export function dedupeOrderItemsKeepNewest(rows, productsList) {
         const sizeResolved = resolvedOrderItemSizeRaw(oi, plist)
         const sz = normalizeModelKey(sizeResolved != null ? String(sizeResolved) : '')
         const col = normalizeOrderItemColorKey(oi.color)
-        const key = `${pid}|${sz}|${col}`
+        const li = oi.line_index ?? ''
+        const key = `${pid}|${sz}|${col}|${li}`
         if (seen.has(key)) continue
         seen.add(key)
         out.push(oi)

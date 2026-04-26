@@ -28,6 +28,7 @@ import {
     escapeHtml,
     parseOrderItemQty,
     parseOrderItemPrice,
+    parseOptionalMoneyCell,
     orderItemLineNoteText,
     mergeLineNotes,
     isSchemaOrEmbedError,
@@ -52,6 +53,9 @@ import {
     buildCrmQatorlarExcelRows,
     exportOrdersExcelRowsToFile,
     readOrdersImportWorkbookRows,
+    normalizeImportedExcelCellKey,
+    normalizeImportedExcelRow,
+    canonicalizeExcelImportRow,
     groupImportedExcelRowsToOrders,
     buildItemPayloadsFromExpandedLines,
     skuBucketKeyForOrderItem,
@@ -2061,6 +2065,34 @@ function BuyurtmalarPageContent() {
 
     const highlightOrderId = searchParams.get('highlight')
 
+    const KNOWN_EXCEL_IMPORT_HEADERS = new Set([
+        'дата', 'клиент', 'наименование', 'код', 'цвет', 'кол-во', 'цена', 'сумма', 'фото',
+        'customer_name', 'customer_phone', 'model_code', 'product_name', 'image_url', 'quantity', 'unit_price',
+        'line_total', 'order_created_at', 'order_number', 'order_status', 'order_note', 'order_source',
+        'payment_detail', 'payment_method_detail', 'line_note', 'product_id', 'import_group', 'import_gr',
+        'line_index', 'order_id', 'mijoz', 'telefon', 'phone', 'kod', 'rang', 'miqdor', 'narx', 'sana',
+        'buyurtma', 'buyurtma_raqami', 'izoh', 'buyurtma_izohi', 'source', 'status', 'created_at',
+        'tolov', 'mahsulot_kodi', 'size', 'mahsulot', 'mahsulot_nomi', 'qator_miqdori', 'birlik_narxi',
+        'qator_izohi', 'productid', 'guruh', 'lineindex', 'mahsulot_tartib_raqami', 'tartib_raqami',
+        'kimniki_ekanligi'
+    ])
+
+    function importRowRef(row) {
+        const n = Number(row?.__excel_row)
+        return Number.isFinite(n) && n > 0 ? `Qator ${n}` : 'Qator ?'
+    }
+
+    function excelColumnLabel(n) {
+        let x = Number(n) || 0
+        if (x <= 0) return '?'
+        let s = ''
+        while (x > 0) {
+            const rem = (x - 1) % 26
+            s = String.fromCharCode(65 + rem) + s
+            x = Math.floor((x - 1) / 26)
+        }
+        return s
+    }
     function resolveProductForExcelImportRow(row) {
         const pid = row.product_id
         if (pid !== undefined && pid !== null && String(pid).trim() !== '') {
@@ -2069,7 +2101,23 @@ function BuyurtmalarPageContent() {
         }
         const code = String(row.model_code || '').trim()
         if (!code) return { list: [], reason: 'empty' }
-        return getProductsByModelCode(code)
+        const pname = String(row.product_name || '').trim()
+        const byKey = (s) => {
+            if (!s) return { list: [], reason: 'empty' }
+            return getProductsByModelCode(s)
+        }
+        if (code) {
+            const byCode = byKey(code)
+            if (byCode.list?.length === 1) return byCode
+            if (byCode.list && byCode.list.length > 1) return byCode
+            if (pname && normalizeModelKey(pname) !== normalizeModelKey(code)) {
+                const byName = byKey(pname)
+                if (byName.list?.length) return byName
+            }
+            return byCode
+        }
+        if (pname) return byKey(pname)
+        return { list: [], reason: 'empty' }
     }
 
     async function persistImportedExcelOrderGroup(group) {
@@ -2078,25 +2126,30 @@ function BuyurtmalarPageContent() {
         for (const row of group) {
             const res = resolveProductForExcelImportRow(row)
             if (!res.list?.length) {
-                const msg =
+                const codeLabel = String(row.model_code || '').trim() || '—'
+                const msgCore =
                     res.reason === 'empty'
                         ? t('orders.codeEmpty')
                         : res.reason === 'ambiguous'
                           ? t('orders.codeAmbiguous')
                           : t('orders.codeNotFound')
-                throw new Error(msg)
+                throw new Error(`${importRowRef(row)}: ${msgCore} (Kod: ${codeLabel})`)
             }
             if (res.list.length > 1) {
                 throw new Error(
-                    `${t('orders.codeAmbiguous')} (${String(row.model_code || '').trim() || '—'})`
+                    `${importRowRef(row)}: ${t('orders.codeAmbiguous')} (${String(row.model_code || '').trim() || '—'})`
                 )
             }
             const product = res.list[0]
             const qty = parseOrderItemQty(row.quantity)
-            if (qty <= 0) throw new Error(t('orders.excelImportBadQty'))
-            const up = Number(row.unit_price)
+            if (qty <= 0) {
+                throw new Error(
+                    `${importRowRef(row)}: ${t('orders.excelImportBadQty')} (Кол-во: ${String(row.quantity ?? '') || '—'})`
+                )
+            }
+            const up = parseOptionalMoneyCell(row.unit_price)
             const price =
-                Number.isFinite(up) && up >= 0
+                up != null && up >= 0
                     ? Math.round(up * 100) / 100
                     : Number(product.sale_price) || 0
             linesForMerge.push({
@@ -2241,7 +2294,37 @@ function BuyurtmalarPageContent() {
                 await showAlert(t('orders.excelImportNoRows'), { variant: 'warning' })
                 return
             }
-            const groups = groupImportedExcelRowsToOrders(rawRows)
+            const rawHeaders = Object.keys(rawRows[0] || {})
+            const headerKeys = rawHeaders.map((k) => normalizeImportedExcelCellKey(k))
+            const unknownHeaders = headerKeys
+                .map((k, idx) => ({ key: k, col: excelColumnLabel(idx + 1) }))
+                .filter(({ key }) => key && !/^__empty(_\d+)?$/.test(key) && !KNOWN_EXCEL_IMPORT_HEADERS.has(key))
+            if (unknownHeaders.length) {
+                await showAlert(
+                    `Excelda noma'lum ustun topildi:\n- ${unknownHeaders.map((x) => `${x.key} (ustun ${x.col})`).join('\n- ')}\n\n1-qator (header)dagi shu ustun nomini tekshiring yoki o'chirib qayta import qiling.`,
+                    { variant: 'warning' }
+                )
+                return
+            }
+
+            const hasProductNameColumn =
+                headerKeys.includes('наименование') || headerKeys.includes('product_name') || headerKeys.includes('mahsulot')
+            const hasCodeColumn = headerKeys.includes('код') || headerKeys.includes('model_code') || headerKeys.includes('kod')
+            const hasQtyColumn = headerKeys.includes('кол-во') || headerKeys.includes('quantity') || headerKeys.includes('miqdor')
+            if (!hasQtyColumn || (!hasCodeColumn && !hasProductNameColumn)) {
+                await showAlert(
+                    `Excel import uchun majburiy ustunlar topilmadi.\nKerakli: "Кол-во" va mahsulotni topish uchun "Код" yoki "Наименование" (formadagi model kodi maydoni bilan bir xil qoida).`,
+                    { variant: 'warning' }
+                )
+                return
+            }
+
+            const preparedRows = rawRows.map((raw, idx) => {
+                const canonical = canonicalizeExcelImportRow(normalizeImportedExcelRow(raw))
+                return { ...canonical, __excel_row: idx + 2 }
+            })
+
+            const groups = groupImportedExcelRowsToOrders(preparedRows)
             const validGroups = groups.filter((g) => g.length)
             if (!validGroups.length) {
                 await showAlert(t('orders.excelImportNoRows'), { variant: 'warning' })
