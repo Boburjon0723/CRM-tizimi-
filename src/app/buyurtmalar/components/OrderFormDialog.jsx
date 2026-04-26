@@ -7,7 +7,10 @@ import {
   Trash2, 
   Plus, 
   Check, 
-  AlertCircle 
+  AlertCircle,
+  Layers,
+  Square,
+  RotateCcw
 } from 'lucide-react';
 import { 
   formatUsd, 
@@ -310,7 +313,26 @@ export default function OrderFormDialog({
                           )}
                           <td className="px-3 py-2 align-top text-[13px] text-gray-800 leading-snug">
                             {line.product_id ? (
-                              <span className="font-semibold block mt-1">{line.product_name}</span>
+                              <>
+                                <span className="font-semibold block mt-1">{line.product_name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateOrderLine(line.id, { keepSeparate: !line.keepSeparate })}
+                                  className={`mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                                    line.keepSeparate 
+                                      ? 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' 
+                                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                  }`}
+                                  title={t('orders.keepSeparateLabel') || 'Keep this line separate'}
+                                >
+                                  {line.keepSeparate ? (
+                                    <Layers className="w-3 h-3" />
+                                  ) : (
+                                    <Square className="w-3 h-3" />
+                                  )}
+                                  {t('orders.keepSeparateShort')}
+                                </button>
+                              </>
                             ) : (
                               <span className="text-gray-400 block mt-1">—</span>
                             )}
@@ -367,8 +389,33 @@ export default function OrderFormDialog({
                               )}
                             </td>
                           )}
-                          <td className="px-3 py-2 align-top text-[13px] font-mono font-bold text-gray-700 pt-3">
-                            ${formatUsd(line.product_price)}
+                          <td className="px-3 py-2 align-top pt-2">
+                            <div className="flex flex-col gap-1 items-end">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                className="w-20 px-1.5 py-1 border border-gray-200 rounded-lg text-sm text-right tabular-nums font-bold focus:ring-2 focus:ring-blue-500"
+                                value={line.product_price}
+                                onChange={(e) => updateOrderLine(line.id, { product_price: e.target.value })}
+                              />
+                              {line.product_id && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const prod = products.find(p => String(p.id) === String(line.product_id));
+                                    if (prod) {
+                                      updateOrderLine(line.id, { product_price: Number(prod.sale_price) || 0 });
+                                    }
+                                  }}
+                                  className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold"
+                                  title={t('orders.resetPrice') || 'Asl narxga qaytarish'}
+                                >
+                                  <RotateCcw size={10} />
+                                  {t('orders.resetPrice')}
+                                </button>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2 align-top pt-2">
                              {!isMatrix ? (

@@ -563,7 +563,8 @@ export function buildItemPayloadsFromExpandedLines(orderId, expandedRows, produc
             color: colorVal != null && colorVal !== '' ? String(colorVal) : null,
             image_url: imgVal != null && imgVal !== '' ? String(imgVal) : null,
             line_note: lineNoteDb,
-            line_index: sourceLineIndex.get(sourceKeyOf(line, idx)) ?? idx
+            line_index: sourceLineIndex.get(sourceKeyOf(line, idx)) ?? idx,
+            __separateKey: line.keep_separate ? String(line.source_line_id || '') : null
         }
     })
 }
@@ -1134,7 +1135,7 @@ export function groupOrderItemsForPrint(orderItems, productsList) {
     const items = normalizeOrderItemsForList(orderItems)
     const buckets = new Map()
     for (const oi of items) {
-        const key = skuBucketKeyForOrderItem(oi, productsList, { includeLineIndex: false })
+        const key = skuBucketKeyForOrderItem(oi, productsList, { includeLineIndex: true })
         if (!buckets.has(key)) buckets.set(key, [])
         buckets.get(key).push(oi)
     }

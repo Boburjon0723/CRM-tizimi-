@@ -297,6 +297,7 @@ export const translations = {
             partialSaveError: 'Ombordan olishni saqlashda xatolik',
             partialSavedOk: 'Ombordan olindi va chiqim hisobotiga yozildi.',
             partialNothingToShip: 'Jo‘natish uchun miqdor kiriting.',
+            resetPrice: 'Asl narx',
             partialShippedCol: 'Jo‘natilgan',
             partialRemainingCol: 'Qolgan',
             partialShipQtyLabel: 'Hozir ombordan olish',
@@ -327,6 +328,7 @@ export const translations = {
                 'Bu mahsulot buyurtmada allaqachon bor. Miqdorlarni avvalgi qatorda birlashtirasizmi?\n\n«Birlashtirish» — bitta qatorga yig‘iladi; «Alohida qator» — shu buyurtmada yangi qator sifatida qo‘shiladi.',
             duplicateMergeYes: 'Birlashtirish',
             duplicateMergeNo: 'Alohida qator',
+            keepSeparateShort: 'Alohida',
             mergeHint:
                 'Birlashtirish: kamida 2 ta buyurtmani belgilang — bitta mahsulot jadvali ochiladi; pastdagi summa va jami dona har bir buyurtmaning o‘zidagi saqlangan jami va qatorlar miqdoridan qo‘shilib hisoblanadi (yangi buyurtmani «Saqlash» bilan yarating).',
             mergeSelectColumn: 'Birlashtirish uchun',
@@ -1626,6 +1628,7 @@ export const translations = {
             partialSaveError: 'Ошибка сохранения списания со склада',
             partialSavedOk: 'Списание выполнено и добавлено в отчет по заказам.',
             partialNothingToShip: 'Укажите количество для отгрузки.',
+            resetPrice: 'Ориг. цена',
             partialShippedCol: 'Отгружено',
             partialRemainingCol: 'Осталось',
             partialShipQtyLabel: 'Списать сейчас',
@@ -1656,6 +1659,7 @@ export const translations = {
                 'Этот товар уже есть в заказе. Объединить количество с предыдущей строкой?\n\n«Объединить» — одна строка; «Отдельная строка» — новая позиция в этом заказе.',
             duplicateMergeYes: 'Объединить',
             duplicateMergeNo: 'Отдельная строка',
+            keepSeparateShort: 'Отдельно',
             mergeHint:
                 'Объединение: отметьте минимум 2 заказа — откроется одна таблица позиций; сумма и общее количество штук складываются из сохранённых итогов каждого заказа и сумм количеств по строкам (новый заказ — «Сохранить»).',
             mergeSelectColumn: 'Для объединения',

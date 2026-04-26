@@ -560,9 +560,10 @@ function BuyurtmalarPageContent() {
 
         if (orderLinesHasDuplicateProduct(snapshot, productIdStr, lineId)) {
             const merge = await showConfirm(t('orders.duplicateProductMergePrompt'), {
-                variant: 'warning',
+                title: t('common.dialogConfirmTitle'),
                 confirmLabel: t('orders.duplicateMergeYes'),
-                cancelLabel: t('orders.duplicateMergeNo')
+                cancelLabel: t('orders.duplicateMergeNo'),
+                variant: 'info'
             })
             if (merge) {
                 const targetId = findFirstDuplicateProductLineId(snapshot, productIdStr, lineId)
@@ -581,7 +582,28 @@ function BuyurtmalarPageContent() {
                         keepSeparate: false
                     }
                     setOrderLines(mergeDuplicateSourceLineIntoTarget(snapshot, targetId, resolvedLine, p))
+                    return
                 }
+            } else {
+                // User wants to keep it separate
+                setOrderLines((prev) =>
+                    prev.map((l) => {
+                        if (l.id !== lineId) return l
+                        return {
+                            ...l,
+                            product_id: p.id,
+                            product_name: displayProductName(p),
+                            product_price: Number(p.sale_price) || 0,
+                            color: p.color || '',
+                            image_url: p.image_url || '',
+                            colorChoices: [],
+                            colorQtyByColor: {},
+                            resolveError: '',
+                            readyForSort: false,
+                            keepSeparate: true
+                        }
+                    })
+                )
                 return
             }
         }
@@ -672,16 +694,19 @@ function BuyurtmalarPageContent() {
 
             if (orderLinesHasDuplicateProduct(prevSnapshot, product.id, lineId)) {
                 const merge = await showConfirm(t('orders.duplicateProductMergePrompt'), {
-                    variant: 'warning',
+                    title: t('common.dialogConfirmTitle'),
                     confirmLabel: t('orders.duplicateMergeYes'),
-                    cancelLabel: t('orders.duplicateMergeNo')
+                    cancelLabel: t('orders.duplicateMergeNo'),
+                    variant: 'info'
                 })
                 if (merge) {
                     const targetId = findFirstDuplicateProductLineId(prevSnapshot, product.id, lineId)
                     if (targetId) {
                         setOrderLines(mergeDuplicateSourceLineIntoTarget(prevSnapshot, targetId, nextLine, product))
+                        return
                     }
-                    return
+                } else {
+                    nextLine.keepSeparate = true
                 }
             }
 
@@ -2153,6 +2178,8 @@ function BuyurtmalarPageContent() {
                     ? Math.round(up * 100) / 100
                     : Number(product.sale_price) || 0
             linesForMerge.push({
+                id: `line_imp_${gi}_${idx}_${Date.now()}`,
+                keepSeparate: true,
                 product_id: product.id,
                 product_name: String(row.product_name || '').trim() || displayProductName(product),
                 product_price: price,
