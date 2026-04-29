@@ -1135,7 +1135,7 @@ export function groupOrderItemsForPrint(orderItems, productsList) {
     const items = normalizeOrderItemsForList(orderItems)
     const buckets = new Map()
     for (const oi of items) {
-        const key = skuBucketKeyForOrderItem(oi, productsList, { includeLineIndex: true })
+        const key = skuBucketKeyForOrderItem(oi, productsList, { includeLineIndex: false })
         if (!buckets.has(key)) buckets.set(key, [])
         buckets.get(key).push(oi)
     }
@@ -1788,7 +1788,7 @@ export function orderItemsToOrderLines(orderItems, productsList) {
 
     const buckets = new Map()
     for (const oi of items) {
-        const key = skuBucketKeyForOrderItem(oi, productsList, { includeLineIndex: true })
+        const key = skuBucketKeyForOrderItem(oi, productsList, { includeLineIndex: false })
         if (!buckets.has(key)) buckets.set(key, [])
         buckets.get(key).push(oi)
     }
