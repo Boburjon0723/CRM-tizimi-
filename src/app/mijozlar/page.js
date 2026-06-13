@@ -2,11 +2,21 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { formatUsd } from '@/utils/formatters'
 import Header from '@/components/Header'
 import {
     Plus, Edit, Trash2, Save, X, Search, Phone, MapPin, Mail,
-    Users, TrendingUp, Package, BarChart3, Calendar, UserCheck, ShoppingBag
+    Users, TrendingUp, Package, BarChart3, Calendar, UserCheck, ShoppingBag,
+    FileSpreadsheet, Printer
 } from 'lucide-react'
+import {
+    buildCrmQatorlarExcelRows,
+    exportOrdersExcelRowsToFile,
+    buildPrintDocumentHtml,
+    openPrintTab,
+    labelColorCanonical,
+    DEFAULT_TABLE_CONFIG
+} from '@/app/buyurtmalar/utils'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -21,6 +31,11 @@ export default function Mijozlar() {
     const [registeredUsers, setRegisteredUsers] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
+    const [products, setProducts] = useState([])
+    const [productColors, setProductColors] = useState([])
+    const [allOrders, setAllOrders] = useState([])
+    const [activeCustomerOperations, setActiveCustomerOperations] = useState(null)
+    const [actionLoadingOrderId, setActionLoadingOrderId] = useState(null)
     const [isAdding, setIsAdding] = useState(false)
     const [editId, setEditId] = useState(null)
     const [activeTab, setActiveTab] = useState('customers') // 'customers' or 'registered'
@@ -92,6 +107,21 @@ export default function Mijozlar() {
                 allOrdersRes = await supabase.from('orders').select('*')
             }
             const allOrders = allOrdersRes.error ? [] : allOrdersRes.data
+            setAllOrders(allOrders || [])
+
+            // Fetch products
+            const { data: productsData } = await supabase
+                .from('products')
+                .select('*, categories(id, name, name_uz)')
+                .order('name')
+            setProducts(productsData || [])
+
+            // Fetch product colors
+            const { data: colorsData } = await supabase
+                .from('product_colors')
+                .select('*')
+                .order('name')
+            setProductColors(colorsData || [])
 
             // Enrich customers with order stats and website account matches
             const enrichedCustomers = (customersData || []).map(cust => {
@@ -197,6 +227,78 @@ export default function Mijozlar() {
         setIsAdding(false)
         setEditId(null)
         setForm({ name: '', email: '', phone: '', country: '', address: '', notes: '' })
+    }
+
+    async function handleExportOrderExcel(order) {
+        setActionLoadingOrderId(order.id)
+        try {
+            const { data: items, error } = await supabase
+                .from('order_items')
+                .select(`*, products (id, name, size, category_id, is_kg, categories (id, name, name_uz))`)
+                .eq('order_id', order.id)
+
+            if (error) throw error
+
+            const enrichedOrder = {
+                ...order,
+                order_items: items || []
+            }
+
+            const rows = buildCrmQatorlarExcelRows([enrichedOrder], products, {
+                onlyCompleted: false,
+                includePhotoColumn: true
+            })
+
+            const stamp = new Date(order.created_at).toISOString().slice(0, 10)
+            await exportOrdersExcelRowsToFile(rows, `buyurtma-${order.order_number || order.id.slice(0, 8)}-${stamp}.xlsx`, 'CRM_qatorlar', {
+                includeEmbeddedImages: true
+            })
+
+            showToast("Excel muvaffaqiyatli yuklandi!", { type: 'success' })
+        } catch (err) {
+            console.error(err)
+            await showAlert("Excel yuklashda xatolik yuz berdi: " + (err.message || err), { variant: 'error' })
+        } finally {
+            setActionLoadingOrderId(null)
+        }
+    }
+
+    async function handlePrintOrder(order, showPrices = true) {
+        setActionLoadingOrderId(order.id)
+        try {
+            const { data: items, error } = await supabase
+                .from('order_items')
+                .select(`*, products (id, name, size, category_id, is_kg, categories (id, name, name_uz))`)
+                .eq('order_id', order.id)
+
+            if (error) throw error
+
+            const enrichedOrder = {
+                ...order,
+                order_items: items || []
+            }
+
+            const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+
+            const html = buildPrintDocumentHtml({
+                documentTitle: `Buyurtma № ${order.order_number || order.id}`,
+                listTitle: `Mijoz: ${order.customer_name || 'Noma\'lum'} · Telefon: ${order.customer_phone || '—'}`,
+                orders: [enrichedOrder],
+                showPrices,
+                labelColorFn,
+                productsList: products,
+                tableConfig: DEFAULT_TABLE_CONFIG
+            })
+
+            if (!openPrintTab(html)) {
+                showToast("Popup bloklangan bo'lishi mumkin.", { type: 'info' })
+            }
+        } catch (err) {
+            console.error(err)
+            await showAlert("Chop etishda xatolik yuz berdi: " + (err.message || err), { variant: 'error' })
+        } finally {
+            setActionLoadingOrderId(null)
+        }
     }
 
     const filteredCustomers = customers.filter(c =>
@@ -570,7 +672,7 @@ export default function Mijozlar() {
                                             <td className="py-4 px-6 text-right">
                                                 <div className="flex flex-col items-end">
                                                     <span className="font-bold text-emerald-600">
-                                                        {customer.totalSpend.toLocaleString()} {language === 'uz' ? 'so\'m' : language === 'ru' ? 'сум' : 'UZS'}
+                                                        ${formatUsd(customer.totalSpend)}
                                                     </span>
                                                     {customer.lastOrder && (
                                                         <span className="text-[10px] text-gray-400 mt-0.5">
@@ -582,6 +684,13 @@ export default function Mijozlar() {
 
                                             <td className="py-4 px-6">
                                                 <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => setActiveCustomerOperations(customer)}
+                                                        className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                                                        title="Operatsiyalar"
+                                                    >
+                                                        <ShoppingBag size={18} />
+                                                    </button>
                                                     <button
                                                         onClick={() => handleEdit(customer)}
                                                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -625,12 +734,13 @@ export default function Mijozlar() {
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.orders')}</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.totalSpend')}</th>
                                     <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.lastActivity')}</th>
+                                    <th className="text-left py-4 px-6 text-sm font-bold text-gray-700">{t('customers.actions')}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredUsers.length === 0 ? (
                                     <tr>
-                                        <td colSpan={5} className="py-12 text-center text-gray-500">
+                                        <td colSpan={6} className="py-12 text-center text-gray-500">
                                             <UserCheck size={48} className="mx-auto mb-4 text-gray-300" />
                                             <p className="font-medium">{t('customers.noRegistered')}</p>
                                         </td>
@@ -663,7 +773,7 @@ export default function Mijozlar() {
                                             </td>
                                             <td className="py-4 px-6">
                                                 <span className="font-bold text-green-600">
-                                                    {user.totalSpend.toLocaleString()} {language === 'uz' ? 'so\'m' : language === 'ru' ? 'сум' : 'UZS'}
+                                                    ${formatUsd(user.totalSpend)}
                                                 </span>
                                             </td>
                                             <td className="py-4 px-6">
@@ -678,11 +788,189 @@ export default function Mijozlar() {
                                                     )}
                                                 </div>
                                             </td>
+                                            <td className="py-4 px-6">
+                                                <button
+                                                    onClick={() => setActiveCustomerOperations({ ...user, name: user.name || user.phone })}
+                                                    className="flex items-center gap-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 px-3.5 py-2 rounded-xl text-xs font-bold transition-all"
+                                                    title="Operatsiyalar"
+                                                >
+                                                    <ShoppingBag size={14} />
+                                                    <span>Operatsiyalar</span>
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Customer Operations Modal */}
+            {activeCustomerOperations && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-4xl rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900">
+                                    {activeCustomerOperations.name} — Operatsiyalar tarixi
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    Mijozga tegishli barcha buyurtmalar ro'yxati va ularni yuklash/chop etish
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setActiveCustomerOperations(null)}
+                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 max-h-[60vh] overflow-y-auto">
+                            {(() => {
+                                const phone = (activeCustomerOperations.phone || '').trim()
+                                const id = activeCustomerOperations.id
+                                const customerOrders = allOrders.filter(o => 
+                                    (o.customer_phone && o.customer_phone.trim() === phone) ||
+                                    (o.customer_id && o.customer_id === id)
+                                )
+                                const totalSpend = customerOrders.reduce((sum, o) => sum + (o.total || 0), 0)
+
+                                if (customerOrders.length === 0) {
+                                    return (
+                                        <div className="text-center py-12 text-gray-500">
+                                            <ShoppingBag size={48} className="mx-auto mb-4 text-gray-300" />
+                                            <p className="font-medium">Ushbu mijozda hali hech qanday operatsiya (buyurtma) mavjud emas.</p>
+                                        </div>
+                                    )
+                                }
+
+                                return (
+                                    <div className="space-y-6">
+                                        {/* Summary Cards */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div className="bg-purple-50/60 border border-purple-100/80 p-5 rounded-2xl flex items-center gap-4 transition-all hover:shadow-sm">
+                                                <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center text-purple-700 shrink-0">
+                                                    <ShoppingBag size={24} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-purple-600 uppercase tracking-wider">Jami Buyurtmalar Soni</p>
+                                                    <p className="text-2xl font-black text-slate-800 mt-0.5">{customerOrders.length} ta</p>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="bg-emerald-50/60 border border-emerald-100/80 p-5 rounded-2xl flex items-center gap-4 transition-all hover:shadow-sm">
+                                                <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-700 shrink-0">
+                                                    <span className="text-2xl font-extrabold text-emerald-600">$</span>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Umumiy Xarid Summasi</p>
+                                                    <p className="text-2xl font-black text-emerald-700 mt-0.5">
+                                                        ${formatUsd(totalSpend)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Table */}
+                                        <div className="overflow-x-auto border border-gray-100 rounded-xl">
+                                            <table className="min-w-full divide-y divide-gray-100">
+                                                <thead className="bg-gray-50">
+                                                    <tr>
+                                                        <th className="text-left py-3 px-4 text-xs font-bold text-gray-600">Sana</th>
+                                                        <th className="text-left py-3 px-4 text-xs font-bold text-gray-600">Buyurtma №</th>
+                                                        <th className="text-left py-3 px-4 text-xs font-bold text-gray-600">Jami Summa</th>
+                                                        <th className="text-left py-3 px-4 text-xs font-bold text-gray-600">Status</th>
+                                                        <th className="text-right py-3 px-4 text-xs font-bold text-gray-600">Harakatlar</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 bg-white">
+                                                    {customerOrders.map((order) => {
+                                                        const isProcessing = actionLoadingOrderId === order.id
+                                                        const dateStr = new Date(order.created_at).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')
+                                                        
+                                                        // Status badge classes
+                                                        let statusBadge = "bg-blue-50 text-blue-700 ring-blue-600/20"
+                                                        let statusText = order.status
+                                                        if (order.status === 'completed' || order.status === 'tugallandi') {
+                                                            statusBadge = "bg-green-50 text-green-700 ring-green-600/20"
+                                                            statusText = "Yakunlandi"
+                                                        } else if (order.status === 'pending' || order.status === 'jarayonda') {
+                                                            statusBadge = "bg-amber-50 text-amber-700 ring-amber-600/20"
+                                                            statusText = "Jarayonda"
+                                                        } else if (order.status === 'cancelled' || order.status === 'bekor qilindi') {
+                                                            statusBadge = "bg-red-50 text-red-700 ring-red-600/20"
+                                                            statusText = "Bekor qilindi"
+                                                        }
+
+                                                        return (
+                                                            <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
+                                                                <td className="py-3 px-4 text-sm text-gray-600 font-medium">{dateStr}</td>
+                                                                <td className="py-3 px-4 text-sm text-gray-900 font-bold mono">
+                                                                    #{order.order_number || order.id.slice(0, 8)}
+                                                                </td>
+                                                                <td className="py-3 px-4 text-sm text-emerald-600 font-bold">
+                                                                    ${formatUsd(order.total || 0)}
+                                                                </td>
+                                                                <td className="py-3 px-4 text-xs font-medium">
+                                                                    <span className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-bold ring-1 ring-inset ${statusBadge}`}>
+                                                                        {statusText}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-3 px-4 text-right">
+                                                                    <div className="flex gap-2 justify-end">
+                                                                        <button
+                                                                            disabled={isProcessing}
+                                                                            onClick={() => handleExportOrderExcel(order)}
+                                                                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                                                                                isProcessing 
+                                                                                    ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed'
+                                                                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                                            }`}
+                                                                            title="Excel yuklash"
+                                                                        >
+                                                                            <FileSpreadsheet size={14} />
+                                                                            <span>Excel</span>
+                                                                        </button>
+                                                                        <button
+                                                                            disabled={isProcessing}
+                                                                            onClick={() => handlePrintOrder(order)}
+                                                                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${
+                                                                                isProcessing 
+                                                                                    ? 'bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed'
+                                                                                    : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
+                                                                            }`}
+                                                                            title="Chop etish (PDF)"
+                                                                        >
+                                                                            <Printer size={14} />
+                                                                            <span>PDF</span>
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )
+                            })()}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+                            <button
+                                onClick={() => setActiveCustomerOperations(null)}
+                                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl font-bold transition-all text-sm"
+                            >
+                                Yopish
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

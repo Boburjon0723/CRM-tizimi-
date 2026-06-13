@@ -35,6 +35,7 @@ export default function OrdersFilter({
   handlePrintOrderList,
   filteredOrders,
   handlePrintSelectedByCategory,
+  handlePrintSelectedSpecial,
   selectedOrders,
   isAdding,
   handleCancel,
@@ -198,6 +199,31 @@ export default function OrdersFilter({
                     {t('orders.printSelectedByCategoryShort')}
                     {selectedOrders.length > 0 && (
                       <span className="ml-auto min-w-[1.1rem] rounded-full bg-amber-100 px-1.5 text-center text-[10px] font-bold tabular-nums text-amber-900">
+                        {selectedOrders.length}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedOrders.length === 0}
+                  className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold ${
+                    selectedOrders.length > 0
+                      ? 'text-gray-800 hover:bg-emerald-50'
+                      : 'cursor-not-allowed text-gray-400'
+                  }`}
+                  title="Tanlangan buyurtmalarni maxsus tartibda chop etish (Kategoriya, Rasm, Narx, Izoh)"
+                  onClick={() => {
+                    if (selectedOrders.length === 0) return;
+                    handlePrintSelectedSpecial(selectedOrders);
+                    closePrintMenu();
+                  }}
+                >
+                  <Printer size={14} className="shrink-0 text-emerald-600" />
+                  <span className="flex min-w-0 flex-1 items-center gap-1">
+                    Maxsus jadvalda chop etish
+                    {selectedOrders.length > 0 && (
+                      <span className="ml-auto min-w-[1.1rem] rounded-full bg-emerald-100 px-1.5 text-center text-[10px] font-bold tabular-nums text-emerald-900">
                         {selectedOrders.length}
                       </span>
                     )}

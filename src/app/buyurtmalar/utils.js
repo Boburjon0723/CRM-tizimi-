@@ -1483,6 +1483,103 @@ export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, s
     </body></html>`
 }
 
+export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelColorFn, productsList, tableConfig }) {
+    let rowsHtml = ''
+    let displayIndex = 1
+    let totalPiecesGlobal = 0
+    let totalMoneyGlobal = 0
+
+    const imagePx = imagePxBySize(tableConfig?.imageSize || 'md')
+    const imageWrapPx = imagePx + 10
+    const imageCellPx = imagePx + 14
+
+    const seenKeys = new Set()
+    const uniqueItems = []
+
+    for (const o of orders) {
+        const items = normalizeOrderItemsForList(o.order_items || [])
+        for (const oi of items) {
+            const prod = productsList.find((p) => String(p.id) === String(oi.product_id))
+            const sku = oi.size != null && oi.size !== '' ? String(oi.size) : (prod?.size || '—')
+            const cat = categoryLabelFromGroupedLine(oi) || (prod?.categories?.name_uz || prod?.categories?.name || '—')
+
+            const key = `${oi.product_id || ''}::${sku}::${cat}`
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key)
+                uniqueItems.push({
+                    sku,
+                    cat,
+                    image_url: oi.image_url
+                })
+            }
+        }
+    }
+
+    uniqueItems.sort((a, b) => a.cat.localeCompare(b.cat, 'uz'))
+
+    for (const item of uniqueItems) {
+        const skuEsc = escapeHtml(item.sku)
+        const catEsc = escapeHtml(item.cat)
+        const imgHtml = item.image_url ? '<img class="prod-thumb" src="' + escapeHtml(item.image_url) + '" alt="">' : ''
+        const imgCellHtml = imgHtml ? '<div class="prod-thumb-wrap">' + imgHtml + '</div>' : '<span class="prod-no-img">—</span>'
+
+        rowsHtml += `<tr>
+            <td>${displayIndex++}</td>
+            <td>${catEsc}</td>
+            <td class="prod-img-cell">${imgCellHtml}</td>
+            <td class="mono">${skuEsc}</td>
+            <td class="mono font-bold" style="min-width: 5rem;"></td>
+            <td class="mono" style="min-width: 5rem;"></td>
+            <td class="print-note-cell" style="min-width: 10rem;"></td>
+        </tr>`
+    }
+
+    const listBannerHtml = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>
+        body{font-family:sans-serif;padding:30px;color:#333; line-height: 1.4;}
+        .header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}
+        .header h1{margin:0;color:#1a1a1a;font-size:1.25rem}
+        .list-banner{color:#555;font-size:0.95rem;margin-bottom:16px}
+        table.items-table{width:100%;border-collapse:collapse;margin-bottom:10px;border:1px solid #8c8c8c;}
+        table.items-table th{background:#f1f5f9;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #94a3b8;font-size:0.8rem;font-weight:700}
+        table.items-table td{padding:6px 6px;border:1px solid #cbd5e1;vertical-align:top; font-size: 0.85rem;}
+        table.items-table tbody tr:nth-child(even) td{background:#f8fafc}
+        .mono{font-variant-numeric:tabular-nums; font-family: monospace;}
+        .prod-img-cell{width:${imageCellPx}px; text-align:center; vertical-align:middle; padding:4px!important; background:#fff!important}
+        .prod-thumb-wrap{max-width:100%; max-height:${imageWrapPx}px; display:flex; align-items:center; justify-content:center; overflow:hidden;}
+        .prod-thumb{max-width:${imagePx}px; max-height:${imagePx}px; object-fit:contain;}
+        .print-note-cell{min-width:6rem;background:#fff!important;}
+        @media print {
+            body { padding: 10px; }
+            tr { page-break-inside: avoid; }
+        }
+    </style></head><body>
+        <div class="header"><h1>NUUR_HOME_COLLECTION</h1></div>
+        ${listBannerHtml}
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Kategoriya</th>
+                    <th>Rasm</th>
+                    <th>Kod</th>
+                    <th>Miqdor</th>
+                    <th>Narx</th>
+                    <th>Izoh</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rowsHtml}
+            </tbody>
+        </table>
+        <div class="footer" style="margin-top: 30px; text-align: center; color: #666; font-size: 0.8rem;">
+            Nuur_Home_Collection<br>Xaridingiz uchun rahmat!
+        </div>
+        <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script>
+    </body></html>`
+}
+
 export function openPrintTab(html) {
     const printWindow = window.open('', '_blank')
     if (!printWindow) return false
@@ -1494,16 +1591,36 @@ export function openPrintTab(html) {
 export const SOURCE_STORE_DB = "do'kon"
 
 export function normalizeSourceForDb(uiSource) {
-    if (uiSource === 'website' || uiSource === 'telefon') return uiSource
+    if (uiSource === 'website' || uiSource === 'website_optom' || uiSource === 'website_chakana' || uiSource === 'telefon') {
+        return uiSource
+    }
     if (uiSource === 'dokon' || uiSource === 'admin') return SOURCE_STORE_DB
     return SOURCE_STORE_DB
 }
 
 export function normalizeSourceForForm(dbSource) {
-    if (dbSource === 'website') return 'website'
+    if (dbSource === 'website' || dbSource === 'website_optom' || dbSource === 'website_chakana') return dbSource
     if (dbSource === 'telefon') return 'telefon'
     if (dbSource === SOURCE_STORE_DB || dbSource === 'dokon' || dbSource === 'admin' || dbSource == null || dbSource === '') return 'dokon'
     return 'dokon'
+}
+
+/** Buyurtmalar jadvalida manba badge */
+export function orderSourceDisplay(source, t) {
+    const s = String(source || '').toLowerCase().trim()
+    if (s === 'website_optom') {
+        return { label: 'Optom', className: 'bg-blue-100 text-blue-800' }
+    }
+    if (s === 'website_chakana') {
+        return { label: 'Chakana', className: 'bg-emerald-100 text-emerald-800' }
+    }
+    if (s === 'website') {
+        return { label: 'Web', className: 'bg-indigo-100 text-indigo-700' }
+    }
+    if (s === 'telefon') {
+        return { label: t?.('orders.sourcePhoneShort') || 'Tel', className: 'bg-amber-100 text-amber-800' }
+    }
+    return { label: t?.('orders.sourceStoreShort') || "Do'kon", className: 'bg-gray-100 text-gray-600' }
 }
 
 export function normalizeStatusForSelect(status) {

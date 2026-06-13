@@ -520,6 +520,8 @@ export default function OrderFormDialog({
               >
                 <option value="dokon">{t('orders.adminPanel')}</option>
                 <option value="website">{t('orders.website')}</option>
+                <option value="website_optom">Optom sayt</option>
+                <option value="website_chakana">Chakana sayt</option>
                 <option value="telefon">{t('orders.sourcePhone')}</option>
               </select>
             </div>

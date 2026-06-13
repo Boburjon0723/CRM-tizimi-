@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
+import ExcelJS from 'exceljs'
 import { supabase } from '@/lib/supabase'
 import { withTimeout } from '@/lib/withTimeout'
 import { mergeProductInventoryRow } from '@/lib/productInventoryMerge'
 import Header from '@/components/Header'
 import {
     Plus,
+    Download,
     Edit,
     Trash2,
     Save,
@@ -286,7 +288,8 @@ export default function Mahsulotlar() {
         name_uz: '',
         name_ru: '',
         name_en: '',
-        sale_price: '', // narx
+        sale_price: '', // optom narx
+        retail_price: '', // chakana narx
         category_id: '',
         image_url: '',
         description: '', // tavsif
@@ -320,6 +323,7 @@ export default function Mahsulotlar() {
     /** `products.colors` va `product_colors.name` dagi joriy ichki kalit */
     const [editColorNameOriginal, setEditColorNameOriginal] = useState('')
     const [cleanupInProgress, setCleanupInProgress] = useState(false)
+    const [exportLoading, setExportLoading] = useState(false)
 
     /** Kategoriya bo'yicha bir martalik tavsif / xususiyat (shu kategoriyadagi barcha mahsulotlarga) */
     const [bulkCategoryId, setBulkCategoryId] = useState('')
@@ -583,6 +587,9 @@ export default function Mahsulotlar() {
                 name_ru: form.name_ru,
                 name_en: form.name_en,
                 sale_price: parseFloat(form.sale_price) || 0,
+                retail_price: form.retail_price !== '' && form.retail_price != null
+                    ? parseFloat(form.retail_price) || 0
+                    : null,
                 category_id: form.category_id || null,
                 category: categoryName, // Sync name for redundancy
                 image_url: form.images?.[0] || form.image_url || '',
@@ -624,6 +631,7 @@ export default function Mahsulotlar() {
                 name_ru: '',
                 name_en: '',
                 sale_price: '',
+                retail_price: '',
                 category_id: '',
                 image_url: '',
                 description: '',
@@ -711,6 +719,7 @@ export default function Mahsulotlar() {
             name_ru: item.name_ru || '',
             name_en: item.name_en || '',
             sale_price: item.sale_price?.toString() || '',
+            retail_price: item.retail_price != null ? String(item.retail_price) : '',
             category_id: item.category_id || '',
             image_url: item.image_url || '',
             images: item.images || (item.image_url ? [item.image_url] : []),
@@ -737,96 +746,6 @@ export default function Mahsulotlar() {
         setIsModalOpen(true)
     }
 
-    const handlePrintAllProducts = () => {
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            alert('Popup bloklangan! Iltimos, popupga ruxsat bering.');
-            return;
-        }
-
-        const titleText = t('common.products');
-        const imgHeader = t('products.image');
-        const nameHeader = t('products.name');
-        const codeHeader = t('products.tableCode');
-        const catHeader = t('products.category');
-        const priceHeader = t('products.salePrice');
-
-        const html = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>${titleText}</title>
-                <meta charset="utf-8">
-                <style>
-                    @page { margin: 10mm; }
-                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 20px; color: #333; }
-                    .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
-                    .header h1 { margin: 0; color: #1e40af; font-size: 24px; }
-                    .header p { margin: 5px 0 0; color: #666; font-size: 14px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                    th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; font-size: 13px; }
-                    th { background-color: #f8fafc; color: #475569; font-weight: bold; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
-                    tr:nth-child(even) { background-color: #fdfdfd; }
-                    .img-container { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 4px; border: 1px solid #eee; background: #fff; }
-                    img { max-width: 100%; max-height: 100%; object-fit: contain; }
-                    .price { font-family: monospace; font-weight: bold; color: #111; }
-                    .footer { margin-top: 30px; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
-                    @media print {
-                        .no-print { display: none; }
-                        table { page-break-inside: auto; }
-                        tr { page-break-inside: avoid; page-break-after: auto; }
-                        thead { display: table-header-group; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>${titleText}</h1>
-                    <p>Sana: ${new Date().toLocaleDateString()} | Jami: ${filteredProducts.length} ta mahsulot</p>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 70px;">${imgHeader}</th>
-                            <th>${nameHeader}</th>
-                            <th>${codeHeader}</th>
-                            <th>${catHeader}</th>
-                            <th style="width: 120px;">${priceHeader}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${filteredProducts.map(item => `
-                            <tr>
-                                <td>
-                                    <div class="img-container">
-                                        ${item.images?.[0] ? `<img src="${item.images[0]}" />` : '-'}
-                                    </div>
-                                </td>
-                                <td style="font-weight: 600;">${displayProductTitle(item)}</td>
-                                <td style="color: #64748b;">${item.size || '-'}</td>
-                                <td><span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 11px;">${item.categories?.name || '-'}</span></td>
-                                <td class="price">${item.sale_price?.toLocaleString()} $ ${item.is_kg ? '/ kg' : ''}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-                <div class="footer">
-                    CRM Tizimi - ${new Date().getFullYear()}
-                </div>
-                <script>
-                    window.onload = () => {
-                        setTimeout(() => {
-                            window.print();
-                        }, 500);
-                    };
-                </script>
-            </body>
-            </html>
-        `;
-
-        printWindow.document.write(html);
-        printWindow.document.close();
-    };
 
     function handleCancel() {
         setForm({
@@ -835,6 +754,7 @@ export default function Mahsulotlar() {
             name_ru: '',
             name_en: '',
             sale_price: '',
+            retail_price: '',
             category_id: '',
             image_url: '',
             description: '',
@@ -1420,6 +1340,191 @@ export default function Mahsulotlar() {
         })
     }, [products, searchTerm, filterCategoryId, filterLowStock])
 
+    const handleExportExcel = async () => {
+        if (!filteredProducts || filteredProducts.length === 0) return;
+        setExportLoading(true);
+        
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Mahsulotlar');
+
+            worksheet.columns = [
+                { header: '№', key: 'id', width: 5 },
+                { header: 'Rasm', key: 'image', width: 12 },
+                { header: 'Nomi', key: 'name', width: 30 },
+                { header: 'Kod / Size', key: 'size', width: 15 },
+                { header: 'Kategoriya', key: 'category', width: 20 },
+                { header: 'Sotuv Narxi ($)', key: 'price', width: 15 },
+                { header: 'Kg Narxi', key: 'is_kg', width: 10 },
+                { header: 'Rangi', key: 'color', width: 20 },
+                { header: 'Holati', key: 'status', width: 10 }
+            ];
+
+            worksheet.getRow(1).font = { bold: true };
+            worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+            let rowIndex = 2;
+
+            for (const p of filteredProducts) {
+                const colors = resolvedColorListForProduct(p);
+                const colorList = colors.length > 0 ? colors : [p.color || '-'];
+                const imageUrl = (p.images && p.images.length > 0) ? p.images[0] : (p.image_url || '');
+
+                let base64Image = null;
+                let extension = 'png';
+
+                if (imageUrl) {
+                    try {
+                        const response = await fetch(imageUrl);
+                        if (response.ok) {
+                            const blob = await response.blob();
+                            base64Image = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                    resolve(reader.result.split(',')[1]);
+                                };
+                                reader.readAsDataURL(blob);
+                            });
+
+                            if (imageUrl.toLowerCase().endsWith('.jpg') || imageUrl.toLowerCase().endsWith('.jpeg')) {
+                                extension = 'jpeg';
+                            } else if (imageUrl.toLowerCase().endsWith('.gif')) {
+                                extension = 'gif';
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Failed to fetch image for excel", err);
+                    }
+                }
+
+                for (const color of colorList) {
+                    const row = worksheet.addRow({
+                        id: rowIndex - 1,
+                        name: displayProductTitle(p),
+                        size: p.size || '-',
+                        category: p.categories?.name || p.category?.name || '-',
+                        price: p.sale_price || 0,
+                        is_kg: p.is_kg ? 'Ha' : "Yo'q",
+                        color: color,
+                        status: p.is_active ? 'Faol' : 'Nofaol'
+                    });
+
+                    row.height = 60;
+                    row.alignment = { vertical: 'middle', horizontal: 'center' };
+
+                    if (base64Image) {
+                        const imageId = workbook.addImage({
+                            base64: base64Image,
+                            extension: extension
+                        });
+                        
+                        worksheet.addImage(imageId, {
+                            tl: { col: 1, row: rowIndex - 1 },
+                            ext: { width: 50, height: 50 },
+                            editAs: 'oneCell'
+                        });
+                    }
+
+                    rowIndex++;
+                }
+            }
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Mahsulotlar.xlsx';
+            a.click();
+            window.URL.revokeObjectURL(url);
+            
+        } catch (error) {
+            console.error("Excel export error:", error);
+            await showAlert("Excel yaratishda xatolik yuz berdi.", { variant: 'error' });
+        } finally {
+            setExportLoading(false);
+        }
+    };
+
+    const handlePrintAllProducts = () => {
+        if (!filteredProducts || filteredProducts.length === 0) return;
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert('Qalqib chiquvchi oynalarga ruxsat bering (Popup blocker)');
+            return;
+        }
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Mahsulotlar ro'yxati</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+                    h1 { text-align: center; margin-bottom: 20px; font-size: 24px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; font-size: 14px; }
+                    th { background-color: #f8f9fa; font-weight: bold; }
+                    .img-container { width: 60px; height: 60px; display: flex; justify-content: center; align-items: center; background-color: #f3f4f6; border-radius: 4px; overflow: hidden; }
+                    .img-container img { max-width: 100%; max-height: 100%; object-fit: contain; }
+                    @media print {
+                        @page { margin: 1cm; }
+                        body { padding: 0; }
+                    }
+                </style>
+            </head>
+            <body>
+                <h1>Mahsulotlar ro'yxati (${filteredProducts.length} ta)</h1>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">№</th>
+                            <th style="width: 80px;">Rasm</th>
+                            <th>Nomi</th>
+                            <th>Kod/Size</th>
+                            <th>Kategoriya</th>
+                            <th>Rangi</th>
+                            <th>Narxi</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filteredProducts.map((p, index) => {
+                            const colors = resolvedColorListForProduct(p).join(', ') || p.color || '-';
+                            const imageUrl = (p.images && p.images.length > 0) ? p.images[0] : (p.image_url || '');
+                            const imageHtml = imageUrl 
+                                ? '<img src="' + imageUrl + '" alt="img" />'
+                                : "<span style='font-size: 10px; color: #aaa;'>Rasm yo'q</span>";
+                            return `
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td><div class="img-container">${imageHtml}</div></td>
+                                    <td>${displayProductTitle(p)}</td>
+                                    <td>${p.size || '-'}</td>
+                                    <td>${p.categories?.name || p.category?.name || '-'}</td>
+                                    <td>${colors}</td>
+                                    <td>${p.sale_price ? p.sale_price + ' $' : '0 $'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
+                        }, 500);
+                    };
+                </script>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
+
     const selectedCategory = categories.find((c) => c.id === form.category_id) || null
     const selectedCategoryText = String(
         selectedCategory?.name_uz ||
@@ -1553,6 +1658,7 @@ export default function Mahsulotlar() {
                                 name_ru: '',
                                 name_en: '',
                                 sale_price: '',
+                                retail_price: '',
                                 category_id: '',
                                 image_url: '',
                                 description: '',
@@ -1580,6 +1686,24 @@ export default function Mahsulotlar() {
                     >
                         <Plus size={16} />
                         <span className="hidden sm:inline">{t('common.add')}</span>
+                    </button>
+                    <button
+                        onClick={handleExportExcel}
+                        disabled={filteredProducts.length === 0 || exportLoading}
+                        className="inline-flex items-center justify-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg transition-all shadow-sm font-bold text-xs disabled:opacity-50 min-w-[120px]"
+                        title="Excelga yuklash"
+                    >
+                        {exportLoading ? (
+                            <>
+                                <Loader2 className="animate-spin shrink-0" size={16} />
+                                <span className="hidden sm:inline">Yuklanmoqda...</span>
+                            </>
+                        ) : (
+                            <>
+                                <Download size={16} />
+                                <span className="hidden sm:inline">Excelga yuklash</span>
+                            </>
+                        )}
                     </button>
                     <button
                         onClick={handlePrintAllProducts}
@@ -2068,7 +2192,8 @@ export default function Mahsulotlar() {
                                 <th className="px-6 py-4">{t('products.name')}</th>
                                 <th className="px-6 py-4">{t('products.tableCode')}</th>
                                 <th className="px-6 py-4">{t('products.category')}</th>
-                                <th className="px-6 py-4">{t('products.salePrice')}</th>
+                                <th className="px-6 py-4">{t('products.wholesalePrice')}</th>
+                                <th className="px-6 py-4">{t('products.retailPrice')}</th>
                                 <th className="px-6 py-4">Rangi</th>
                                 <th className="px-6 py-4">{t('products.status')}</th>
                                 <th className="px-6 py-4 rounded-tr-2xl text-right">{t('products.actions')}</th>
@@ -2112,6 +2237,11 @@ export default function Mahsulotlar() {
                                     </td>
                                     <td className="px-6 py-4 font-mono font-medium text-gray-700">
                                         {item.sale_price?.toLocaleString()} $ {item.is_kg ? '/ kg' : ''}
+                                    </td>
+                                    <td className="px-6 py-4 font-mono font-medium text-emerald-700">
+                                        {item.retail_price != null && item.retail_price !== ''
+                                            ? `${Number(item.retail_price).toLocaleString()} $${item.is_kg ? ' / kg' : ''}`
+                                            : '—'}
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-wrap gap-1">
@@ -2230,7 +2360,7 @@ export default function Mahsulotlar() {
 
                                 <div className="space-y-4">
                                     <label className="block text-sm font-bold text-gray-700">
-                                        {form.is_kg ? 'Kg narxi ($)' : 'Sotuv Narxi ($)'}
+                                        {form.is_kg ? t('products.wholesaleKgPrice') : t('products.wholesalePrice')} ($)
                                     </label>
                                     <input
                                         type="number"
@@ -2241,6 +2371,21 @@ export default function Mahsulotlar() {
                                         onChange={e => setForm({ ...form, sale_price: e.target.value })}
                                         placeholder="0.00"
                                     />
+                                </div>
+
+                                <div className="space-y-4">
+                                    <label className="block text-sm font-bold text-gray-700">
+                                        {form.is_kg ? t('products.retailKgPrice') : t('products.retailPrice')} ($)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="any"
+                                        className="w-full px-4 py-2 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all font-mono font-bold"
+                                        value={form.retail_price}
+                                        onChange={e => setForm({ ...form, retail_price: e.target.value })}
+                                        placeholder="0.00"
+                                    />
+                                    <p className="text-xs text-gray-500">{t('products.retailPriceHint')}</p>
                                 </div>
 
                                 <div className="space-y-4 col-span-2">

@@ -18,6 +18,7 @@ import {
     Archive,
     RotateCcw,
     Truck,
+    UserPlus,
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -74,6 +75,7 @@ import {
     buildColorQtyStacksHtml,
     buildOrderBlockHtml,
     buildPrintDocumentHtml,
+    buildSpecialPrintHtml,
     openPrintTab,
     normalizeSourceForDb,
     normalizeSourceForForm,
@@ -186,6 +188,8 @@ function BuyurtmalarPageContent() {
     const [draftBanner, setDraftBanner] = useState(false)
     /** Tahrirlanayotgan buyurtma id (yangi buyurtmada `null`) */
     const [editId, setEditId] = useState(null)
+    const [linkCustomerOrder, setLinkCustomerOrder] = useState(null)
+    const [selectedCustomerIdForLink, setSelectedCustomerIdForLink] = useState('')
     const editIdRef = useRef(null)
     /** `handleEdit` ketma-ket chaqiruvlarida eski fetch formani buzmasin */
     const editLoadSeqRef = useRef(0)
@@ -1187,6 +1191,50 @@ function BuyurtmalarPageContent() {
         }
     }
 
+    function handleLinkCustomer(order) {
+        setLinkCustomerOrder(order)
+        setSelectedCustomerIdForLink(order.customer_id || '')
+    }
+
+    async function handleSaveLinkCustomer() {
+        if (!linkCustomerOrder) return
+        if (!selectedCustomerIdForLink) {
+            await showAlert("Iltimos, mijozni tanlang!", { variant: 'warning' })
+            return
+        }
+
+        try {
+            const selectedCustomer = customers.find(c => String(c.id) === String(selectedCustomerIdForLink))
+            if (!selectedCustomer) {
+                await showAlert("Tanlangan mijoz topilmadi!", { variant: 'error' })
+                return
+            }
+
+            setLoading(true)
+
+            // Update order with customer info
+            const { error } = await supabase
+                .from('orders')
+                .update({
+                    customer_id: selectedCustomer.id,
+                    customer_phone: selectedCustomer.phone,
+                    customer_name: selectedCustomer.name
+                })
+                .eq('id', linkCustomerOrder.id)
+
+            if (error) throw error
+
+            showToast("Buyurtma mijozga muvaffaqiyatli biriktirildi!", { type: 'success' })
+            setLinkCustomerOrder(null)
+            loadData({ silent: true })
+        } catch (err) {
+            console.error(err)
+            await showAlert("Biriktirishda xatolik yuz berdi: " + (err.message || err), { variant: 'error' })
+        } finally {
+            setLoading(false)
+        }
+    }
+
     async function handleEdit(item) {
         editLoadSeqRef.current += 1
         const seq = editLoadSeqRef.current
@@ -1986,6 +2034,48 @@ function BuyurtmalarPageContent() {
         }
     }
 
+    async function handlePrintSelectedSpecial(list) {
+        if (!list?.length) {
+            await showAlert(t('orders.listPrintEmpty') || 'Chop etish uchun buyurtmalar tanlanmagan', { variant: 'info' })
+            return
+        }
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const ids = list.map((o) => o.id).filter(Boolean)
+        let ordersForPrint = list
+        try {
+            const { data: allRows, error } = await fetchOrderItemsForOrderIds(ids)
+            if (error) throw error
+            const byOrder = new Map()
+            for (const oi of allRows || []) {
+                const oid = oi.order_id
+                if (!byOrder.has(oid)) byOrder.set(oid, [])
+                byOrder.get(oid).push(oi)
+            }
+            ordersForPrint = list.map((o) => ({
+                ...o,
+                order_items: dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [], products)
+            }))
+        } catch (e) {
+            console.error('handlePrintSelectedSpecial refetch:', e)
+            ordersForPrint = list.map((o) => ({
+                ...o,
+                order_items: dedupeOrderItemsKeepNewest(o.order_items || [], products)
+            }))
+        }
+
+        const html = buildSpecialPrintHtml({
+            documentTitle: "Maxsus Chop Etish Hujjati",
+            listTitle: `Tanlangan buyurtmalar soni: ${list.length}`,
+            orders: ordersForPrint,
+            labelColorFn,
+            productsList: products,
+            tableConfig
+        })
+        if (!openPrintTab(html)) {
+            showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })
+        }
+    }
+
     const orderLinesSubtotal = useMemo(() => computeOrderLinesSubtotal(orderLines), [orderLines])
     const displayFormSubtotal =
         mergeSourceAgg != null ? mergeSourceAgg.subtotal : orderLinesSubtotal
@@ -2516,6 +2606,7 @@ function BuyurtmalarPageContent() {
                 handlePrintOrderList={handlePrintOrderList}
                 filteredOrders={filteredOrders}
                 handlePrintSelectedByCategory={handlePrintSelectedByCategory}
+                handlePrintSelectedSpecial={handlePrintSelectedSpecial}
                 selectedOrders={selectedOrders}
                 isAdding={isAdding}
                 handleCancel={handleCancel}
@@ -2585,6 +2676,7 @@ function BuyurtmalarPageContent() {
                 handleDelete={handleDelete}
                 handleRestoreOrder={handleRestoreOrder}
                 handlePermanentDelete={handlePermanentDelete}
+                handleLinkCustomer={handleLinkCustomer}
             />
 
             {partialShipOrder ? (
@@ -2763,6 +2855,92 @@ function BuyurtmalarPageContent() {
                     </div>
                 </div>
             ) : null}
+
+            {/* Link Customer Modal */}
+            {linkCustomerOrder && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="border-b border-slate-100 bg-gradient-to-r from-indigo-50 via-white to-purple-50 px-6 py-5 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-black text-slate-900">Buyurtmani mijozga biriktirish</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    Buyurtma egasini mavjud CRM mijozlaridan biriga bog'lash
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setLinkCustomerOrder(null)}
+                                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-4">
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Buyurtma ma'lumotlari</span>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-slate-500">Buyurtma №:</span>
+                                    <span className="text-sm font-bold text-indigo-700 font-mono">
+                                        #{linkCustomerOrder.order_number || linkCustomerOrder.id.slice(0, 8)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-slate-500">Joriy mijoz:</span>
+                                    <span className="text-sm font-medium text-slate-700">
+                                        {linkCustomerOrder.customer_name || 'Noma\'lum'}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-slate-500">Joriy telefon:</span>
+                                    <span className="text-sm font-medium text-slate-700 font-mono">
+                                        {linkCustomerOrder.customer_phone || '—'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                    CRM Mijozini tanlang
+                                </label>
+                                <select
+                                    value={selectedCustomerIdForLink}
+                                    onChange={(e) => setSelectedCustomerIdForLink(e.target.value)}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all cursor-pointer"
+                                >
+                                    <option value="" disabled>-- Mijozni tanlang --</option>
+                                    {customers.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.name} ({c.phone || 'telefon yo\'q'})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4 bg-slate-50">
+                            <button
+                                type="button"
+                                onClick={() => setLinkCustomerOrder(null)}
+                                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                                Bekor qilish
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSaveLinkCustomer}
+                                className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5"
+                            >
+                                <UserPlus size={16} />
+                                Biriktirish
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

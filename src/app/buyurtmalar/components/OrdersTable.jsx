@@ -13,7 +13,8 @@ import {
   Trash2, 
   RotateCcw,
   Truck,
-  Warehouse
+  Warehouse,
+  UserPlus
 } from 'lucide-react';
 import { 
   normalizeOrderItemsForList, 
@@ -24,6 +25,7 @@ import {
   normalizeStatusForSelect,
   ORDER_LIST_ITEMS_PREVIEW,
   orderItemQtyDisplay,
+  orderSourceDisplay,
 } from '../utils';
 
 export default function OrdersTable({
@@ -47,7 +49,8 @@ export default function OrdersTable({
   handleEdit,
   handleDelete,
   handleRestoreOrder,
-  handlePermanentDelete
+  handlePermanentDelete,
+  handleLinkCustomer
 }) {
   const formImageCellClass = "w-10 h-10 sm:w-12 sm:h-12";
 
@@ -294,21 +297,16 @@ export default function OrdersTable({
                   </select>
                 </td>
                 <td className="px-2 py-3 sm:px-3 sm:py-4 align-top">
+                  {(() => {
+                    const src = orderSourceDisplay(item.source, t)
+                    return (
                   <span
-                    className={`text-[10px] uppercase font-bold px-2 py-1 rounded-lg ${
-                      item.source === 'website'
-                        ? 'bg-indigo-100 text-indigo-700'
-                        : item.source === 'telefon'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-gray-100 text-gray-600'
-                    }`}
+                    className={`text-[10px] uppercase font-bold px-2 py-1 rounded-lg ${src.className}`}
                   >
-                    {item.source === 'website'
-                      ? 'Web'
-                      : item.source === 'telefon'
-                        ? t('orders.sourcePhoneShort')
-                        : t('orders.sourceStoreShort')}
+                    {src.label}
                   </span>
+                    )
+                  })()}
                   {erpInboundStatus && (
                     <div className="mt-1">
                       <span
@@ -392,6 +390,15 @@ export default function OrdersTable({
                         >
                           <Copy size={15} className="shrink-0 sm:w-4 sm:h-4" />
                           <span className="hidden lg:inline">{t('orders.duplicateOrder')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleLinkCustomer?.(item)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2 py-1.5 sm:px-2.5 sm:py-2 text-[11px] sm:text-xs font-bold text-indigo-900 transition-colors hover:bg-indigo-100"
+                          title="Mijozga biriktirish"
+                        >
+                          <UserPlus size={15} className="shrink-0 sm:w-4 sm:h-4" />
+                          <span className="hidden lg:inline">Biriktirish</span>
                         </button>
                         <button
                           type="button"
