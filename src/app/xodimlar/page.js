@@ -185,6 +185,21 @@ export default function Xodimlar() {
     }
 
     /** Avans va oylik yozuvlarini sana bo‘yicha ketma-ket (xronologiya) birlashtirish. */
+    function payoutKindBadge(kind, t) {
+        const isAdvance = kind === 'advance'
+        return (
+            <span
+                className={`inline-flex shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                    isAdvance
+                        ? 'bg-amber-100 text-amber-900 border border-amber-200/80'
+                        : 'bg-emerald-100 text-emerald-900 border border-emerald-200/80'
+                }`}
+            >
+                {isAdvance ? t('employees.payoutKindAdvance') : t('employees.payoutKindSalary')}
+            </span>
+        )
+    }
+
     function mergeEmployeePayoutsTimeline(advList, salList) {
         const items = []
         for (const r of advList || []) {
@@ -1496,7 +1511,6 @@ export default function Xodimlar() {
                                     const advSum = advList.reduce((s, r) => s + (r.amount || 0), 0)
                                     const salList = salaryPaymentsByEmployee[empKey] || []
                                     const salSum = salList.reduce((s, r) => s + (r.amount || 0), 0)
-                                    const payoutTimeline = mergeEmployeePayoutsTimeline(advList, salList)
                                     const rowHasPayrollContext =
                                         contractTotal >= 0.01 || advSum >= 0.01 || salSum >= 0.01
                                     const salaryCloseDoneThisMonth =
@@ -1621,72 +1635,113 @@ export default function Xodimlar() {
                                                         </button>
                                                     ) : null}
                                                 </div>
-                                                {payoutTimeline.length > 0 ? (
-                                                    <ol className="space-y-2 text-xs text-gray-700 font-normal list-none pl-0">
-                                                        {payoutTimeline.map((item, idx) => (
-                                                            <li
-                                                                key={
-                                                                    item.kind === 'advance'
-                                                                        ? `a-${item.raw?.id || `${item.sortKey}-${item.amount}-${idx}`}`
-                                                                        : `s-${item.raw?.id || `${item.sortKey}-${item.amount}-${idx}`}`
-                                                                }
-                                                                className="tabular-nums rounded-lg border border-gray-100 bg-gray-50/60 px-2 py-2"
-                                                            >
-                                                                <div className="flex flex-wrap items-start gap-2">
-                                                                    <span className="shrink-0 w-5 text-[10px] font-bold text-gray-400 pt-0.5">
-                                                                        {idx + 1}.
-                                                                    </span>
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="flex flex-wrap items-center gap-1.5 gap-y-1">
-                                                                            <span className="text-gray-500">
-                                                                                {formatAdvanceDate(item.displayDate)}
-                                                                            </span>
-                                                                            <span className="text-gray-400">—</span>
-                                                                            <span className="font-semibold text-gray-900">
-                                                                                {formatUzs(item.amount)}
-                                                                            </span>
-                                                                        </div>
-                                                                        {item.note ? (
-                                                                            <div className="text-[11px] text-gray-500 mt-1 max-w-[14rem] leading-snug">
-                                                                                {t('employees.expenseNotePrefix')}
-                                                                                {item.note}
-                                                                            </div>
-                                                                        ) : null}
-                                                                    </div>
-                                                                    <div className="shrink-0 flex flex-wrap items-center justify-end gap-1">
-                                                                        {item.kind === 'advance' &&
-                                                                        !advancesTableMissing &&
-                                                                        item.raw?.id ? (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() =>
-                                                                                    openDeleteAdvance(item.raw, xodim.name)
-                                                                                }
-                                                                                className="shrink-0 p-1 rounded-md text-red-600 hover:bg-red-50"
-                                                                                title={t('employees.deleteOneAdvance')}
-                                                                            >
-                                                                                <Trash2 size={14} aria-hidden />
-                                                                            </button>
-                                                                        ) : null}
-                                                                        {item.kind === 'salary' && item.raw?.id ? (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() =>
-                                                                                    openDeleteSalaryPayment(item.raw, xodim.name)
-                                                                                }
-                                                                                className="shrink-0 p-1 rounded-md text-red-600 hover:bg-red-50"
-                                                                                title={t('employees.deleteOneSalaryPayment')}
-                                                                            >
-                                                                                <Trash2 size={14} aria-hidden />
-                                                                            </button>
-                                                                        ) : null}
-                                                                    </div>
-                                                                </div>
-                                                            </li>
-                                                        ))}
-                                                    </ol>
-                                                ) : (
+                                                {advList.length === 0 && salList.length === 0 ? (
                                                     <p className="text-xs text-gray-400">{t('employees.noPayoutsThisMonth')}</p>
+                                                ) : (
+                                                    <div className="space-y-3">
+                                                        {advList.length > 0 ? (
+                                                            <div>
+                                                                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-800 mb-1.5">
+                                                                    {t('employees.payoutKindAdvance')}
+                                                                </p>
+                                                                <ol className="space-y-2 text-xs text-gray-700 font-normal list-none pl-0">
+                                                                    {advList.map((row, idx) => (
+                                                                        <li
+                                                                            key={`a-${row.id || `${row.advance_date}-${row.amount}-${idx}`}`}
+                                                                            className="tabular-nums rounded-lg border border-amber-100 bg-amber-50/50 px-2 py-2"
+                                                                        >
+                                                                            <div className="flex flex-wrap items-start gap-2">
+                                                                                <span className="shrink-0 w-5 text-[10px] font-bold text-amber-700/80 pt-0.5">
+                                                                                    {idx + 1}.
+                                                                                </span>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <div className="flex flex-wrap items-center gap-1.5 gap-y-1">
+                                                                                        {payoutKindBadge('advance', t)}
+                                                                                        <span className="text-gray-500">
+                                                                                            {formatAdvanceDate(row.advance_date)}
+                                                                                        </span>
+                                                                                        <span className="text-gray-400">—</span>
+                                                                                        <span className="font-semibold text-gray-900">
+                                                                                            {formatUzs(row.amount)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    {row.note ? (
+                                                                                        <div className="text-[11px] text-gray-500 mt-1 max-w-[14rem] leading-snug">
+                                                                                            {t('employees.expenseNotePrefix')}
+                                                                                            {row.note}
+                                                                                        </div>
+                                                                                    ) : null}
+                                                                                </div>
+                                                                                {!advancesTableMissing && row.id ? (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() =>
+                                                                                            openDeleteAdvance(row, xodim.name)
+                                                                                        }
+                                                                                        className="shrink-0 p-1 rounded-md text-red-600 hover:bg-red-50"
+                                                                                        title={t('employees.deleteOneAdvance')}
+                                                                                    >
+                                                                                        <Trash2 size={14} aria-hidden />
+                                                                                    </button>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        </li>
+                                                                    ))}
+                                                                </ol>
+                                                            </div>
+                                                        ) : null}
+                                                        {salList.length > 0 ? (
+                                                            <div>
+                                                                <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5">
+                                                                    {t('employees.payoutKindSalary')}
+                                                                </p>
+                                                                <ol className="space-y-2 text-xs text-gray-700 font-normal list-none pl-0">
+                                                                    {salList.map((row, idx) => (
+                                                                        <li
+                                                                            key={`s-${row.id || `${row.payment_date}-${row.amount}-${idx}`}`}
+                                                                            className="tabular-nums rounded-lg border border-emerald-100 bg-emerald-50/50 px-2 py-2"
+                                                                        >
+                                                                            <div className="flex flex-wrap items-start gap-2">
+                                                                                <span className="shrink-0 w-5 text-[10px] font-bold text-emerald-700/80 pt-0.5">
+                                                                                    {idx + 1}.
+                                                                                </span>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <div className="flex flex-wrap items-center gap-1.5 gap-y-1">
+                                                                                        {payoutKindBadge('salary', t)}
+                                                                                        <span className="text-gray-500">
+                                                                                            {formatAdvanceDate(row.payment_date)}
+                                                                                        </span>
+                                                                                        <span className="text-gray-400">—</span>
+                                                                                        <span className="font-semibold text-gray-900">
+                                                                                            {formatUzs(row.amount)}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    {row.note ? (
+                                                                                        <div className="text-[11px] text-gray-500 mt-1 max-w-[14rem] leading-snug">
+                                                                                            {t('employees.expenseNotePrefix')}
+                                                                                            {row.note}
+                                                                                        </div>
+                                                                                    ) : null}
+                                                                                </div>
+                                                                                {row.id ? (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() =>
+                                                                                            openDeleteSalaryPayment(row, xodim.name)
+                                                                                        }
+                                                                                        className="shrink-0 p-1 rounded-md text-red-600 hover:bg-red-50"
+                                                                                        title={t('employees.deleteOneSalaryPayment')}
+                                                                                    >
+                                                                                        <Trash2 size={14} aria-hidden />
+                                                                                    </button>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        </li>
+                                                                    ))}
+                                                                </ol>
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 )}
                                             </td>
                                             <td className="sticky right-[3.5rem] z-20 bg-white group-hover:bg-blue-50/50 px-0 py-3 align-middle border-b border-gray-100 border-l border-gray-200/80 w-14 min-w-[3.5rem] shadow-[-6px_0_14px_-6px_rgba(15,23,42,0.06)]">
@@ -1806,13 +1861,20 @@ export default function Xodimlar() {
                                                         ? `ov-a-${item.raw?.id || `${item.sortKey}-${idx}`}`
                                                         : `ov-s-${item.raw?.id || `${item.sortKey}-${idx}`}`
                                                 }
-                                                className="rounded-lg border border-gray-100 bg-gray-50/80 px-2 py-2 tabular-nums flex gap-2"
+                                                className={`rounded-lg border px-2 py-2 tabular-nums flex gap-2 ${
+                                                    item.kind === 'advance'
+                                                        ? 'border-amber-100 bg-amber-50/50'
+                                                        : 'border-emerald-100 bg-emerald-50/50'
+                                                }`}
                                             >
                                                 <span className="text-gray-400 font-bold shrink-0">{idx + 1}.</span>
                                                 <div className="min-w-0 flex-1">
-                                                    <span className="text-gray-500">{formatAdvanceDate(item.displayDate)}</span>
-                                                    <span className="text-gray-400"> — </span>
-                                                    <span className="font-semibold text-gray-900">{formatUzs(item.amount)}</span>
+                                                    <div className="flex flex-wrap items-center gap-1.5 gap-y-1">
+                                                        {payoutKindBadge(item.kind, t)}
+                                                        <span className="text-gray-500">{formatAdvanceDate(item.displayDate)}</span>
+                                                        <span className="text-gray-400"> — </span>
+                                                        <span className="font-semibold text-gray-900">{formatUzs(item.amount)}</span>
+                                                    </div>
                                                     {item.note ? (
                                                         <div className="text-[11px] text-gray-500 mt-1">{item.note}</div>
                                                     ) : null}
