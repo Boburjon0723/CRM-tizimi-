@@ -31,6 +31,19 @@ function getCurrentYm() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+function normalizePeriodYm(ym) {
+    const s = String(ym || '').trim()
+    return /^\d{4}-\d{2}$/.test(s) ? s : ''
+}
+
+/** ended_period_ym dan boshlab (shu oy va keyin) ro‘yxatda ko‘rinmaydi */
+function employeeVisibleInPeriod(emp, periodYm) {
+    const ended = normalizePeriodYm(emp?.ended_period_ym)
+    if (!ended) return true
+    const period = normalizePeriodYm(periodYm) || getCurrentYm()
+    return period < ended
+}
+
 /** periodYm: "YYYY-MM" */
 function monthRangeFromYm(periodYm) {
     const s = String(periodYm || '').trim()
@@ -621,13 +634,29 @@ export default function Xodimlar() {
     }
 
     async function handleDelete(id) {
-        if (!(await showConfirm(t('employees.deleteConfirm'), { variant: 'warning' }))) return
+        const endYm = normalizePeriodYm(reportPeriodYm) || getCurrentYm()
+        if (
+            !(await showConfirm(
+                t('employees.deactivateConfirm').replace('{{month}}', statsMonthLabel),
+                { variant: 'warning' }
+            ))
+        ) {
+            return
+        }
         try {
-            const { error } = await supabase.from('employees').delete().eq('id', id)
-            if (error) throw error
+            const { error } = await supabase.from('employees').update({ ended_period_ym: endYm }).eq('id', id)
+            if (error) {
+                const msg = String(error.message || '')
+                if (msg.includes('ended_period_ym') || msg.includes('Could not find')) {
+                    await showAlert(t('employees.endedPeriodMigrationHint'), { variant: 'warning' })
+                    return
+                }
+                throw error
+            }
+            await showAlert(t('employees.deactivateSuccess'), { variant: 'success' })
             await loadEmployees({ silent: true })
         } catch (error) {
-            console.error('Error deleting employee:', error)
+            console.error('Error deactivating employee:', error)
             await showAlert(t('employees.deleteError'), { variant: 'error' })
         }
     }
@@ -907,7 +936,17 @@ export default function Xodimlar() {
         )
     }
 
-    const filteredEmployees = employees.filter((x) => {
+    const employeesForPeriod = useMemo(
+        () => employees.filter((e) => employeeVisibleInPeriod(e, reportPeriodYm)),
+        [employees, reportPeriodYm]
+    )
+
+    const visibleEmployeeKeySet = useMemo(
+        () => new Set(employeesForPeriod.map((e) => employeeMapKey(e.id))),
+        [employeesForPeriod]
+    )
+
+    const filteredEmployees = employeesForPeriod.filter((x) => {
         const q = searchTerm.toLowerCase().trim()
         if (!q) return true
         if (x.name?.toLowerCase().includes(q)) return true
@@ -927,19 +966,25 @@ export default function Xodimlar() {
 
     const monthAdvancesGrandTotalRaw = useMemo(
         () =>
-            Object.values(advancesByEmployee).reduce(
-                (sum, list) => sum + (list || []).reduce((s, r) => s + (Number(r.amount) || 0), 0),
+            Object.entries(advancesByEmployee).reduce(
+                (sum, [empKey, list]) =>
+                    visibleEmployeeKeySet.has(empKey)
+                        ? sum + (list || []).reduce((s, r) => s + (Number(r.amount) || 0), 0)
+                        : sum,
                 0
             ),
-        [advancesByEmployee]
+        [advancesByEmployee, visibleEmployeeKeySet]
     )
     const monthSalaryPaidGrandTotalRaw = useMemo(
         () =>
-            Object.values(salaryPaymentsByEmployee).reduce(
-                (sum, list) => sum + (list || []).reduce((s, r) => s + (Number(r.amount) || 0), 0),
+            Object.entries(salaryPaymentsByEmployee).reduce(
+                (sum, [empKey, list]) =>
+                    visibleEmployeeKeySet.has(empKey)
+                        ? sum + (list || []).reduce((s, r) => s + (Number(r.amount) || 0), 0)
+                        : sum,
                 0
             ),
-        [salaryPaymentsByEmployee]
+        [salaryPaymentsByEmployee, visibleEmployeeKeySet]
     )
 
     /** Sariq karta: avanslar − oylik to‘lovlari (yopilgan qism ayiriladi) */
@@ -960,7 +1005,7 @@ export default function Xodimlar() {
 
     const salaryOverviewPayoutContext = useMemo(() => {
         if (!salaryOverviewModal?.employeeId) return null
-        const xodim = employees.find(
+        const xodim = employeesForPeriod.find(
             (e) => employeeMapKey(e.id) === employeeMapKey(salaryOverviewModal.employeeId)
         )
         if (!xodim) return null
@@ -985,7 +1030,7 @@ export default function Xodimlar() {
             xodim,
             salaryAutoSaveAmount
         }
-    }, [salaryOverviewModal, employees, advancesByEmployee, salaryPaymentsByEmployee])
+    }, [salaryOverviewModal, employeesForPeriod, advancesByEmployee, salaryPaymentsByEmployee])
 
     const statsMonthLabel = useMemo(() => {
         const { from } = monthRangeFromYm(reportPeriodYm)

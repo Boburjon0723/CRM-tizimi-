@@ -29,6 +29,20 @@ function formatYmdUz(ymd) {
     return `${d.padStart(2, '0')}.${m.padStart(2, '0')}.${y}`
 }
 
+function normalizePeriodYm(ym) {
+    const s = String(ym || '').trim()
+    return /^\d{4}-\d{2}$/.test(s) ? s : ''
+}
+
+/** ended_period_ym dan boshlab (shu oy va keyin) ro‘yxatda ko‘rinmaydi */
+function employeeVisibleInPeriod(emp, periodYm) {
+    const ended = normalizePeriodYm(emp?.ended_period_ym)
+    if (!ended) return true
+    const period = normalizePeriodYm(periodYm)
+    if (!period) return true
+    return period < ended
+}
+
 export default function EmployeesView() {
     const [loading, setLoading] = useState(true)
     const [selectedEmployee, setSelectedEmployee] = useState(null)
@@ -108,7 +122,9 @@ export default function EmployeesView() {
                     approvedLeaveDatesByEmployee[k].add(ymd)
                 }
 
-                const processed = (emps || []).map(emp => {
+                const visibleEmps = (emps || []).filter((emp) => employeeVisibleInPeriod(emp, selectedDate))
+
+                const processed = visibleEmps.map(emp => {
                     const empKey = employeeMapKey(emp.id)
                     const advSum = (advances || [])
                         .filter(a => a.employee_id === emp.id)

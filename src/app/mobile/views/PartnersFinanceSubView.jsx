@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { 
     Users, 
@@ -36,6 +36,8 @@ export default function PartnersFinanceSubView() {
         date: new Date().toISOString().split('T')[0],
         description: ''
     })
+    const entrySavingRef = useRef(false)
+    const [isSavingEntry, setIsSavingEntry] = useState(false)
 
     useEffect(() => {
         fetchData()
@@ -92,11 +94,13 @@ export default function PartnersFinanceSubView() {
 
     async function handleSaveEntry(e) {
         e.preventDefault()
-        if (!selectedPartner) return
+        if (!selectedPartner || entrySavingRef.current) return
         
         const amount = Number(form.amount)
         if (!amount || amount <= 0) return
 
+        entrySavingRef.current = true
+        setIsSavingEntry(true)
         try {
             const { error } = await supabase.from('partner_finance_entries').insert([{
                 partner_id: selectedPartner.id,
@@ -121,6 +125,9 @@ export default function PartnersFinanceSubView() {
         } catch (error) {
             console.error('Error saving entry:', error)
             alert('Saqlashda xatolik yuz berdi')
+        } finally {
+            entrySavingRef.current = false
+            setIsSavingEntry(false)
         }
     }
 
@@ -246,7 +253,11 @@ export default function PartnersFinanceSubView() {
                                 </button>
                             </div>
 
-                            <form onSubmit={handleSaveEntry} className="space-y-4">
+                            <form onSubmit={(e) => {
+                                e.preventDefault()
+                                if (isSavingEntry) return
+                                handleSaveEntry(e)
+                            }} className="space-y-4">
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Summa</label>
                                     <div className="relative group">
@@ -310,11 +321,12 @@ export default function PartnersFinanceSubView() {
 
                                 <button 
                                     type="submit"
-                                    className={`w-full py-5 rounded-3xl font-bold text-white shadow-2xl transition-all active:scale-95 ${
+                                    disabled={isSavingEntry}
+                                    className={`w-full py-5 rounded-3xl font-bold text-white shadow-2xl transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ${
                                         formType === 'payment' ? 'bg-rose-600 shadow-rose-600/30' : 'bg-emerald-600 shadow-emerald-600/30'
                                     }`}
                                 >
-                                    {formType === 'payment' ? 'To\'lovni tasdiqlash' : 'Tushumni tasdiqlash'}
+                                    {isSavingEntry ? 'Saqlanmoqda...' : formType === 'payment' ? 'To\'lovni tasdiqlash' : 'Tushumni tasdiqlash'}
                                 </button>
                             </form>
                         </div>

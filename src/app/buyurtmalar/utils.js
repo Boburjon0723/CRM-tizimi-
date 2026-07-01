@@ -2043,7 +2043,11 @@ export function filterOrderItemsByCategoryLabel(orderItems, categoryLabel, uncat
 /**
  * Yangi buyurtma jadvali: «Tayyor» bergan qatorlar kategoriya bo‘yicha; qolganlari (kod bo‘sh yoki tayyor emas) pastda.
  */
-export function buildOrderFormTableRows(orderLines, products, language, uncategorizedLabel) {
+export function buildOrderFormTableRows(orderLines, products, language, uncategorizedLabel, productsById) {
+    const productLookup =
+        productsById instanceof Map
+            ? productsById
+            : new Map((products || []).map((p) => [String(p.id), p]))
     const lines = orderLines || []
     const draft = []
     const resolved = []
@@ -2056,7 +2060,7 @@ export function buildOrderFormTableRows(orderLines, products, language, uncatego
     })
     draft.sort((a, b) => a.origIdx - b.origIdx)
     const resolvedEnriched = resolved.map(({ line, origIdx }) => {
-        const prod = products.find((p) => String(p.id) === String(line.product_id))
+        const prod = productLookup.get(String(line.product_id))
         const catLab = categoryLabelFromProduct(prod, language)
         const displayCat = catLab || uncategorizedLabel || '—'
         const catKey = (catLab || '__none__').toLowerCase()

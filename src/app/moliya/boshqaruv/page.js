@@ -258,6 +258,10 @@ export default function MoliyaBoshqaruvPage() {
     const [supplyStep, setSupplyStep] = useState(1)
     const supplyExcelInputRef = useRef(null)
     const supplyExcelModeRef = useRef('replace')
+    const entrySavingRef = useRef(false)
+    const partnerSavingRef = useRef(false)
+    const [isSavingEntry, setIsSavingEntry] = useState(false)
+    const [isSavingPartner, setIsSavingPartner] = useState(false)
     const [deletePinModal, setDeletePinModal] = useState(null)
     const [deletePinValue, setDeletePinValue] = useState('')
 
@@ -627,10 +631,13 @@ export default function MoliyaBoshqaruvPage() {
 
     async function savePartner(e) {
         e.preventDefault()
+        if (partnerSavingRef.current) return
         if (!partnerForm.name.trim()) {
             await showAlert(t('finances.partnerNameRequired'), { variant: 'warning' })
             return
         }
+        partnerSavingRef.current = true
+        setIsSavingPartner(true)
         try {
             const nm = partnerForm.name.trim()
             const { error } = await supabase.from('finance_partners').insert([
@@ -656,14 +663,19 @@ export default function MoliyaBoshqaruvPage() {
         } catch (err) {
             console.error(err)
             await showAlert(err.message || String(err), { variant: 'error' })
+        } finally {
+            partnerSavingRef.current = false
+            setIsSavingPartner(false)
         }
     }
 
     async function saveEntry(e) {
         e.preventDefault()
-        if (!selectedId) return
+        if (!selectedId || entrySavingRef.current) return
         const editingEntryId = entryModal.editingEntryId || null
         const ref = genReferenceCode()
+        entrySavingRef.current = true
+        setIsSavingEntry(true)
         try {
             if (entryIsSingleAmount(entryModal.type)) {
                 const amt = parseMoney(entryForm.amount_uzs)
@@ -783,16 +795,21 @@ export default function MoliyaBoshqaruvPage() {
         } catch (err) {
             console.error(err)
             await showAlert(err.message || String(err), { variant: 'error' })
+        } finally {
+            entrySavingRef.current = false
+            setIsSavingEntry(false)
         }
     }
 
     function openEntry(type) {
+        if (entrySavingRef.current) return
         setEntryModal({ open: true, type, editingEntryId: null })
         setSupplyStep(1)
         setEntryForm(emptyEntryForm())
     }
 
     function closeEntryModal() {
+        if (entrySavingRef.current) return
         setEntryModal((m) => ({ ...m, open: false, editingEntryId: null }))
         setSupplyStep(1)
     }
@@ -1525,9 +1542,10 @@ export default function MoliyaBoshqaruvPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold"
+                                    disabled={isSavingPartner}
+                                    className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                                 >
-                                    {t('common.save')}
+                                    {isSavingPartner ? t('common.loading') : t('common.save')}
                                 </button>
                             </div>
                         </form>
@@ -1602,6 +1620,7 @@ export default function MoliyaBoshqaruvPage() {
                             className="space-y-3"
                             onSubmit={(e) => {
                                 e.preventDefault()
+                                if (isSavingEntry) return
                                 if (entryIsSingleAmount(entryModal.type)) saveEntry(e)
                                 else if (supplyStep === 3) saveEntry(e)
                             }}
@@ -2000,7 +2019,8 @@ export default function MoliyaBoshqaruvPage() {
                             <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-gray-100">
                                 <button
                                     type="button"
-                                    className="px-4 py-2 rounded-lg border text-sm font-semibold"
+                                    disabled={isSavingEntry}
+                                    className="px-4 py-2 rounded-lg border text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                                     onClick={closeEntryModal}
                                 >
                                     {t('common.cancel')}
@@ -2008,9 +2028,10 @@ export default function MoliyaBoshqaruvPage() {
                                 {entryIsSingleAmount(entryModal.type) ? (
                                     <button
                                         type="submit"
-                                        className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold"
+                                        disabled={isSavingEntry}
+                                        className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
-                                        {t('common.save')}
+                                        {isSavingEntry ? t('common.loading') : t('common.save')}
                                     </button>
                                 ) : supplyStep === 1 ? (
                                     <button
@@ -2048,9 +2069,10 @@ export default function MoliyaBoshqaruvPage() {
                                         </button>
                                         <button
                                             type="submit"
-                                            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold"
+                                            disabled={isSavingEntry}
+                                            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                                         >
-                                            {t('common.save')}
+                                            {isSavingEntry ? t('common.loading') : t('common.save')}
                                         </button>
                                     </>
                                 )}

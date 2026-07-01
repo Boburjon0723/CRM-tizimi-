@@ -38,16 +38,10 @@ export default function OrdersFilter({
   handlePrintSelectedSpecial,
   selectedOrders,
   isAdding,
-  handleCancel,
+  onOpenNewOrder,
+  onCancelForm,
   clearNewOrderDraft,
   setDraftBanner,
-  setEditId,
-  setOrderLines,
-  setForm,
-  setMergeSourceAgg,
-  setMergeSourceOrderIds,
-  setIsAdding,
-  createEmptyOrderLine,
   handleExportSelectedOrdersExcel,
   selectedOrdersCount,
   excelImportInputRef,
@@ -306,24 +300,11 @@ export default function OrdersFilter({
               type="button"
               onClick={() => {
                 if (isAdding) {
-                  handleCancel();
+                  onCancelForm();
                 } else {
                   clearNewOrderDraft();
                   setDraftBanner(false);
-                  setEditId(null);
-                  setOrderLines([createEmptyOrderLine()]);
-                  setForm({
-                    customer_id: '',
-                    customer_name: '',
-                    customer_phone: '',
-                    total: '',
-                    status: 'new',
-                    note: '',
-                    source: 'dokon',
-                  });
-                  setMergeSourceAgg(null);
-                  setMergeSourceOrderIds(null);
-                  setIsAdding(true);
+                  onOpenNewOrder();
                 }
               }}
               className="inline-flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-all font-bold text-xs shadow-sm h-[38px]"

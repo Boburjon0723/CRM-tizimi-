@@ -7,7 +7,15 @@ if (!supabaseUrl || !supabaseKey) {
   console.warn('Supabase URL yoki Key topilmadi! Iltimos, Vercel panelida Environment Variables qo\'shing.')
 }
 
+/** CRM: login sessiyasi JWT bilan ketadi — RLS authenticated siyosatlari shu orqali ishlaydi */
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseKey || 'placeholder-key'
+  supabaseKey || 'placeholder-key',
+  {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+    },
+  }
 )

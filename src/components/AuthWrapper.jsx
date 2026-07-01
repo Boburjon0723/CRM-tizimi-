@@ -6,11 +6,9 @@ import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 import { useLayout } from '@/context/LayoutContext'
 import { withTimeout } from '@/lib/withTimeout'
-import { canAccessCrm, resolveCrmRole } from '@/lib/authRole'
 
 export default function AuthWrapper({ children }) {
     const [session, setSession] = useState(null)
-    const [role, setRole] = useState('user')
     const [loading, setLoading] = useState(true)
     const [authError, setAuthError] = useState(null)
     const { sidebarOpen, setSidebarOpen } = useLayout()
@@ -27,12 +25,6 @@ export default function AuthWrapper({ children }) {
                 'Sessiya tekshirilmadi — tarmoq juda sekin yoki server javob bermayapti. Wi‑Fi / VPN ni tekshiring.'
             )
             setSession(nextSession)
-            if (nextSession?.user) {
-                const nextRole = await resolveCrmRole(nextSession.user)
-                setRole(nextRole)
-            } else {
-                setRole('user')
-            }
             const isLoginPage = pathname.startsWith('/login')
             if (!nextSession && !isLoginPage) {
                 router.replace('/login')
@@ -56,13 +48,6 @@ export default function AuthWrapper({ children }) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
             if (!mounted) return
             setSession(nextSession)
-            if (nextSession?.user) {
-                resolveCrmRole(nextSession.user).then((nextRole) => {
-                    if (mounted) setRole(nextRole)
-                })
-            } else {
-                setRole('user')
-            }
             const isLoginPage = pathname.startsWith('/login')
             if (!nextSession && !isLoginPage) {
                 router.replace('/login')
@@ -77,7 +62,6 @@ export default function AuthWrapper({ children }) {
         }
     }, [pathname, router])
 
-    // Close sidebar on route change
     useEffect(() => {
         setSidebarOpen(false)
     }, [pathname, setSidebarOpen])
@@ -117,12 +101,12 @@ export default function AuthWrapper({ children }) {
         )
     }
 
-    // Login or Mobile — trailingSlash: true bo‘lsa pathname /login/ bo‘ladi; === '/login' yolg‘on chiqadi
-    if (pathname.startsWith('/login') || pathname.startsWith('/mobile')) {
+    if (pathname.startsWith('/login')) {
         return <>{children}</>
     }
 
-    // Sessiya yo‘q: yo‘nalish /login — «null» oq ekran bermasligi uchun yuklanish
+    const isMobile = pathname.startsWith('/mobile')
+
     if (!session) {
         return (
             <div className="flex h-screen flex-col items-center justify-center gap-3 bg-gray-50 text-gray-600">
@@ -132,30 +116,14 @@ export default function AuthWrapper({ children }) {
         )
     }
 
-    if (!canAccessCrm(role)) {
-        return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-50 px-6 text-center">
-                <p className="text-red-700 font-semibold">Sizning rolingiz CRM bo'limiga kira olmaydi.</p>
-                <p className="text-sm text-gray-600">Kerakli rol: crm yoki admin.</p>
-                <button
-                    type="button"
-                    onClick={async () => {
-                        await supabase.auth.signOut()
-                        router.replace('/login')
-                    }}
-                    className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow hover:bg-blue-700"
-                >
-                    Kirish sahifasiga qaytish
-                </button>
-            </div>
-        )
+    if (isMobile) {
+        return <>{children}</>
     }
 
     return (
         <div className="flex min-h-screen bg-gray-50">
             <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
-            {/* Backdrop for mobile */}
             {sidebarOpen && (
                 <div
                     className="fixed inset-0 bg-black/50 z-40 lg:hidden"
@@ -163,7 +131,7 @@ export default function AuthWrapper({ children }) {
                 />
             )}
 
-            <main className={`flex-1 transition-all duration-300 lg:ml-64 md:ml-0 overflow-x-hidden`}>
+            <main className="flex-1 transition-all duration-300 lg:ml-64 md:ml-0 overflow-x-hidden">
                 <div className="p-4 md:p-6 lg:p-8">
                     {children}
                 </div>

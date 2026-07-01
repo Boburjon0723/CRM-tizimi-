@@ -728,6 +728,11 @@ export const translations = {
             requiredError: 'Ism, lavozim va maosh majburiy!',
             saveSuccess: 'Xodim saqlandi!',
             deleteConfirm: 'Xodimni o\'chirmoqchimisiz?',
+            deactivateConfirm:
+                '{{month}} oydan boshlab xodim ro\'yxatdan olib tashlanadi. Oldingi oylardagi avans va oylik yozuvlari saqlanadi. Davom etasizmi?',
+            deactivateSuccess: 'Xodim tanlangan oydan boshlab yashirildi.',
+            endedPeriodMigrationHint:
+                'Xodimni yumshoq o\'chirish uchun Supabase SQL Editor da CRM-tizimi-/supabase_employee_ended_period.sql faylini ishga tushiring.',
             deleteError: 'O\'chirishda xatolik!',
             actionPinNotConfigured:
                 'Xodimlar: maxfiy amallar o\'chiq. .env.local da NEXT_PUBLIC_XODIMLAR_ACTION_PIN yoki NEXT_PUBLIC_MOLIYA_DELETE_PIN qo\'ying va serverni qayta ishga tushiring.',
@@ -2056,6 +2061,11 @@ export const translations = {
             requiredError: 'Имя, должность и зарплата обязательны!',
             saveSuccess: 'Сотрудник сохранен!',
             deleteConfirm: 'Вы уверены, что хотите удалить сотрудника?',
+            deactivateConfirm:
+                'Сотрудник будет скрыт с {{month}}. Записи за предыдущие месяцы сохранятся. Продолжить?',
+            deactivateSuccess: 'Сотрудник скрыт с выбранного месяца.',
+            endedPeriodMigrationHint:
+                'Для мягкого удаления выполните CRM-tizimi-/supabase_employee_ended_period.sql в Supabase SQL Editor.',
             deleteError: 'Ошибка при удалении!',
             actionPinNotConfigured:
                 'Действия с сотрудниками отключены: укажите NEXT_PUBLIC_XODIMLAR_ACTION_PIN или NEXT_PUBLIC_MOLIYA_DELETE_PIN в .env.local и перезапустите сервер.',
@@ -3375,6 +3385,11 @@ export const translations = {
             requiredError: 'Name, position and salary are required!',
             saveSuccess: 'Employee saved!',
             deleteConfirm: 'Are you sure you want to delete the employee?',
+            deactivateConfirm:
+                'The employee will be hidden from {{month}} onward. Past month records will be kept. Continue?',
+            deactivateSuccess: 'Employee hidden from the selected month.',
+            endedPeriodMigrationHint:
+                'Run CRM-tizimi-/supabase_employee_ended_period.sql in Supabase SQL Editor for soft removal.',
             deleteError: 'Error deleting!',
             actionPinNotConfigured:
                 'Employee actions are disabled: set NEXT_PUBLIC_XODIMLAR_ACTION_PIN or NEXT_PUBLIC_MOLIYA_DELETE_PIN in .env.local and restart the dev server.',
