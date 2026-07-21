@@ -58,6 +58,9 @@ SELECT public.__enable_rls_if_table_exists('public.partner_finance_entry_lines')
 SELECT public.__enable_rls_if_table_exists('public.partner_report_batches');
 SELECT public.__enable_rls_if_table_exists('public.partner_report_lines');
 SELECT public.__enable_rls_if_table_exists('public.raw_materials');
+SELECT public.__enable_rls_if_table_exists('public.material_stock_movements');
+SELECT public.__enable_rls_if_table_exists('public.product_bom');
+SELECT public.__enable_rls_if_table_exists('public.production_runs');
 SELECT public.__enable_rls_if_table_exists('public.stock_movements');
 SELECT public.__enable_rls_if_table_exists('public.stock_history');
 SELECT public.__enable_rls_if_table_exists('public.expenses');
@@ -116,6 +119,9 @@ DECLARE
     'partner_report_batches',
     'partner_report_lines',
     'raw_materials',
+    'material_stock_movements',
+    'product_bom',
+    'production_runs',
     'stock_movements',
     'stock_history',
     'expenses',

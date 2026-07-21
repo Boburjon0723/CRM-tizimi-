@@ -14,6 +14,8 @@ import {
     X,
     Palette,
     ClipboardList,
+    Beaker,
+    Factory,
 } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -30,6 +32,14 @@ import {
     mergeProductInventoryRow,
     deriveInventoryStatusFromQty,
 } from '@/lib/productInventoryMerge'
+import RawMaterialsTab from '@/components/warehouse/RawMaterialsTab'
+import ProductBomTab from '@/components/warehouse/ProductBomTab'
+import ProductionTab from '@/components/warehouse/ProductionTab'
+
+const TAB_PRODUCTS = 'products'
+const TAB_MATERIALS = 'materials'
+const TAB_BOM = 'bom'
+const TAB_PRODUCTION = 'production'
 
 const ALL_CATEGORIES = '__all__'
 const OUTFLOW_ALL_PRODUCTS = '__all__'
@@ -92,6 +102,7 @@ export default function Ombor() {
     const [outflowSearchTerm, setOutflowSearchTerm] = useState('')
     const [outflowProductFilter, setOutflowProductFilter] = useState(OUTFLOW_ALL_PRODUCTS)
     const [outflowRange, setOutflowRange] = useState(OUTFLOW_RANGE_30D)
+    const [activeTab, setActiveTab] = useState(TAB_PRODUCTS)
 
     const locale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US'
 
@@ -612,6 +623,72 @@ export default function Ombor() {
                 <Header title={t('warehouse.title')} toggleSidebar={toggleSidebar} />
             </div>
 
+            <div className="no-print mb-6 flex flex-wrap gap-2 p-1 rounded-xl border border-slate-200 bg-slate-50 w-fit">
+                <button
+                    type="button"
+                    onClick={() => setActiveTab(TAB_PRODUCTS)}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${
+                        activeTab === TAB_PRODUCTS
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-white'
+                    }`}
+                >
+                    <Package size={14} />
+                    {t('warehouse.tabProducts')}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab(TAB_MATERIALS)}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${
+                        activeTab === TAB_MATERIALS
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-white'
+                    }`}
+                >
+                    <Beaker size={14} />
+                    {t('warehouse.tabMaterials')}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab(TAB_BOM)}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${
+                        activeTab === TAB_BOM
+                            ? 'bg-violet-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-white'
+                    }`}
+                >
+                    <ClipboardList size={14} />
+                    {t('warehouse.tabBom')}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTab(TAB_PRODUCTION)}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${
+                        activeTab === TAB_PRODUCTION
+                            ? 'bg-orange-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-white'
+                    }`}
+                >
+                    <Factory size={14} />
+                    {t('warehouse.tabProduction')}
+                </button>
+            </div>
+
+            {activeTab === TAB_MATERIALS ? (
+                <div className="no-print">
+                    <RawMaterialsTab />
+                </div>
+            ) : activeTab === TAB_BOM ? (
+                <div className="no-print">
+                    <ProductBomTab />
+                </div>
+            ) : activeTab === TAB_PRODUCTION ? (
+                <div className="no-print">
+                    <ProductionTab />
+                </div>
+            ) : (
+                <>
+
             <div className="no-print mb-4 rounded-xl border border-sky-200 bg-sky-50/90 px-4 py-3 text-sm text-sky-950">
                 <p className="font-semibold text-sky-900">{t('warehouse.introLead')}</p>
                 <p className="mt-1 text-sky-900/85 leading-relaxed">{t('warehouse.introDetail')}</p>
@@ -991,6 +1068,9 @@ export default function Ombor() {
                     <p className="text-sm text-gray-500 mt-2 italic no-print">{t('warehouse.physicalEmpty')}</p>
                 ) : null}
             </section>
+
+                </>
+            )}
 
             <style jsx global>{`
                 @media print {

@@ -1,5 +1,5 @@
-'use client';
-import React, { useRef } from 'react';
+'use client'
+import React, { useRef } from 'react'
 import {
   Search,
   Repeat,
@@ -16,7 +16,19 @@ import {
   Image,
   ImageOff,
   Upload,
-} from 'lucide-react';
+  Filter,
+  Calendar,
+  Store,
+} from 'lucide-react'
+
+const SOURCE_OPTIONS = [
+  { value: 'all', labelKey: 'filterAllSources' },
+  { value: 'dokon', labelKey: 'sourceStoreShort' },
+  { value: 'telefon', labelKey: 'sourcePhoneShort' },
+  { value: 'website_optom', labelKey: 'sourceWebsiteOptom' },
+  { value: 'website_chakana', labelKey: 'sourceWebsiteChakana' },
+  { value: 'website', labelKey: 'website' },
+]
 
 export default function OrdersFilter({
   t,
@@ -27,10 +39,16 @@ export default function OrdersFilter({
   handleMergeSelectedOrders,
   selectedMergeCount,
   clearMergeSelection,
-  filterStatus,
-  setFilterStatus,
   filterCategory,
   setFilterCategory,
+  filterSource,
+  setFilterSource,
+  dateFrom,
+  setDateFrom,
+  dateTo,
+  setDateTo,
+  onClearFilters,
+  hasExtraFilters,
   orderCategoryOptions,
   handlePrintOrderList,
   filteredOrders,
@@ -48,24 +66,31 @@ export default function OrdersFilter({
   handleExcelImportFileChange,
   excelImportBusy,
 }) {
-  const printDetailsRef = useRef(null);
-  const excelDetailsRef = useRef(null);
+  const printDetailsRef = useRef(null)
+  const excelDetailsRef = useRef(null)
+  const selectedDetailsRef = useRef(null)
 
   const closePrintMenu = () => {
-    const el = printDetailsRef.current;
-    if (el && typeof el.open === 'boolean') el.open = false;
-  };
+    const el = printDetailsRef.current
+    if (el && typeof el.open === 'boolean') el.open = false
+  }
 
   const closeExcelMenu = () => {
-    const el = excelDetailsRef.current;
-    if (el && typeof el.open === 'boolean') el.open = false;
-  };
+    const el = excelDetailsRef.current
+    if (el && typeof el.open === 'boolean') el.open = false
+  }
+
+  const closeSelectedMenu = () => {
+    const el = selectedDetailsRef.current
+    if (el && typeof el.open === 'boolean') el.open = false
+  }
 
   return (
-    <div className="flex flex-col gap-4 mb-6">
-      <div className="sticky top-0 z-20 rounded-xl border border-gray-100 bg-gray-50/95 px-3 py-3 shadow-sm backdrop-blur-md">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          <div className="relative flex-1 w-full">
+    <div className="flex flex-col gap-3 mb-6">
+      <div className="sticky top-0 z-20 rounded-xl border border-gray-100 bg-gray-50/95 px-3 py-3 shadow-sm backdrop-blur-md space-y-3">
+        {/* Qidiruv + asosiy amallar */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="search"
@@ -77,7 +102,8 @@ export default function OrdersFilter({
               aria-label={t('orders.searchPlaceholder')}
             />
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto justify-start">
+
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={repeatLastOrder}
@@ -87,57 +113,6 @@ export default function OrdersFilter({
               <Repeat size={15} />
               <span className="hidden sm:inline">{t('orders.repeatLast')}</span>
             </button>
-
-            {ordersListView === 'active' && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleMergeSelectedOrders}
-                  disabled={selectedMergeCount < 2}
-                  className={`inline-flex items-center justify-center gap-1 border px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs h-[38px] ${
-                    selectedMergeCount >= 2
-                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'
-                      : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                  }`}
-                  title={t('orders.mergeButtonTitle')}
-                >
-                  <GitMerge size={15} />
-                  <span className="hidden sm:inline">{t('orders.mergeButton')}</span>
-                  {selectedMergeCount > 0 && (
-                    <span className="min-w-[1.1rem] rounded-full bg-white/20 px-1 text-center text-[10px] font-bold tabular-nums leading-none py-0.5">
-                      {selectedMergeCount}
-                    </span>
-                  )}
-                </button>
-                {selectedMergeCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={clearMergeSelection}
-                    className="inline-flex items-center justify-center bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-2 py-1.5 rounded-lg transition-all font-medium text-[11px] h-[38px]"
-                    title={t('orders.mergeClearTitle')}
-                  >
-                    {t('orders.mergeClear')}
-                  </button>
-                )}
-              </>
-            )}
-
-            <div className="flex items-center gap-1.5 bg-white px-2 rounded-lg border border-gray-100 h-[38px]">
-              <ListTree size={15} className="text-gray-500 shrink-0" />
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="bg-transparent py-1.5 pr-1 outline-none text-gray-700 text-xs font-medium cursor-pointer max-w-[12rem]"
-                aria-label={t('orders.filterAllCategories')}
-              >
-                <option value="all">{t('orders.filterAllCategories')}</option>
-                {orderCategoryOptions.map((cat) => (
-                  <option key={cat.label} value={cat.label}>
-                    {cat.label} ({cat.count})
-                  </option>
-                ))}
-              </select>
-            </div>
 
             <details ref={printDetailsRef} className="relative">
               <summary
@@ -154,8 +129,8 @@ export default function OrdersFilter({
                   type="button"
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-emerald-50"
                   onClick={() => {
-                    handlePrintOrderList(filteredOrders, true);
-                    closePrintMenu();
+                    handlePrintOrderList(filteredOrders, true)
+                    closePrintMenu()
                   }}
                 >
                   <Receipt size={14} className="shrink-0 text-emerald-600" />
@@ -165,8 +140,8 @@ export default function OrdersFilter({
                   type="button"
                   className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-slate-50"
                   onClick={() => {
-                    handlePrintOrderList(filteredOrders, false);
-                    closePrintMenu();
+                    handlePrintOrderList(filteredOrders, false)
+                    closePrintMenu()
                   }}
                 >
                   <List size={14} className="shrink-0 text-slate-600" />
@@ -183,9 +158,9 @@ export default function OrdersFilter({
                   }`}
                   title={t('orders.printSelectedByCategoryTitle')}
                   onClick={() => {
-                    if (selectedOrders.length === 0) return;
-                    handlePrintSelectedByCategory(selectedOrders, filterCategory);
-                    closePrintMenu();
+                    if (selectedOrders.length === 0) return
+                    handlePrintSelectedByCategory(selectedOrders, filterCategory)
+                    closePrintMenu()
                   }}
                 >
                   <Layers size={14} className="shrink-0 text-amber-600" />
@@ -206,16 +181,16 @@ export default function OrdersFilter({
                       ? 'text-gray-800 hover:bg-emerald-50'
                       : 'cursor-not-allowed text-gray-400'
                   }`}
-                  title="Tanlangan buyurtmalarni maxsus tartibda chop etish (Kategoriya, Rasm, Narx, Izoh)"
+                  title={t('orders.printSelectedSpecialTitle')}
                   onClick={() => {
-                    if (selectedOrders.length === 0) return;
-                    handlePrintSelectedSpecial(selectedOrders);
-                    closePrintMenu();
+                    if (selectedOrders.length === 0) return
+                    handlePrintSelectedSpecial(selectedOrders)
+                    closePrintMenu()
                   }}
                 >
                   <Printer size={14} className="shrink-0 text-emerald-600" />
                   <span className="flex min-w-0 flex-1 items-center gap-1">
-                    Maxsus jadvalda chop etish
+                    {t('orders.printSelectedSpecialShort')}
                     {selectedOrders.length > 0 && (
                       <span className="ml-auto min-w-[1.1rem] rounded-full bg-emerald-100 px-1.5 text-center text-[10px] font-bold tabular-nums text-emerald-900">
                         {selectedOrders.length}
@@ -228,32 +203,73 @@ export default function OrdersFilter({
 
             {ordersListView === 'active' && (
               <>
-                <details ref={excelDetailsRef} className="relative">
+                <details ref={selectedDetailsRef} className="relative">
                   <summary
                     className={`inline-flex list-none items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg transition-all font-semibold text-xs h-[38px] [&::-webkit-details-marker]:hidden ${
-                      selectedOrdersCount > 0
-                        ? 'cursor-pointer bg-slate-700 hover:bg-slate-800 text-white'
-                        : 'cursor-not-allowed bg-gray-100 text-gray-400 pointer-events-none'
+                      selectedMergeCount > 0 || selectedOrdersCount > 0
+                        ? 'cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white'
+                        : 'cursor-pointer bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
                     }`}
-                    title={t('orders.excelExportSelectedTitle')}
-                    aria-label={t('orders.excelExportSelectedTitle')}
+                    title={t('orders.selectedActionsTitle')}
                   >
-                    <FileSpreadsheet size={15} />
-                    <span className="hidden sm:inline">{t('orders.excelExportSelected')}</span>
-                    {selectedOrdersCount > 0 && (
+                    <GitMerge size={15} />
+                    <span className="hidden sm:inline">{t('orders.selectedActions')}</span>
+                    {(selectedMergeCount > 0 || selectedOrdersCount > 0) && (
                       <span className="min-w-[1.1rem] rounded-full bg-white/20 px-1 text-center text-[10px] font-bold tabular-nums leading-none py-0.5">
-                        {selectedOrdersCount}
+                        {Math.max(selectedMergeCount, selectedOrdersCount)}
                       </span>
                     )}
                     <ChevronDown size={14} className="opacity-90" />
                   </summary>
-                  <div className="absolute right-0 top-full z-40 mt-1 min-w-[min(100vw-2rem,17rem)] rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+                  <div className="absolute right-0 top-full z-40 mt-1 min-w-[min(100vw-2rem,16rem)] rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-slate-50"
+                      disabled={selectedMergeCount < 2}
+                      className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold ${
+                        selectedMergeCount >= 2
+                          ? 'text-gray-800 hover:bg-indigo-50'
+                          : 'cursor-not-allowed text-gray-400'
+                      }`}
+                      title={t('orders.mergeButtonTitle')}
                       onClick={() => {
-                        handleExportSelectedOrdersExcel(true);
-                        closeExcelMenu();
+                        if (selectedMergeCount < 2) return
+                        handleMergeSelectedOrders()
+                        closeSelectedMenu()
+                      }}
+                    >
+                      <GitMerge size={14} className="shrink-0 text-indigo-600" />
+                      <span>
+                        {t('orders.mergeButton')}
+                        {selectedMergeCount > 0 ? ` (${selectedMergeCount})` : ''}
+                      </span>
+                    </button>
+                    {selectedMergeCount > 0 && (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        title={t('orders.mergeClearTitle')}
+                        onClick={() => {
+                          clearMergeSelection()
+                          closeSelectedMenu()
+                        }}
+                      >
+                        <X size={14} className="shrink-0 text-gray-500" />
+                        <span>{t('orders.mergeClear')}</span>
+                      </button>
+                    )}
+                    <div className="my-1 border-t border-gray-100" />
+                    <button
+                      type="button"
+                      disabled={selectedOrdersCount === 0}
+                      className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold ${
+                        selectedOrdersCount > 0
+                          ? 'text-gray-800 hover:bg-slate-50'
+                          : 'cursor-not-allowed text-gray-400'
+                      }`}
+                      onClick={() => {
+                        if (selectedOrdersCount === 0) return
+                        handleExportSelectedOrdersExcel(true)
+                        closeSelectedMenu()
                       }}
                     >
                       <Image size={14} className="shrink-0 text-slate-700" />
@@ -261,10 +277,16 @@ export default function OrdersFilter({
                     </button>
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-slate-50"
+                      disabled={selectedOrdersCount === 0}
+                      className={`flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold ${
+                        selectedOrdersCount > 0
+                          ? 'text-gray-800 hover:bg-slate-50'
+                          : 'cursor-not-allowed text-gray-400'
+                      }`}
                       onClick={() => {
-                        handleExportSelectedOrdersExcel(false);
-                        closeExcelMenu();
+                        if (selectedOrdersCount === 0) return
+                        handleExportSelectedOrdersExcel(false)
+                        closeSelectedMenu()
                       }}
                     >
                       <ImageOff size={14} className="shrink-0 text-slate-700" />
@@ -272,6 +294,7 @@ export default function OrdersFilter({
                     </button>
                   </div>
                 </details>
+
                 <input
                   ref={excelImportInputRef}
                   type="file"
@@ -300,11 +323,11 @@ export default function OrdersFilter({
               type="button"
               onClick={() => {
                 if (isAdding) {
-                  onCancelForm();
+                  onCancelForm()
                 } else {
-                  clearNewOrderDraft();
-                  setDraftBanner(false);
-                  onOpenNewOrder();
+                  clearNewOrderDraft()
+                  setDraftBanner(false)
+                  onOpenNewOrder()
                 }
               }}
               className="inline-flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-all font-bold text-xs shadow-sm h-[38px]"
@@ -316,7 +339,85 @@ export default function OrdersFilter({
             </button>
           </div>
         </div>
+
+        {/* Filtrlar qatori */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-200/80">
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-gray-400 mr-1">
+            <Filter size={12} />
+            {t('orders.filtersLabel')}
+          </span>
+
+          <div className="flex items-center gap-1.5 bg-white px-2 rounded-lg border border-gray-200 h-[34px]">
+            <ListTree size={14} className="text-gray-500 shrink-0" />
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="bg-transparent py-1 pr-1 outline-none text-gray-700 text-xs font-medium cursor-pointer max-w-[11rem]"
+              aria-label={t('orders.filterAllCategories')}
+            >
+              <option value="all">{t('orders.filterAllCategories')}</option>
+              {orderCategoryOptions.map((cat) => (
+                <option key={cat.label} value={cat.label}>
+                  {cat.label} ({cat.count})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-white px-2 rounded-lg border border-gray-200 h-[34px]">
+            <Store size={14} className="text-gray-500 shrink-0" />
+            <select
+              value={filterSource}
+              onChange={(e) => setFilterSource(e.target.value)}
+              className="bg-transparent py-1 pr-1 outline-none text-gray-700 text-xs font-medium cursor-pointer max-w-[10rem]"
+              aria-label={t('orders.filterAllSources')}
+            >
+              {SOURCE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {t(`orders.${opt.labelKey}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-white px-2 rounded-lg border border-gray-200 h-[34px]">
+            <Calendar size={14} className="text-gray-500 shrink-0" />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-transparent py-1 outline-none text-gray-700 text-xs font-medium max-w-[8.5rem]"
+              aria-label={t('orders.dateFrom')}
+              title={t('orders.dateFrom')}
+            />
+            <span className="text-gray-300 text-xs">–</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="bg-transparent py-1 outline-none text-gray-700 text-xs font-medium max-w-[8.5rem]"
+              aria-label={t('orders.dateTo')}
+              title={t('orders.dateTo')}
+            />
+          </div>
+
+          {hasExtraFilters && (
+            <button
+              type="button"
+              onClick={onClearFilters}
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-gray-600 hover:bg-gray-50 h-[34px]"
+              title={t('orders.clearFiltersTitle')}
+            >
+              <X size={13} />
+              {t('orders.clearFilters')}
+            </button>
+          )}
+
+          <span className="ml-auto text-[11px] font-semibold text-gray-400 tabular-nums">
+            {t('orders.filteredCountHint').replace('{n}', String(filteredOrders.length))}
+          </span>
+        </div>
       </div>
     </div>
-  );
+  )
 }

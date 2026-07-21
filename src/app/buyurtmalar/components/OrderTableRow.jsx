@@ -66,19 +66,28 @@ function OrderTableRow({
                 </td>
             )}
             <td className="px-3 py-3 sm:px-4 sm:py-4 align-top">
-                {item.order_number && (
+                {item.order_number ? (
                     <div className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded inline-block mb-1">
                         № {item.order_number}
                     </div>
+                ) : (
+                    <div className="font-mono text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded inline-block mb-1">
+                        #{String(item.id).slice(0, 8)}
+                    </div>
                 )}
-                <div className="font-mono text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded inline-block mb-1">
-                    #{String(item.id).slice(0, 8)}
-                </div>
                 <div className="text-sm font-medium text-gray-700">
                     {new Date(item.created_at).toLocaleDateString(
                         language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US'
                     )}
                 </div>
+                {item.order_number && (
+                    <div
+                        className="font-mono text-[10px] text-gray-400 mt-0.5"
+                        title={String(item.id)}
+                    >
+                        #{String(item.id).slice(0, 8)}
+                    </div>
+                )}
             </td>
             <td className="px-3 py-3 sm:px-4 sm:py-4 font-medium text-gray-900 align-top min-w-0">
                 <div className="font-bold">{item.customer_name || item.customers?.name || t('common.unknown')}</div>
@@ -240,43 +249,42 @@ function OrderTableRow({
                 })()}
             </td>
             <td className="px-2 py-3 sm:px-3 sm:py-4 text-right align-top">
-                <div className="flex items-center justify-end gap-0.5 sm:gap-1 flex-nowrap sm:flex-wrap">
-                    <button
-                        type="button"
-                        onClick={() => handlePrintOrder(item, true)}
-                        className="shrink-0 p-1.5 sm:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                        title={t('orders.printWithPrices')}
-                    >
-                        <Receipt size={18} />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handlePrintOrder(item, false)}
-                        className="shrink-0 p-1.5 sm:p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
-                        title={t('orders.printNoPrices')}
-                    >
-                        <List size={18} />
-                    </button>
+                <div className="flex items-center justify-end gap-0.5 flex-wrap">
                     {ordersListView === 'active' ? (
                         <>
                             <button
                                 type="button"
-                                onClick={() => void handleDuplicateOrder(item)}
-                                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-2 py-1.5 sm:px-2.5 sm:py-2 text-[11px] sm:text-xs font-bold text-violet-900 transition-colors hover:bg-violet-100"
-                                title={t('orders.duplicateOrderTitle')}
+                                onClick={() => handlePrintOrder(item, true)}
+                                className="shrink-0 p-1.5 sm:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                title={t('orders.printWithPrices')}
                             >
-                                <Copy size={15} className="shrink-0 sm:w-4 sm:h-4" />
-                                <span className="hidden lg:inline">{t('orders.duplicateOrder')}</span>
+                                <Receipt size={17} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handlePrintOrder(item, false)}
+                                className="shrink-0 p-1.5 sm:p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                                title={t('orders.printNoPrices')}
+                            >
+                                <List size={17} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleDuplicateOrder(item)}
+                                className="shrink-0 p-1.5 sm:p-2 text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                                title={`${t('orders.duplicateOrder')} — ${t('orders.duplicateOrderTitle')}`}
+                            >
+                                <Copy size={17} />
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleLinkCustomer?.(item)}
-                                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-indigo-300 bg-indigo-50 px-2 py-1.5 sm:px-2.5 sm:py-2 text-[11px] sm:text-xs font-bold text-indigo-900 transition-colors hover:bg-indigo-100"
-                                title="Mijozga biriktirish"
+                                className="shrink-0 p-1.5 sm:p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title={t('orders.linkCustomerTitle')}
                             >
-                                <UserPlus size={15} className="shrink-0 sm:w-4 sm:h-4" />
-                                <span className="hidden lg:inline">Biriktirish</span>
+                                <UserPlus size={17} />
                             </button>
+                            <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-gray-200 sm:inline-block" />
                             <button
                                 type="button"
                                 onClick={() => handleEdit(item)}
@@ -284,19 +292,27 @@ function OrderTableRow({
                                 title={t('orders.editOrder')}
                             >
                                 <Edit size={15} className="shrink-0 sm:w-4 sm:h-4" />
-                                <span className="hidden sm:inline">{t('common.edit')}</span>
+                                <span className="hidden xl:inline">{t('common.edit')}</span>
                             </button>
                             <button
                                 type="button"
                                 onClick={() => handleDelete(item.id)}
-                                className="shrink-0 p-1.5 sm:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                className="shrink-0 p-1.5 sm:p-2 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
                                 title={t('orders.moveToTrashTitle')}
                             >
-                                <Trash2 size={18} />
+                                <Trash2 size={17} />
                             </button>
                         </>
                     ) : (
                         <>
+                            <button
+                                type="button"
+                                onClick={() => handlePrintOrder(item, true)}
+                                className="shrink-0 p-1.5 sm:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                title={t('orders.printWithPrices')}
+                            >
+                                <Receipt size={17} />
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => handleRestoreOrder(item.id)}
@@ -312,7 +328,7 @@ function OrderTableRow({
                                 className="shrink-0 p-1.5 sm:p-2 text-red-700 hover:bg-red-50 rounded-lg transition-colors"
                                 title={t('orders.permanentDeleteTitle')}
                             >
-                                <Trash2 size={18} />
+                                <Trash2 size={17} />
                             </button>
                         </>
                     )}

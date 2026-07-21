@@ -118,6 +118,11 @@ function BuyurtmalarPageContent() {
     const [filterStatus, setFilterStatus] = useState('all')
     /** Buyurtmalar ro‘yxatida mahsulot kategoriyasi bo‘yicha filter */
     const [filterCategory, setFilterCategory] = useState('all')
+    /** Manba: dokon / telefon / website… */
+    const [filterSource, setFilterSource] = useState('all')
+    /** Sana oralig‘i (YYYY-MM-DD) */
+    const [dateFrom, setDateFrom] = useState('')
+    const [dateTo, setDateTo] = useState('')
     /** Bir nechta buyurtmani bitta yangi buyurtmaga birlashtirish uchun tanlov */
     const [mergeSelection, setMergeSelection] = useState({})
     /** Faol ro‘yxat yoki karzinka (o‘chirilganlar) */
@@ -888,13 +893,25 @@ function BuyurtmalarPageContent() {
 
     const ordersForList = ordersListView === 'active' ? orders : trashOrders
     const unknownLabel = t('common.unknown')
-    const { filteredOrders, totalSumma, statusStats, orderCategoryOptions } = useOrderListFilters({
-        ordersForList,
-        searchTerm,
-        filterStatus,
-        filterCategory,
-        unknownLabel,
-    })
+    const { filteredOrders, totalSumma, statusStats, orderCategoryOptions, hasExtraFilters } =
+        useOrderListFilters({
+            ordersForList,
+            searchTerm,
+            filterStatus,
+            filterCategory,
+            filterSource,
+            dateFrom,
+            dateTo,
+            unknownLabel,
+        })
+
+    const clearOrderFilters = () => {
+        setSearchTerm('')
+        setFilterCategory('all')
+        setFilterSource('all')
+        setDateFrom('')
+        setDateTo('')
+    }
 
     const highlightOrderId = searchParams.get('highlight')
 
@@ -1281,6 +1298,14 @@ function BuyurtmalarPageContent() {
                 clearMergeSelection={clearMergeSelection}
                 filterCategory={filterCategory}
                 setFilterCategory={setFilterCategory}
+                filterSource={filterSource}
+                setFilterSource={setFilterSource}
+                dateFrom={dateFrom}
+                setDateFrom={setDateFrom}
+                dateTo={dateTo}
+                setDateTo={setDateTo}
+                onClearFilters={clearOrderFilters}
+                hasExtraFilters={hasExtraFilters}
                 orderCategoryOptions={orderCategoryOptions}
                 handlePrintOrderList={handlePrintOrderList}
                 filteredOrders={filteredOrders}

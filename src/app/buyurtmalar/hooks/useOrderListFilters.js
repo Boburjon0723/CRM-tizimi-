@@ -1,7 +1,36 @@
 import { useMemo } from 'react'
-import { orderCategoryLabels } from '../utils'
+import { orderCategoryLabels, normalizeSourceForForm } from '../utils'
 
-function orderMatchesListFilters(b, { q, filterStatus, filterCategory, unknownLabel }) {
+function orderDayKey(iso) {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return ''
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+}
+
+function orderMatchesSource(orderSource, filterSource) {
+    if (!filterSource || filterSource === 'all') return true
+    const s = normalizeSourceForForm(orderSource)
+    if (filterSource === 'dokon') return s === 'dokon'
+    if (filterSource === 'telefon') return s === 'telefon'
+    if (filterSource === 'website') return s === 'website'
+    if (filterSource === 'website_optom') return s === 'website_optom'
+    if (filterSource === 'website_chakana') return s === 'website_chakana'
+    return true
+}
+
+function orderMatchesListFilters(b, {
+    q,
+    filterStatus,
+    filterCategory,
+    filterSource,
+    dateFrom,
+    dateTo,
+    unknownLabel,
+}) {
     const customerName = b.customer_name || b.customers?.name || unknownLabel || "Noma'lum"
     const matchesSearch =
         !q ||
@@ -13,6 +42,9 @@ function orderMatchesListFilters(b, { q, filterStatus, filterCategory, unknownLa
             .toLowerCase()
             .includes(q) ||
         String(b.order_number || '')
+            .toLowerCase()
+            .includes(q) ||
+        String(b.note || '')
             .toLowerCase()
             .includes(q)
     const st = b.status
@@ -27,7 +59,11 @@ function orderMatchesListFilters(b, { q, filterStatus, filterCategory, unknownLa
             (st === 'completed' || st === 'Tugallandi' || st === 'Tugallangan')) ||
         (filterStatus === 'cancelled' &&
             (st === 'cancelled' || st === 'Bekor qilingan' || st === 'Bekor qilindi'))
-    return matchesSearch && matchesStatus && matchesCategory
+    const matchesSource = orderMatchesSource(b.source, filterSource)
+    const day = orderDayKey(b.created_at)
+    const matchesDate =
+        (!dateFrom || (day && day >= dateFrom)) && (!dateTo || (day && day <= dateTo))
+    return matchesSearch && matchesStatus && matchesCategory && matchesSource && matchesDate
 }
 
 const sumOrderListTotals = (list) =>
@@ -38,14 +74,34 @@ export function useOrderListFilters({
     searchTerm,
     filterStatus,
     filterCategory,
+    filterSource = 'all',
+    dateFrom = '',
+    dateTo = '',
     unknownLabel,
 }) {
     const filteredOrders = useMemo(() => {
         const q = searchTerm.trim().toLowerCase()
         return ordersForList.filter((b) =>
-            orderMatchesListFilters(b, { q, filterStatus, filterCategory, unknownLabel })
+            orderMatchesListFilters(b, {
+                q,
+                filterStatus,
+                filterCategory,
+                filterSource,
+                dateFrom,
+                dateTo,
+                unknownLabel,
+            })
         )
-    }, [ordersForList, searchTerm, filterStatus, filterCategory, unknownLabel])
+    }, [
+        ordersForList,
+        searchTerm,
+        filterStatus,
+        filterCategory,
+        filterSource,
+        dateFrom,
+        dateTo,
+        unknownLabel,
+    ])
 
     const totalSumma = useMemo(
         () => filteredOrders.reduce((sum, b) => sum + (Number(b.total) || 0), 0),
@@ -87,5 +143,15 @@ export function useOrderListFilters({
             .map(([label, count]) => ({ label, count }))
     }, [ordersForList])
 
-    return { filteredOrders, totalSumma, statusStats, orderCategoryOptions }
+    const hasExtraFilters = useMemo(() => {
+        return (
+            (filterSource && filterSource !== 'all') ||
+            Boolean(dateFrom) ||
+            Boolean(dateTo) ||
+            (filterCategory && filterCategory !== 'all') ||
+            Boolean(searchTerm.trim())
+        )
+    }, [filterSource, dateFrom, dateTo, filterCategory, searchTerm])
+
+    return { filteredOrders, totalSumma, statusStats, orderCategoryOptions, hasExtraFilters }
 }

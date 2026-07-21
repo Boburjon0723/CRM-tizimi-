@@ -75,6 +75,7 @@ export default function MoliyaBolimlarPage() {
 
     const [expenseModalOpen, setExpenseModalOpen] = useState(false)
     const [expEditId, setExpEditId] = useState(null)
+    const [expSaving, setExpSaving] = useState(false)
     const [expForm, setExpForm] = useState({
         material_name: '',
         quantity: '1',
@@ -92,6 +93,20 @@ export default function MoliyaBolimlarPage() {
         for (const r of rawMaterials) m[r.id] = r
         return m
     }, [rawMaterials])
+
+    /** Takliflar ro'yxati — nom bo'yicha dublikatsiz */
+    const rawMaterialSuggestions = useMemo(() => {
+        const seen = new Set()
+        const out = []
+        for (const r of rawMaterials) {
+            const label = pickLocalizedName(r, language).trim()
+            const key = label.toLowerCase()
+            if (!label || seen.has(key)) continue
+            seen.add(key)
+            out.push(label)
+        }
+        return out.sort((a, b) => a.localeCompare(b, 'uz', { sensitivity: 'base' }))
+    }, [rawMaterials, language])
 
     useEffect(() => {
         if (deptEditId) setDeptFormOpen(true)
@@ -327,6 +342,8 @@ export default function MoliyaBolimlarPage() {
     async function saveExpenseEntry(e) {
         e.preventDefault()
         if (!currentDeptId) return
+        // Ikki marta bosilganda dublikat yozuv oldini olish
+        if (expSaving) return
 
         const amt = parseFloat(expForm.amount)
         const materialName = (expForm.material_name || '').trim()
@@ -345,10 +362,27 @@ export default function MoliyaBolimlarPage() {
             return
         }
 
+        setExpSaving(true)
+
         let selectedRawMaterial = rawMaterials.find((r) => pickLocalizedName(r, language).toLowerCase() === materialName.toLowerCase())
         const unitPrice = amt / qty
 
         try {
+            // Lokal ro'yxatda topilmasa — bazadan qidirish (dublikat nom oldini oladi).
+            if (!selectedRawMaterial) {
+                const { data: existing, error: findErr } = await supabase
+                    .from('raw_materials')
+                    .select('id,name_uz,name_ru,name_en,unit,unit_price,track_stock,stock_quantity')
+                    .ilike('name_uz', materialName)
+                    .limit(1)
+                if (!findErr && existing && existing.length > 0) {
+                    selectedRawMaterial = existing[0]
+                    setRawMaterials((prev) =>
+                        prev.some((r) => r.id === selectedRawMaterial.id) ? prev : [...prev, selectedRawMaterial]
+                    )
+                }
+            }
+
             if (!selectedRawMaterial) {
                 const { data: newMat, error: matErr } = await supabase
                     .from('raw_materials')
@@ -413,10 +447,12 @@ export default function MoliyaBolimlarPage() {
             })
             await showAlert(t('finances.expenseEntrySaved'), { variant: 'success' })
             await loadExpenseEntries(currentDeptId)
-            await refreshDeptTotals()
+            await refreshDeptTotals(departments)
         } catch (err) {
             console.error(err)
             await showAlert(t('common.saveError'), { variant: 'error' })
+        } finally {
+            setExpSaving(false)
         }
     }
 
@@ -434,7 +470,7 @@ export default function MoliyaBolimlarPage() {
             const { error } = await supabase.from('material_movements').delete().eq('id', id)
             if (error) throw error
             await loadExpenseEntries(currentDeptId)
-            await refreshDeptTotals()
+            await refreshDeptTotals(departments)
         } catch (err) {
             console.error(err)
             await showAlert(t('common.deleteError'), { variant: 'error' })
@@ -956,8 +992,8 @@ export default function MoliyaBolimlarPage() {
                                     required
                                 />
                                 <datalist id="material-suggestions">
-                                    {rawMaterials.map((rm) => (
-                                        <option key={rm.id} value={pickLocalizedName(rm, language)} />
+                                    {rawMaterialSuggestions.map((label) => (
+                                        <option key={label} value={label} />
                                     ))}
                                 </datalist>
                             </div>
@@ -1018,9 +1054,10 @@ export default function MoliyaBolimlarPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600"
+                                    disabled={expSaving}
+                                    className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    {t('common.save')}
+                                    {expSaving ? '…' : t('common.save')}
                                 </button>
                             </div>
                         </form>

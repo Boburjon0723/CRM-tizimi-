@@ -78,7 +78,7 @@ function OrdersTable({
                             <th className="w-[9%] min-w-[5.5rem] px-2 py-3 sm:px-3">{t('orders.payment')}</th>
                             <th className="w-[10%] min-w-[6.5rem] px-2 py-3 sm:px-3">{t('orders.status')}</th>
                             <th className="w-[7%] min-w-[4rem] px-2 py-3 sm:px-3">{t('orders.source')}</th>
-                            <th className="min-w-[13.5rem] px-2 py-3 sm:px-3 rounded-tr-2xl text-right xl:min-w-[15rem]">
+                            <th className="min-w-[11rem] px-2 py-3 sm:px-3 rounded-tr-2xl text-right xl:min-w-[12.5rem]">
                                 {t('customers.actions')}
                             </th>
                         </tr>
