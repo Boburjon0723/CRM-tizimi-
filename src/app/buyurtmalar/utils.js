@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { isDeletedAtMissingError } from '@/lib/orderTrash'
+import { isDeletedAtMissingError, isArchivedAtMissingError } from '@/lib/orderTrash'
 import { formatUsd } from '@/utils/formatters'
 export { formatUsd }
 import { normalizeModelKey as coreNormalizeModelKey } from '@/utils/validators'
@@ -138,13 +138,26 @@ export const ORDERS_SELECT_FALLBACKS = [
 export async function fetchOrdersPageWithFallback(options = {}) {
     const { activeOnly = true } = options
 
-    async function trySelect(useDeletedFilter) {
+    async function trySelect(filters) {
         for (const sel of ORDERS_SELECT_FALLBACKS) {
             let q = supabase.from('orders').select(sel).order('created_at', { ascending: false })
-            if (useDeletedFilter && activeOnly) q = q.is('deleted_at', null)
+            if (filters.excludeDeleted) q = q.is('deleted_at', null)
+            if (filters.excludeArchived) q = q.is('archived_at', null)
             const res = await q
             if (!res.error) return res
-            if (useDeletedFilter && activeOnly && isDeletedAtMissingError(res.error)) return null
+            // archived_at yo‘q bo‘lsa — faqat deleted_at filtri bilan qayta urinib ko‘ramiz
+            if (
+                filters.excludeArchived &&
+                isArchivedAtMissingError(res.error)
+            ) {
+                let q2 = supabase.from('orders').select(sel).order('created_at', { ascending: false })
+                if (filters.excludeDeleted) q2 = q2.is('deleted_at', null)
+                const res2 = await q2
+                if (!res2.error) return res2
+                if (filters.excludeDeleted && isDeletedAtMissingError(res2.error)) return null
+                if (!isSchemaOrEmbedError(res2.error)) return res2
+            }
+            if (filters.excludeDeleted && isDeletedAtMissingError(res.error)) return null
             if (!isSchemaOrEmbedError(res.error)) return res
             console.warn('orders select fallback:', res.error?.message)
         }
@@ -152,10 +165,10 @@ export async function fetchOrdersPageWithFallback(options = {}) {
     }
 
     if (activeOnly) {
-        const first = await trySelect(true)
+        const first = await trySelect({ excludeDeleted: true, excludeArchived: true })
         if (first !== null) return first
     }
-    return trySelect(false)
+    return trySelect({ excludeDeleted: false, excludeArchived: false })
 }
 
 export async function fetchDeletedOrdersPageWithFallback() {
@@ -169,6 +182,31 @@ export async function fetchDeletedOrdersPageWithFallback() {
         if (isDeletedAtMissingError(res.error)) return { data: [], error: null }
         if (!isSchemaOrEmbedError(res.error)) return res
         console.warn('deleted orders select fallback:', res.error?.message)
+    }
+    return { data: [], error: null }
+}
+
+/** Arxiv: archived_at bor, korzinkada emas */
+export async function fetchArchivedOrdersPageWithFallback() {
+    for (const sel of ORDERS_SELECT_FALLBACKS) {
+        let q = supabase
+            .from('orders')
+            .select(sel)
+            .not('archived_at', 'is', null)
+            .is('deleted_at', null)
+            .order('archived_at', { ascending: false })
+        let res = await q
+        if (res.error && isDeletedAtMissingError(res.error)) {
+            res = await supabase
+                .from('orders')
+                .select(sel)
+                .not('archived_at', 'is', null)
+                .order('archived_at', { ascending: false })
+        }
+        if (!res.error) return res
+        if (isArchivedAtMissingError(res.error)) return { data: [], error: null }
+        if (!isSchemaOrEmbedError(res.error)) return res
+        console.warn('archived orders select fallback:', res.error?.message)
     }
     return { data: [], error: null }
 }
@@ -1633,6 +1671,49 @@ export function normalizeStatusForSelect(status) {
     return 'new'
 }
 
+/** Status o‘zgarishida completed_at (chiqib ketgan sana) ni to‘ldirish / tozalash */
+export function withCompletedAtOnStatusChange(payload, newStatus, oldStatus, stamp = new Date().toISOString()) {
+    const next = { ...(payload || {}), updated_at: stamp }
+    const toCompleted = normalizeStatusForSelect(newStatus) === 'completed'
+    const wasCompleted = normalizeStatusForSelect(oldStatus) === 'completed'
+    if (toCompleted && !wasCompleted) {
+        next.completed_at = stamp
+    } else if (!toCompleted && wasCompleted) {
+        next.completed_at = null
+    } else if (toCompleted && wasCompleted && !next.completed_at) {
+        // Allaqachon tugallangan — completed_at yo‘q bo‘lsa yozamiz
+        next.completed_at = stamp
+    }
+    return next
+}
+
+/** completed_at ustuni bo‘lmasa fallback bilan yangilash */
+export async function updateOrderStatusWithCompletedAt(supabaseClient, orderId, newStatus, oldStatus) {
+    const stamp = new Date().toISOString()
+    const full = withCompletedAtOnStatusChange({ status: newStatus }, newStatus, oldStatus, stamp)
+    let { error } = await supabaseClient.from('orders').update(full).eq('id', orderId)
+    if (error && /completed_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))) {
+        const { completed_at: _drop, ...withoutCompleted } = full
+        ;({ error } = await supabaseClient.from('orders').update(withoutCompleted).eq('id', orderId))
+        if (
+            error &&
+            /updated_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))
+        ) {
+            ;({ error } = await supabaseClient
+                .from('orders')
+                .update({ status: newStatus })
+                .eq('id', orderId))
+        }
+    } else if (
+        error &&
+        /updated_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))
+    ) {
+        const { updated_at: _u, ...rest } = full
+        ;({ error } = await supabaseClient.from('orders').update(rest).eq('id', orderId))
+    }
+    return { error, stamp, completed_at: full.completed_at ?? null }
+}
+
 export const ORDER_LIST_ITEMS_PREVIEW = 1
 
 export function createEmptyOrderLine() {
@@ -2019,24 +2100,55 @@ export function aggregateMergedOrdersTotals(ordersToMerge, itemRows) {
     return { subtotal, totalQty }
 }
 
-export function orderCategoryLabels(order, uncategorizedLabel = '—') {
-    const items = dedupeOrderItemsKeepNewest(order?.order_items || [], [])
+function normalizeCategoryEmbed(cat) {
+    if (!cat) return null
+    if (Array.isArray(cat)) return cat[0] || null
+    if (typeof cat === 'object') return cat
+    return null
+}
+
+/** Buyurtma qatori kategoriya nomi (chop / filtr uchun bir xil manba) */
+export function resolveOrderItemCategoryName(oi, productsList = null, uncategorizedLabel = '—') {
+    const fromEmbed = (cat) => {
+        const c = normalizeCategoryEmbed(cat)
+        if (!c) return ''
+        return String(c.name_uz || c.name || c.name_en || '').trim()
+    }
+    let name = fromEmbed(oi?.products?.categories)
+    if (!name && oi?.category_name) name = String(oi.category_name).trim()
+    const list = productsList || []
+    if (!name && list.length && oi?.product_id != null) {
+        const prod = list.find((p) => String(p.id) === String(oi.product_id))
+        if (prod) {
+            name = fromEmbed(prod.categories)
+            if (!name && prod.category != null && String(prod.category).trim() !== '') {
+                name = String(prod.category).trim()
+            }
+        }
+    }
+    return name || uncategorizedLabel
+}
+
+export function orderCategoryLabels(order, uncategorizedLabel = '—', productsList = null) {
+    const items = dedupeOrderItemsKeepNewest(order?.order_items || [], productsList || [])
     const labels = new Set()
     for (const oi of items) {
-        const cat = oi?.products?.categories
-        const name = (cat?.name_uz || cat?.name || '').trim()
-        labels.add(name || uncategorizedLabel)
+        labels.add(resolveOrderItemCategoryName(oi, productsList, uncategorizedLabel))
     }
     return Array.from(labels)
 }
 
-export function filterOrderItemsByCategoryLabel(orderItems, categoryLabel, uncategorizedLabel = '—') {
+/**
+ * Buyurtma qatorlarini kategoriya nomi bo'yicha filtrlaydi.
+ * Avvalo order_items.products.categories, bo'lmasa productsList katalogidan.
+ */
+export function filterOrderItemsByCategoryLabel(orderItems, categoryLabel, uncategorizedLabel = '—', productsList = null) {
     const target = (categoryLabel || '').trim()
     if (!target || target === 'all') return orderItems || []
+    const targetNorm = target.toLowerCase()
     return (orderItems || []).filter((oi) => {
-        const cat = oi?.products?.categories
-        const name = (cat?.name_uz || cat?.name || '').trim() || uncategorizedLabel
-        return name === target
+        const name = resolveOrderItemCategoryName(oi, productsList, uncategorizedLabel)
+        return name === target || name.toLowerCase() === targetNorm
     })
 }
 

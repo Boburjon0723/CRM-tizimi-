@@ -188,12 +188,14 @@ function OrderFormLineRow({
                                             {labelColorCanonical(c, productColors, language)}
                                         </span>
                                         <input
-                                            type="number"
-                                            min="0"
-                                            className="w-14 px-1.5 py-0.5 border border-gray-200 rounded-md text-[13px] font-bold text-right tabular-nums focus:ring-1 focus:ring-blue-500"
-                                            step="any"
+                                            type="text"
+                                            inputMode="decimal"
+                                            autoComplete="off"
+                                            className="no-spinner w-14 px-1.5 py-0.5 border border-gray-200 rounded-md text-[13px] font-bold text-right tabular-nums focus:ring-1 focus:ring-blue-500"
                                             value={line.colorQtyByColor?.[c] ?? '0'}
                                             onChange={(e) => updateOrderLineColorQty(line.id, c, e.target.value)}
+                                            onFocus={(e) => e.target.select()}
+                                            onWheel={(e) => e.currentTarget.blur()}
                                         />
                                     </div>
                                 ))}
@@ -207,12 +209,14 @@ function OrderFormLineRow({
             <td className="px-3 py-2 align-top pt-2">
                 <div className="flex flex-col gap-1 items-end">
                     <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        className="w-20 px-1.5 py-1 border border-gray-200 rounded-lg text-sm text-right tabular-nums font-bold focus:ring-2 focus:ring-blue-500"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        className="no-spinner w-20 px-1.5 py-1 border border-gray-200 rounded-lg text-sm text-right tabular-nums font-bold focus:ring-2 focus:ring-blue-500"
                         value={line.product_price}
                         onChange={(e) => updateOrderLine(line.id, { product_price: e.target.value })}
+                        onFocus={(e) => e.target.select()}
+                        onWheel={(e) => e.currentTarget.blur()}
                     />
                     {line.product_id && (
                         <button
@@ -235,12 +239,14 @@ function OrderFormLineRow({
             <td className="px-3 py-2 align-top pt-2">
                 {!isMatrix ? (
                     <input
-                        type="number"
-                        min="0.001"
-                        step="any"
-                        className="w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-sm text-right tabular-nums font-bold focus:ring-2 focus:ring-blue-500"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        className="no-spinner w-16 px-1.5 py-1 border border-gray-200 rounded-lg text-sm text-right tabular-nums font-bold focus:ring-2 focus:ring-blue-500"
                         value={line.quantity}
                         onChange={(e) => updateOrderLine(line.id, { quantity: e.target.value })}
+                        onFocus={(e) => e.target.select()}
+                        onWheel={(e) => e.currentTarget.blur()}
                     />
                 ) : (
                     <div className="text-center pt-1">

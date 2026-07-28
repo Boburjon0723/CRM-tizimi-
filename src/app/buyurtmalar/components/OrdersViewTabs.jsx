@@ -1,8 +1,14 @@
 'use client'
 
-import { ShoppingCart, Archive } from 'lucide-react'
+import { ShoppingCart, Archive, Trash2 } from 'lucide-react'
 
-export default function OrdersViewTabs({ t, ordersListView, trashOrderCount, onSwitchView }) {
+export default function OrdersViewTabs({
+    t,
+    ordersListView,
+    trashOrderCount,
+    archiveOrderCount = 0,
+    onSwitchView,
+}) {
     return (
         <div className="flex flex-wrap gap-1.5 mb-4">
             <button
@@ -19,6 +25,23 @@ export default function OrdersViewTabs({ t, ordersListView, trashOrderCount, onS
             </button>
             <button
                 type="button"
+                onClick={() => onSwitchView('archive')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
+                    ordersListView === 'archive'
+                        ? 'bg-slate-700 text-white shadow-md shadow-slate-700/25'
+                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                }`}
+            >
+                <Archive size={16} />
+                {t('orders.archiveBin')}
+                {archiveOrderCount > 0 ? (
+                    <span className="min-w-[1.5rem] rounded-full bg-white/20 px-1.5 text-center text-xs tabular-nums">
+                        {archiveOrderCount}
+                    </span>
+                ) : null}
+            </button>
+            <button
+                type="button"
                 onClick={() => onSwitchView('trash')}
                 className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
                     ordersListView === 'trash'
@@ -26,7 +49,7 @@ export default function OrdersViewTabs({ t, ordersListView, trashOrderCount, onS
                         : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                 }`}
             >
-                <Archive size={16} />
+                <Trash2 size={16} />
                 {t('orders.trashBin')}
                 {trashOrderCount > 0 ? (
                     <span className="min-w-[1.5rem] rounded-full bg-white/20 px-1.5 text-center text-xs tabular-nums">

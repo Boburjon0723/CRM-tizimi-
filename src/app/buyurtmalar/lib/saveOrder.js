@@ -13,6 +13,8 @@ import {
     mergeExpandedRowsForSubmit,
     mergeOrderItemPayloadsForDb,
     normalizeSourceForDb,
+    withCompletedAtOnStatusChange,
+    normalizeStatusForSelect,
 } from '../utils'
 
 export async function saveOrder({
@@ -71,23 +73,36 @@ export async function saveOrder({
 
     const noteCombined = (form.note || '').trim()
     const displayOrderNo = generateDisplayOrderNumber()
-    const baseOrderPayload = {
+    const stamp = new Date().toISOString()
+    const statusNormalized =
+        form.status === 'new' || form.status === 'Yangi'
+            ? 'new'
+            : form.status === 'pending' || form.status === 'Jarayonda'
+              ? 'pending'
+              : form.status === 'completed' || form.status === 'Tugallandi'
+                ? 'completed'
+                : form.status === 'cancelled' || form.status === 'Bekor qilindi'
+                  ? 'cancelled'
+                  : form.status
+    let baseOrderPayload = {
         customer_id: form.customer_id || null,
         customer_name: resolvedCustomerName,
         customer_phone: resolvedPhone,
         total: totalSum,
-        status:
-            form.status === 'new' || form.status === 'Yangi'
-                ? 'new'
-                : form.status === 'pending' || form.status === 'Jarayonda'
-                  ? 'pending'
-                  : form.status === 'completed' || form.status === 'Tugallandi'
-                    ? 'completed'
-                    : form.status === 'cancelled' || form.status === 'Bekor qilindi'
-                      ? 'cancelled'
-                      : form.status,
+        status: statusNormalized,
         note: noteCombined,
         source: normalizeSourceForDb(form.source),
+        updated_at: stamp,
+    }
+    baseOrderPayload = withCompletedAtOnStatusChange(
+        baseOrderPayload,
+        statusNormalized,
+        oldStatus,
+        stamp
+    )
+    // Yangi buyurtma darhol completed bo‘lsa — completed_at yoziladi
+    if (!editId && normalizeStatusForSelect(statusNormalized) === 'completed' && !baseOrderPayload.completed_at) {
+        baseOrderPayload.completed_at = stamp
     }
 
     const sourceLineIndexMap = new Map()
@@ -156,7 +171,11 @@ export async function saveOrder({
         const { error: itemErrorEdit } = await supabase.from('order_items').insert(itemPayloadsEdit)
         if (itemErrorEdit) throw itemErrorEdit
 
-        const { error: updErr } = await supabase.from('orders').update(baseOrderPayload).eq('id', orderIdStr)
+        let { error: updErr } = await supabase.from('orders').update(baseOrderPayload).eq('id', orderIdStr)
+        if (updErr && /completed_at|updated_at|column|does not exist|42703|schema cache/i.test(String(updErr.message || ''))) {
+            const { completed_at: _c, updated_at: _u, ...rest } = baseOrderPayload
+            ;({ error: updErr } = await supabase.from('orders').update(rest).eq('id', orderIdStr))
+        }
         if (updErr) throw updErr
 
         const newStatus = baseOrderPayload.status
@@ -190,18 +209,28 @@ export async function saveOrder({
         .single()
 
     const errMsg = ins.error ? String(ins.error.message || ins.error) : ''
-    if (ins.error && /order_number|column.*does not exist|schema cache/i.test(errMsg)) {
+    if (ins.error && /completed_at|updated_at|column|does not exist|42703|schema cache/i.test(errMsg)) {
+        const { completed_at: _c, updated_at: _u, ...rest } = baseOrderPayload
+        ins = await supabase
+            .from('orders')
+            .insert([{ ...rest, order_number: displayOrderNo }])
+            .select()
+            .single()
+    }
+    const errMsg2 = ins.error ? String(ins.error.message || ins.error) : ''
+    if (ins.error && /order_number|column.*does not exist|schema cache/i.test(errMsg2)) {
+        const { completed_at: _c2, updated_at: _u2, ...rest2 } = baseOrderPayload
         ins = await supabase
             .from('orders')
             .insert([
                 {
-                    ...baseOrderPayload,
+                    ...rest2,
                     note: `${t('orders.orderNumberPrefix')} ${displayOrderNo}\n${noteCombined || ''}`,
                 },
             ])
             .select()
             .single()
-    } else if (ins.error) {
+    } else if (ins.error && !/completed_at|updated_at|column|does not exist|42703|schema cache/i.test(errMsg)) {
         throw ins.error
     }
     if (ins.error) throw ins.error

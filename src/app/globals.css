@@ -188,3 +188,25 @@ html[data-theme='dark'] textarea {
 html[data-theme='dark'] table tbody tr:hover {
   background-color: #1f2937;
 }
+
+/* Barcha number input ↑↓ (spinner) — butun loyiha */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+/* Eski .no-spinner ham saqlanadi */
+input.no-spinner::-webkit-outer-spin-button,
+input.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input.no-spinner[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

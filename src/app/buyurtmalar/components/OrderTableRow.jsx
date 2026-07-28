@@ -12,6 +12,7 @@ import {
     Trash2,
     RotateCcw,
     UserPlus,
+    PackageCheck,
 } from 'lucide-react'
 import {
     normalizeOrderItemsForList,
@@ -23,6 +24,7 @@ import {
     ORDER_LIST_ITEMS_PREVIEW,
     orderItemQtyDisplay,
     orderSourceDisplay,
+    filterOrderItemsByCategoryLabel,
 } from '../utils'
 
 const formImageCellClass = 'w-10 h-10 sm:w-12 sm:h-12'
@@ -44,10 +46,28 @@ function OrderTableRow({
     handleEdit,
     handleDelete,
     handleRestoreOrder,
+    handleUnarchiveOrder,
     handlePermanentDelete,
     handleLinkCustomer,
+    handleOpenPartialShip,
+    filterCategory = 'all',
 }) {
     const itemStatus = normalizeStatusForSelect(item.status)
+    const fulfillment = item.fulfillment
+    const isPartial = fulfillment?.state === 'partial'
+    const isFullShipped = fulfillment?.state === 'full'
+    const canPartialShip =
+        ordersListView === 'active' &&
+        itemStatus !== 'cancelled' &&
+        !(itemStatus === 'completed' && fulfillment?.state === 'full')
+
+    const categoryActive = filterCategory && filterCategory !== 'all'
+    const listItemsRaw = normalizeOrderItemsForList(
+        dedupeOrderItemsKeepNewest(item.order_items || [], products)
+    )
+    const listItems = categoryActive
+        ? filterOrderItemsByCategoryLabel(listItemsRaw, filterCategory, '—', products)
+        : listItemsRaw
 
     return (
         <tr
@@ -80,6 +100,21 @@ function OrderTableRow({
                         language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US'
                     )}
                 </div>
+                {itemStatus === 'completed' && (item.completed_at || item.updated_at) ? (
+                    <div
+                        className="mt-1 inline-flex flex-col rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1"
+                        title={t('orders.completedAtTitle') || 'Chiqib ketgan sana'}
+                    >
+                        <span className="text-[9px] font-black uppercase tracking-wide text-emerald-800">
+                            {t('orders.completedAtLabel') || 'Chiqqan'}
+                        </span>
+                        <span className="text-xs font-bold text-emerald-900 tabular-nums">
+                            {new Date(item.completed_at || item.updated_at).toLocaleDateString(
+                                language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US'
+                            )}
+                        </span>
+                    </div>
+                ) : null}
                 {item.order_number && (
                     <div
                         className="font-mono text-[10px] text-gray-400 mt-0.5"
@@ -101,11 +136,9 @@ function OrderTableRow({
                 )}
             </td>
             <td className="px-3 py-3 sm:px-4 sm:py-4 text-gray-600 align-top min-w-0 max-w-md xl:max-w-xl 2xl:max-w-2xl">
-                {item.order_items && item.order_items.length > 0 ? (
+                {listItems.length > 0 ? (
                     (() => {
-                        const ois = normalizeOrderItemsForList(
-                            dedupeOrderItemsKeepNewest(item.order_items || [], products)
-                        )
+                        const ois = listItems
                         const hasMore = ois.length > ORDER_LIST_ITEMS_PREVIEW
                         const visible = isExpanded ? ois : ois.slice(0, ORDER_LIST_ITEMS_PREVIEW)
                         const hiddenCount = ois.length - ORDER_LIST_ITEMS_PREVIEW
@@ -118,50 +151,47 @@ function OrderTableRow({
                                     >
                                         <div className="flex items-start gap-2.5 min-w-0">
                                             {oi.image_url ? (
-                                                <div
-                                                    className={`shrink-0 rounded-lg bg-white flex items-center justify-center overflow-hidden ring-1 ring-gray-200/60 ${formImageCellClass}`}
-                                                >
-                                                    <img
-                                                        src={oi.image_url}
-                                                        alt=""
-                                                        className="max-h-full max-w-full object-contain object-center mix-blend-multiply"
-                                                    />
-                                                </div>
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                    src={oi.image_url}
+                                                    alt=""
+                                                    className={`${formImageCellClass} rounded-md object-cover object-center border border-gray-100 bg-gray-50 shrink-0`}
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                />
                                             ) : (
                                                 <div
-                                                    className={`shrink-0 rounded-lg border border-dashed border-gray-200/90 bg-white ${formImageCellClass}`}
-                                                />
+                                                    className={`${formImageCellClass} rounded-md border border-dashed border-gray-200 bg-gray-50 shrink-0 flex items-center justify-center text-[9px] text-gray-400`}
+                                                >
+                                                    —
+                                                </div>
                                             )}
                                             <div className="min-w-0 flex-1">
-                                                <div className="font-medium text-gray-800 line-clamp-1">
-                                                    {oi.product_name || oi.products?.name}
+                                                <div className="font-semibold text-gray-900 truncate">
+                                                    {oi.product_name || oi.products?.name || '—'}
                                                 </div>
-                                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-                                                    <span className="font-bold text-blue-700 text-lg tabular-nums">
+                                                <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                                                    <span className="font-mono font-bold text-indigo-700">
+                                                        {oi.size || '—'}
+                                                    </span>
+                                                    <span>
                                                         {orderItemQtyDisplay(oi, products)}
                                                     </span>
-                                                    <div className="text-xs text-gray-600 flex flex-wrap gap-x-2 gap-y-0.5 font-medium">
-                                                        {oi.size && (
-                                                            <span>
-                                                                {t('orders.productCode')}: {oi.size}
-                                                            </span>
-                                                        )}
-                                                        {oi.color && (
-                                                            <span>
-                                                                {t('orders.lineColor')}:{' '}
-                                                                {labelColorCanonical(oi.color, productColors, language)}
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                                    {oi.color ? (
+                                                        <span>
+                                                            {labelColorCanonical(
+                                                                oi.color,
+                                                                productColors,
+                                                                language
+                                                            )}
+                                                        </span>
+                                                    ) : null}
                                                 </div>
-                                                {orderItemLineNoteText(oi) && (
-                                                    <div className="mt-1.5 w-full text-xs text-violet-900 leading-snug break-words border-l-2 border-violet-300 pl-2 py-0.5 bg-violet-50/80 rounded-r">
-                                                        <span className="font-semibold text-violet-700">
-                                                            {t('orders.lineItemNoteShort')}
-                                                        </span>{' '}
+                                                {orderItemLineNoteText(oi) ? (
+                                                    <div className="text-[11px] text-amber-700 mt-0.5 italic truncate">
                                                         {orderItemLineNoteText(oi)}
                                                     </div>
-                                                )}
+                                                ) : null}
                                             </div>
                                         </div>
                                     </div>
@@ -170,7 +200,7 @@ function OrderTableRow({
                                     <button
                                         type="button"
                                         onClick={onToggleExpand}
-                                        className="mt-1 flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                                        className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 mt-1"
                                     >
                                         {isExpanded ? (
                                             <>
@@ -217,26 +247,52 @@ function OrderTableRow({
                 </div>
             </td>
             <td className="px-2 py-3 sm:px-3 sm:py-4 align-top">
-                <select
-                    value={itemStatus}
-                    onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border-0 cursor-pointer outline-none transition-colors ${
-                        item.status === 'new' || item.status === 'Yangi'
-                            ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                            : item.status === 'pending' || item.status === 'Jarayonda'
-                              ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                              : item.status === 'completed' ||
-                                  item.status === 'Tugallandi' ||
-                                  item.status === 'Tugallangan'
-                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                : 'bg-red-100 text-red-700 hover:bg-red-200'
-                    }`}
-                >
-                    <option value="new">{t('orders.statusNew')}</option>
-                    <option value="pending">{t('orders.statusProcessing')}</option>
-                    <option value="completed">{t('orders.statusCompleted')}</option>
-                    <option value="cancelled">{t('orders.statusCancelled')}</option>
-                </select>
+                <div className="flex flex-col gap-1.5 items-stretch min-w-[6.5rem]">
+                    <select
+                        value={itemStatus}
+                        onChange={(e) => handleStatusChange(item.id, e.target.value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border-0 cursor-pointer outline-none transition-colors ${
+                            item.status === 'new' || item.status === 'Yangi'
+                                ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                : item.status === 'pending' || item.status === 'Jarayonda'
+                                  ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                                  : item.status === 'completed' ||
+                                      item.status === 'Tugallandi' ||
+                                      item.status === 'Tugallangan'
+                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                    : 'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}
+                    >
+                        <option value="new">{t('orders.statusNew')}</option>
+                        <option value="pending">{t('orders.statusProcessing')}</option>
+                        <option value="completed">{t('orders.statusCompleted')}</option>
+                        <option value="cancelled">{t('orders.statusCancelled')}</option>
+                    </select>
+                    {isPartial ? (
+                        <div
+                            className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-center shadow-sm"
+                            title={`${t('orders.partialBadgePartialTitle') || 'Qisman chiqqan'}: ${fulfillment.shipped}/${fulfillment.ordered}`}
+                        >
+                            <div className="text-[10px] font-black uppercase tracking-wide text-amber-800">
+                                {t('orders.partialBadgePartial') || 'Qisman chiqqan'}
+                            </div>
+                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-amber-200">
+                                <div
+                                    className="h-full rounded-full bg-amber-500"
+                                    style={{ width: `${fulfillment.percent || 0}%` }}
+                                />
+                            </div>
+                            <div className="mt-0.5 font-mono text-[10px] font-bold tabular-nums text-amber-900">
+                                {fulfillment.shipped}/{fulfillment.ordered} · {fulfillment.percent}%
+                            </div>
+                        </div>
+                    ) : null}
+                    {isFullShipped && itemStatus !== 'completed' ? (
+                        <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-1 text-center text-[10px] font-black uppercase tracking-wide text-emerald-800">
+                            {t('orders.partialBadgeFull') || "To'liq chiqqan"}
+                        </div>
+                    ) : null}
+                </div>
             </td>
             <td className="px-2 py-3 sm:px-3 sm:py-4 align-top">
                 {(() => {
@@ -252,6 +308,20 @@ function OrderTableRow({
                 <div className="flex items-center justify-end gap-0.5 flex-wrap">
                     {ordersListView === 'active' ? (
                         <>
+                            {canPartialShip ? (
+                                <button
+                                    type="button"
+                                    onClick={() => handleOpenPartialShip?.(item)}
+                                    className={`shrink-0 p-1.5 sm:p-2 rounded-lg transition-colors ${
+                                        isPartial
+                                            ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 ring-1 ring-amber-200'
+                                            : 'text-emerald-700 hover:bg-emerald-50'
+                                    }`}
+                                    title={t('orders.partialShipShort') || 'Qisman tugallash'}
+                                >
+                                    <PackageCheck size={17} />
+                                </button>
+                            ) : null}
                             <button
                                 type="button"
                                 onClick={() => handlePrintOrder(item, true)}
@@ -303,6 +373,26 @@ function OrderTableRow({
                                 <Trash2 size={17} />
                             </button>
                         </>
+                    ) : ordersListView === 'archive' ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => handlePrintOrder(item, true)}
+                                className="shrink-0 p-1.5 sm:p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                title={t('orders.printWithPrices')}
+                            >
+                                <Receipt size={17} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleUnarchiveOrder?.(item.id)}
+                                className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-slate-700 px-2 py-1.5 sm:px-3 sm:py-2 text-[11px] sm:text-xs font-bold text-white shadow-md shadow-slate-700/25 transition-colors hover:bg-slate-800"
+                                title={t('orders.unarchiveOrderTitle')}
+                            >
+                                <RotateCcw size={15} className="shrink-0 sm:w-4 sm:h-4" />
+                                <span className="hidden sm:inline">{t('orders.unarchiveOrder')}</span>
+                            </button>
+                        </>
                     ) : (
                         <>
                             <button
@@ -340,10 +430,13 @@ function OrderTableRow({
 
 function rowPropsAreEqual(prev, next) {
     if (prev.item !== next.item) return false
+    if (prev.item?.fulfillment?.state !== next.item?.fulfillment?.state) return false
+    if (prev.item?.fulfillment?.percent !== next.item?.fulfillment?.percent) return false
     if (prev.isMergeSelected !== next.isMergeSelected) return false
     if (prev.isExpanded !== next.isExpanded) return false
     if (prev.ordersListView !== next.ordersListView) return false
     if (prev.language !== next.language) return false
+    if (prev.filterCategory !== next.filterCategory) return false
     return true
 }
 

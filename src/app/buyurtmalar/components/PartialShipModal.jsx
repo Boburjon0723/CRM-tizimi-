@@ -1,15 +1,14 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { X, Truck } from 'lucide-react'
+import { X, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { deductStockForCompletedOrder } from '@/services/inventoryService'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
-import { parseOrderItemQty } from '../utils'
+import { parseOrderItemQty, updateOrderStatusWithCompletedAt } from '../utils'
 import {
     loadOrderShippedMap,
-    orderItemShipKey,
     buildPartialShipRows,
 } from '../lib/partialShipUtils'
 
@@ -29,7 +28,13 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
             try {
                 const shippedMap = await loadOrderShippedMap(order.id)
                 if (cancelled) return
-                setRows(buildPartialShipRows(order, products, shippedMap))
+                setRows(
+                    buildPartialShipRows(order, products, shippedMap).map((r) => ({
+                        ...r,
+                        selected: false,
+                        ship_qty: 0,
+                    }))
+                )
             } catch (error) {
                 console.error('PartialShipModal load:', error)
                 if (!cancelled) {
@@ -53,16 +58,48 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
         let shipped = 0
         let remaining = 0
         let now = 0
+        let selectedCount = 0
         for (const r of rows) {
             ordered += Number(r.ordered_qty) || 0
             shipped += Number(r.shipped_qty) || 0
             remaining += Number(r.remaining_qty) || 0
             now += Number(r.ship_qty) || 0
+            if (r.selected && r.remaining_qty > 0) selectedCount += 1
         }
         const nextShipped = shipped + now
         const percent = ordered > 0 ? Math.min(100, Math.round((nextShipped / ordered) * 100)) : 0
-        return { ordered, shipped, remaining, now, percent }
+        const remainingAfter = Math.max(0, remaining - now)
+        return { ordered, shipped, remaining, now, percent, selectedCount, remainingAfter }
     }, [rows])
+
+    const selectableRows = useMemo(() => rows.filter((r) => r.remaining_qty > 0), [rows])
+    const allSelectableSelected =
+        selectableRows.length > 0 && selectableRows.every((r) => r.selected)
+
+    function toggleRowSelected(key, checked) {
+        setRows((prev) =>
+            prev.map((r) => {
+                if (r.key !== key) return r
+                if (r.remaining_qty <= 0) return { ...r, selected: false, ship_qty: 0 }
+                if (checked) {
+                    return { ...r, selected: true, ship_qty: r.remaining_qty }
+                }
+                return { ...r, selected: false, ship_qty: 0 }
+            })
+        )
+    }
+
+    function toggleSelectAll(checked) {
+        setRows((prev) =>
+            prev.map((r) => {
+                if (r.remaining_qty <= 0) return { ...r, selected: false, ship_qty: 0 }
+                if (checked) {
+                    return { ...r, selected: true, ship_qty: r.remaining_qty }
+                }
+                return { ...r, selected: false, ship_qty: 0 }
+            })
+        )
+    }
 
     async function submitPartialShipment() {
         if (!order) return
@@ -72,29 +109,22 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                 color: r.color || null,
                 quantity: Math.max(0, Math.min(r.remaining_qty, parseOrderItemQty(r.ship_qty || 0))),
                 product_name: r.product_name,
-                available_qty: r.available_qty,
             }))
             .filter((r) => r.quantity > 0)
         if (!toShip.length) {
             await showAlert(t('orders.partialNothingToShip'), { variant: 'warning' })
             return
         }
-        const availabilityIssues = toShip.filter(
-            (r) => Number(r.quantity) > Number(r.available_qty || 0)
+        const ok = await showConfirm(
+            t('orders.partialConfirmSubmit') ||
+                `Tanlangan ${toShip.length} qatorni tugallaysizmi?`,
+            {
+                title: t('orders.partialModalTitle'),
+                variant: 'info',
+            }
         )
-        if (availabilityIssues.length) {
-            const msg = availabilityIssues
-                .map(
-                    (r) =>
-                        `${r.product_name}: ${t('orders.stockAvailableLabel')} ${r.available_qty}, ${t('orders.partialShipQtyLabel')} ${r.quantity}`
-                )
-                .join('\n')
-            const ok = await showConfirm(`${msg}\n\n${t('orders.stockWarningConfirm')}`, {
-                title: t('orders.stockWarningTitle'),
-                variant: 'warning',
-            })
-            if (!ok) return
-        }
+        if (!ok) return
+
         setSaving(true)
         try {
             const orderNum = order.order_number || order.id
@@ -109,10 +139,25 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                 })
                 return
             }
-            await supabase.from('orders').update({ status: 'pending' }).eq('id', order.id)
-            showToast(t('orders.partialSavedOk'), { type: 'success' })
+
+            const willComplete = summary.remainingAfter <= 0
+            const newStatus = willComplete ? 'completed' : 'pending'
+            const { error: stErr } = await updateOrderStatusWithCompletedAt(
+                supabase,
+                order.id,
+                newStatus,
+                order.status
+            )
+            if (stErr) throw stErr
+
+            showToast(
+                willComplete
+                    ? t('orders.partialCompletedFull') || t('orders.partialSavedOk')
+                    : t('orders.partialSavedOk'),
+                { type: 'success' }
+            )
             onClose()
-            await onSuccess?.()
+            await onSuccess?.({ status: newStatus, willComplete })
         } catch (error) {
             console.error('submitPartialShipment:', error)
             await showAlert(error?.message || String(error), {
@@ -189,96 +234,175 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                         </div>
                         <p className="mt-1 text-[11px] text-slate-600">
                             {t('orders.partialShippedCol')}: {summary.percent}%
+                            {summary.remainingAfter === 0 && summary.now > 0
+                                ? ` · ${t('orders.partialWillCompleteHint') || "Saqlanganda status «Tugallangan» bo‘ladi"}`
+                                : ''}
                         </p>
                     </div>
                 </div>
                 {loading ? (
                     <div className="px-6 py-14 text-sm text-slate-500">{t('common.loading')}</div>
+                ) : rows.length === 0 ? (
+                    <div className="px-6 py-14 text-sm text-slate-500">{t('orders.partialNoItems')}</div>
                 ) : (
                     <>
-                        <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-end gap-2">
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    setRows((prev) =>
-                                        prev.map((r) => ({
-                                            ...r,
-                                            ship_qty: Math.min(r.remaining_qty, r.available_qty),
-                                        }))
-                                    )
-                                }
-                                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
-                            >
-                                Maksimalni qo&apos;yish
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setRows((prev) => prev.map((r) => ({ ...r, ship_qty: 0 })))}
-                                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                            >
-                                Tozalash
-                            </button>
+                        <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+                            <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                    checked={allSelectableSelected}
+                                    disabled={selectableRows.length === 0}
+                                    onChange={(e) => toggleSelectAll(e.target.checked)}
+                                />
+                                {t('orders.partialSelectAllRemaining') || 'Qolganlarini tanlash'}
+                                {selectableRows.length > 0 && (
+                                    <span className="rounded-full bg-slate-200 px-1.5 text-[10px] tabular-nums text-slate-700">
+                                        {selectableRows.length}
+                                    </span>
+                                )}
+                            </label>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSelectAll(true)}
+                                    disabled={selectableRows.length === 0}
+                                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                                >
+                                    {t('orders.partialSelectMax') || "Maksimalni qo'yish"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => toggleSelectAll(false)}
+                                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                                >
+                                    {t('orders.partialClear') || 'Tozalash'}
+                                </button>
+                            </div>
                         </div>
                         <div className="max-h-[56vh] overflow-auto">
                             <table className="w-full text-sm">
                                 <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 z-10">
                                     <tr>
+                                        <th className="px-4 py-3 text-center w-12">{t('orders.partialSelectCol') || 'Tanla'}</th>
                                         <th className="px-5 py-3 text-left">{t('orders.products')}</th>
                                         <th className="px-4 py-3 text-right">{t('orders.qtyLabel')}</th>
                                         <th className="px-4 py-3 text-right">{t('orders.partialShippedCol')}</th>
                                         <th className="px-4 py-3 text-right">{t('orders.partialRemainingCol')}</th>
-                                        <th className="px-4 py-3 text-right">{t('orders.stockAvailableLabel')}</th>
                                         <th className="px-5 py-3 text-right">{t('orders.partialShipQtyLabel')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map((row) => (
-                                        <tr key={row.key} className="border-t border-slate-100 hover:bg-emerald-50/40">
-                                            <td className="px-5 py-3">
-                                                <p className="font-semibold text-slate-900">{row.product_name}</p>
-                                                <p className="text-xs text-slate-500 mt-0.5">
-                                                    {row.size || '—'} {row.color ? `• ${row.color}` : ''}
-                                                </p>
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-mono">{row.ordered_qty}</td>
-                                            <td className="px-4 py-3 text-right font-mono text-emerald-700">
-                                                {row.shipped_qty}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-mono font-semibold text-amber-700">
-                                                {row.remaining_qty}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-mono">{row.available_qty}</td>
-                                            <td className="px-5 py-3 text-right">
-                                                <input
-                                                    type="number"
-                                                    min={0}
-                                                    max={row.remaining_qty}
-                                                    step={1}
-                                                    value={row.ship_qty}
-                                                    onChange={(e) => {
-                                                        const n = Math.max(
-                                                            0,
-                                                            Math.min(
-                                                                row.remaining_qty,
-                                                                Math.floor(Number(e.target.value) || 0)
+                                    {rows.map((row) => {
+                                        const done = row.remaining_qty <= 0
+                                        return (
+                                            <tr
+                                                key={row.key}
+                                                className={`border-t border-slate-100 ${
+                                                    done
+                                                        ? 'bg-emerald-50/50 opacity-80'
+                                                        : row.selected
+                                                          ? 'bg-emerald-50/70'
+                                                          : 'hover:bg-emerald-50/40'
+                                                }`}
+                                            >
+                                                <td className="px-4 py-3 text-center">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                                        checked={!!row.selected && !done}
+                                                        disabled={done || saving}
+                                                        onChange={(e) =>
+                                                            toggleRowSelected(row.key, e.target.checked)
+                                                        }
+                                                        aria-label={row.product_name}
+                                                    />
+                                                </td>
+                                                <td className="px-5 py-3">
+                                                    <div className="flex items-start gap-2.5 min-w-0">
+                                                        <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                                                            {row.image_url ? (
+                                                                // eslint-disable-next-line @next/next/no-img-element
+                                                                <img
+                                                                    src={row.image_url}
+                                                                    alt=""
+                                                                    className="h-full w-full object-cover object-center"
+                                                                    loading="lazy"
+                                                                    decoding="async"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex h-full w-full items-center justify-center text-[9px] font-bold text-slate-400">
+                                                                    —
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="font-semibold text-slate-900 leading-snug">
+                                                                {row.product_name}
+                                                            </p>
+                                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                                {row.size || '—'} {row.color ? `• ${row.color}` : ''}
+                                                                {done ? (
+                                                                    <span className="ml-2 inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                                                                        <CheckCircle2 size={10} />
+                                                                        {t('orders.partialLineDone') || 'Chiqqan'}
+                                                                    </span>
+                                                                ) : null}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-mono">{row.ordered_qty}</td>
+                                                <td className="px-4 py-3 text-right font-mono text-emerald-700">
+                                                    {row.shipped_qty}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-mono font-semibold text-amber-700">
+                                                    {row.remaining_qty}
+                                                </td>
+                                                <td className="px-5 py-3 text-right">
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        pattern="[0-9]*"
+                                                        autoComplete="off"
+                                                        disabled={done || saving}
+                                                        value={row.ship_qty === 0 || row.ship_qty === '0' ? '0' : String(row.ship_qty ?? '')}
+                                                        onChange={(e) => {
+                                                            const raw = e.target.value.replace(/[^\d]/g, '')
+                                                            const n = Math.max(
+                                                                0,
+                                                                Math.min(
+                                                                    row.remaining_qty,
+                                                                    Math.floor(Number(raw || 0))
+                                                                )
                                                             )
-                                                        )
-                                                        setRows((prev) =>
-                                                            prev.map((x) =>
-                                                                x.key === row.key ? { ...x, ship_qty: n } : x
+                                                            setRows((prev) =>
+                                                                prev.map((x) =>
+                                                                    x.key === row.key
+                                                                        ? {
+                                                                              ...x,
+                                                                              ship_qty: n,
+                                                                              selected: n > 0,
+                                                                          }
+                                                                        : x
+                                                                )
                                                             )
-                                                        )
-                                                    }}
-                                                    className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right font-mono font-semibold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-                                                />
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                        }}
+                                                        onFocus={(e) => e.target.select()}
+                                                        className="no-spinner w-24 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right font-mono font-semibold outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100 disabled:text-slate-400"
+                                                    />
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                         <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 bg-slate-50">
                             <p className="text-xs text-slate-500">
+                                {t('orders.partialSelectedCount') || 'Tanlangan'}:{' '}
+                                <span className="font-black text-emerald-700">{summary.selectedCount}</span>
+                                {' · '}
                                 {t('orders.partialShipQtyLabel')}:{' '}
                                 <span className="font-black text-emerald-700">{summary.now}</span>
                             </p>
@@ -297,8 +421,12 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                                     disabled={saving || summary.now <= 0}
                                     className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
                                 >
-                                    <Truck size={16} />
-                                    {saving ? '...' : t('orders.partialShipAction')}
+                                    <CheckCircle2 size={16} />
+                                    {saving
+                                        ? '...'
+                                        : summary.remainingAfter <= 0
+                                          ? t('orders.partialCompleteFullAction') || t('orders.partialShipAction')
+                                          : t('orders.partialShipAction')}
                                 </button>
                             </div>
                         </div>

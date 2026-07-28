@@ -30,6 +30,7 @@ function orderMatchesListFilters(b, {
     dateFrom,
     dateTo,
     unknownLabel,
+    productsList = null,
 }) {
     const customerName = b.customer_name || b.customers?.name || unknownLabel || "Noma'lum"
     const matchesSearch =
@@ -48,8 +49,11 @@ function orderMatchesListFilters(b, {
             .toLowerCase()
             .includes(q)
     const st = b.status
-    const labels = orderCategoryLabels(b, '—')
-    const matchesCategory = filterCategory === 'all' || labels.includes(filterCategory)
+    const labels = orderCategoryLabels(b, '—', productsList)
+    const matchesCategory =
+        filterCategory === 'all' ||
+        labels.includes(filterCategory) ||
+        labels.some((l) => l.toLowerCase() === String(filterCategory || '').toLowerCase())
     const matchesStatus =
         filterStatus === 'all' ||
         filterStatus === 'Hammasi' ||
@@ -78,6 +82,7 @@ export function useOrderListFilters({
     dateFrom = '',
     dateTo = '',
     unknownLabel,
+    productsList = null,
 }) {
     const filteredOrders = useMemo(() => {
         const q = searchTerm.trim().toLowerCase()
@@ -90,6 +95,7 @@ export function useOrderListFilters({
                 dateFrom,
                 dateTo,
                 unknownLabel,
+                productsList,
             })
         )
     }, [
@@ -101,6 +107,7 @@ export function useOrderListFilters({
         dateFrom,
         dateTo,
         unknownLabel,
+        productsList,
     ])
 
     const totalSumma = useMemo(
@@ -134,14 +141,14 @@ export function useOrderListFilters({
     const orderCategoryOptions = useMemo(() => {
         const countByLabel = new Map()
         for (const o of ordersForList) {
-            for (const label of orderCategoryLabels(o, '—')) {
+            for (const label of orderCategoryLabels(o, '—', productsList)) {
                 countByLabel.set(label, (countByLabel.get(label) || 0) + 1)
             }
         }
         return Array.from(countByLabel.entries())
             .sort((a, b) => a[0].localeCompare(b[0], 'uz'))
             .map(([label, count]) => ({ label, count }))
-    }, [ordersForList])
+    }, [ordersForList, productsList])
 
     const hasExtraFilters = useMemo(() => {
         return (

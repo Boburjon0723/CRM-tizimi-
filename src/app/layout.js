@@ -8,6 +8,7 @@ import AuthWrapper from '@/components/AuthWrapper'
 import AIAgent from '@/components/AIAgent'
 import ReactQueryProvider from '@/components/ReactQueryProvider'
 import ChunkErrorRecovery from '@/components/ChunkErrorRecovery'
+import DisableNumberInputScroll from '@/components/DisableNumberInputScroll'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -43,6 +44,7 @@ export default function RootLayout({ children }) {
                                 <NotificationProvider>
                                     <DialogProvider>
                                         <ChunkErrorRecovery />
+                                        <DisableNumberInputScroll />
                                         <AuthWrapper>{children}</AuthWrapper>
                                         <AIAgent />
                                     </DialogProvider>

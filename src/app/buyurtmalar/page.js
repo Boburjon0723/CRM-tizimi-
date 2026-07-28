@@ -16,7 +16,13 @@ import {
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
-import { isDeletedAtMissingError } from '@/lib/orderTrash'
+import {
+    isDeletedAtMissingError,
+    isArchivedAtMissingError,
+    archiveStaleCompletedOrders,
+    shouldAutoArchiveCompletedOrder,
+    migrateCompletedFromTrashToArchive,
+} from '@/lib/orderTrash'
 
 import {
     escapeHtml,
@@ -28,6 +34,7 @@ import {
     isSchemaOrEmbedError,
     fetchOrdersPageWithFallback,
     fetchDeletedOrdersPageWithFallback,
+    fetchArchivedOrdersPageWithFallback,
     fetchOrderItemsForOrderId,
     fetchOrderItemsForOrderIds,
     displayProductName,
@@ -78,7 +85,8 @@ import {
     orderItemsToOrderLines,
     aggregateMergedOrdersTotals,
     filterOrderItemsByCategoryLabel,
-    buildConsolidatedPrintHtml
+    buildConsolidatedPrintHtml,
+    updateOrderStatusWithCompletedAt,
 } from './utils'
 
 import StatsCards from './components/StatsCards'
@@ -91,7 +99,8 @@ import LinkCustomerModal from './components/LinkCustomerModal'
 import OrderFormPanel from './components/OrderFormPanel'
 import { useOrderListFilters } from './hooks/useOrderListFilters'
 import { enrichOrderLinesFromDb, createDefaultOrderForm, getProductsByModelCode } from './lib/orderFormUtils'
-import { getOutstandingItemsForDeduction } from './lib/partialShipUtils'
+import { getOutstandingItemsForDeduction, attachFulfillmentToOrders } from './lib/partialShipUtils'
+import PartialShipModal from './components/PartialShipModal'
 
 
 
@@ -125,28 +134,38 @@ function BuyurtmalarPageContent() {
     const [dateTo, setDateTo] = useState('')
     /** Bir nechta buyurtmani bitta yangi buyurtmaga birlashtirish uchun tanlov */
     const [mergeSelection, setMergeSelection] = useState({})
-    /** Faol ro‘yxat yoki karzinka (o‘chirilganlar) */
+    /** Faol / arxiv / korzinka */
     const [ordersListView, setOrdersListView] = useState('active')
     const [trashOrders, setTrashOrders] = useState([])
     const [trashOrderCount, setTrashOrderCount] = useState(0)
+    const [archiveOrders, setArchiveOrders] = useState([])
+    const [archiveOrderCount, setArchiveOrderCount] = useState(0)
     const ordersListViewRef = useRef('active')
     const loadDataRef = useRef(async () => {})
     const loadTrashOrdersRef = useRef(async () => {})
+    const loadArchiveOrdersRef = useRef(async () => {})
     /** Buyurtmalar jadvalidagi mahsulotlar ro‘yxatini yoyish/yig‘ish */
     const [orderListExpandedById, setOrderListExpandedById] = useState({})
     const [tableConfig, setTableConfig] = useState(DEFAULT_TABLE_CONFIG)
 
     const selectedOrders = useMemo(() => {
-        const list = ordersListView === 'active' ? orders : trashOrders
+        const list =
+            ordersListView === 'active'
+                ? orders
+                : ordersListView === 'archive'
+                  ? archiveOrders
+                  : trashOrders
         return list.filter((o) => mergeSelection[o.id])
-    }, [ordersListView, orders, trashOrders, mergeSelection])
+    }, [ordersListView, orders, trashOrders, archiveOrders, mergeSelection])
 
 
     const editLoadSeqRef = useRef(0)
+    const loadDataSeqRef = useRef(0)
     const excelImportInputRef = useRef(null)
     const [excelImportBusy, setExcelImportBusy] = useState(false)
     const [draftBanner, setDraftBanner] = useState(false)
     const [linkCustomerOrder, setLinkCustomerOrder] = useState(null)
+    const [partialShipOrder, setPartialShipOrder] = useState(null)
     const isAddingRef = useRef(isAdding)
 
     useEffect(() => {
@@ -217,6 +236,7 @@ function BuyurtmalarPageContent() {
         const reloadFromRemote = async () => {
             await loadDataRef.current({ silent: true })
             if (ordersListViewRef.current === 'trash') await loadTrashOrdersRef.current()
+            if (ordersListViewRef.current === 'archive') await loadArchiveOrdersRef.current()
         }
 
         const channel = supabase
@@ -252,14 +272,44 @@ function BuyurtmalarPageContent() {
         setTrashOrders(data || [])
     }
 
+    async function loadArchiveOrders() {
+        const { data, error } = await fetchArchivedOrdersPageWithFallback()
+        if (error) console.error('loadArchiveOrders:', error)
+        setArchiveOrders(data || [])
+    }
+
     /** `silent: true` — tahrir/o‘chirishdan keyin: ro‘yxat yangilanadi, lekin butun sahifa spinneri yo‘q */
     async function loadData(opts = {}) {
         const silent = opts.silent === true
+        const seq = ++loadDataSeqRef.current
         try {
             if (!silent) setLoading(true)
 
+            // Avval xato korzinkaga tushgan eski tugallanganlarni arxivga ko‘chirish
+            await migrateCompletedFromTrashToArchive(supabase)
+            if (seq !== loadDataSeqRef.current) return
+
             const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback({ activeOnly: true })
             if (ordersError) throw ordersError
+            if (seq !== loadDataSeqRef.current) return
+
+            // 1 oydan eski tugallanganlar → ARXIV (korzinka emas)
+            let activeOrders = ordersData || []
+            const archiveRes = await archiveStaleCompletedOrders(supabase, activeOrders)
+            if (seq !== loadDataSeqRef.current) return
+            if (archiveRes.archived > 0) {
+                const archivedSet = new Set(archiveRes.ids.map(String))
+                activeOrders = activeOrders.filter((o) => !archivedSet.has(String(o.id)))
+                showToast(
+                    (t('orders.autoArchivedCompleted') || '{n} ta eski tugallangan buyurtma arxivga o‘tkazildi.').replace(
+                        '{n}',
+                        String(archiveRes.archived)
+                    ),
+                    { type: 'info' }
+                )
+            } else if (!archiveRes.skipped) {
+                activeOrders = activeOrders.filter((o) => !shouldAutoArchiveCompletedOrder(o))
+            }
 
             let trashCnt = 0
             const trashCntRes = await supabase
@@ -268,7 +318,19 @@ function BuyurtmalarPageContent() {
                 .not('deleted_at', 'is', null)
             if (!trashCntRes.error) trashCnt = trashCntRes.count ?? 0
             else if (!isDeletedAtMissingError(trashCntRes.error)) console.warn('trash count:', trashCntRes.error)
+
+            let archiveCnt = 0
+            const archiveCntRes = await supabase
+                .from('orders')
+                .select('id', { count: 'exact', head: true })
+                .not('archived_at', 'is', null)
+                .is('deleted_at', null)
+            if (!archiveCntRes.error) archiveCnt = archiveCntRes.count ?? 0
+            else if (!isArchivedAtMissingError(archiveCntRes.error)) console.warn('archive count:', archiveCntRes.error)
+
+            if (seq !== loadDataSeqRef.current) return
             setTrashOrderCount(trashCnt)
+            setArchiveOrderCount(archiveCnt)
 
             // Load Customers for dropdown
             const { data: customersData } = await supabase.from('customers').select('id, name, phone').order('name')
@@ -293,24 +355,33 @@ function BuyurtmalarPageContent() {
                 .order('name')
             if (colorLibError) console.warn('product_colors:', colorLibError)
 
-            setOrders(ordersData || [])
+            if (seq !== loadDataSeqRef.current) return
+            setOrders(activeOrders)
             setCustomers(customersData || [])
             setProducts(productsData || [])
             setProductColors(colorLibData || [])
+
+            // Qisman chiqim belgisi uchun stock_movements dan progress
+            void attachFulfillmentToOrders(activeOrders).then((enriched) => {
+                if (seq !== loadDataSeqRef.current) return
+                setOrders(enriched)
+            })
         } catch (error) {
             console.error('Error loading data:', error)
         } finally {
-            if (!silent) setLoading(false)
+            if (seq === loadDataSeqRef.current && !silent) setLoading(false)
         }
     }
 
     loadDataRef.current = loadData
     loadTrashOrdersRef.current = loadTrashOrders
+    loadArchiveOrdersRef.current = loadArchiveOrders
 
     async function switchOrdersListView(next) {
         setMergeSelection({})
         setOrdersListView(next)
         if (next === 'trash') await loadTrashOrders()
+        if (next === 'archive') await loadArchiveOrders()
     }
 
     async function handleDelete(id) {
@@ -360,6 +431,25 @@ function BuyurtmalarPageContent() {
         }
     }
 
+    /** Arxivdan asosiy ro‘yxatga (archived_at = null) */
+    async function handleUnarchiveOrder(id) {
+        try {
+            const { error } = await supabase.from('orders').update({ archived_at: null }).eq('id', id)
+            if (error) {
+                if (isArchivedAtMissingError(error)) {
+                    await showAlert(t('orders.archivedAtMigrationHint'), { variant: 'warning' })
+                    return
+                }
+                throw error
+            }
+            await loadData({ silent: true })
+            await loadArchiveOrders()
+        } catch (error) {
+            console.error('Error unarchiving order:', error)
+            await showAlert(t('common.saveError'), { variant: 'error' })
+        }
+    }
+
     async function handlePermanentDelete(id) {
         if (!(await showConfirm(t('orders.permanentDeleteConfirm'), { variant: 'warning' }))) return
 
@@ -372,7 +462,8 @@ function BuyurtmalarPageContent() {
                 return next
             })
             await loadData({ silent: true })
-            await loadTrashOrders()
+            if (ordersListViewRef.current === 'trash') await loadTrashOrders()
+            if (ordersListViewRef.current === 'archive') await loadArchiveOrders()
         } catch (error) {
             console.error('Error permanently deleting order:', error)
             await showAlert(t('common.deleteError'), { variant: 'error' })
@@ -469,18 +560,12 @@ function BuyurtmalarPageContent() {
         if (oldStatus === newStatus) return
 
         try {
-            const stamp = new Date().toISOString()
-            let { error } = await supabase
-                .from('orders')
-                .update({ status: newStatus, updated_at: stamp })
-                .eq('id', id)
-
-            if (
-                error &&
-                /updated_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))
-            ) {
-                ;({ error } = await supabase.from('orders').update({ status: newStatus }).eq('id', id))
-            }
+            const { error, stamp, completed_at } = await updateOrderStatusWithCompletedAt(
+                supabase,
+                id,
+                newStatus,
+                oldStatus
+            )
 
             if (error) throw error
 
@@ -499,7 +584,7 @@ function BuyurtmalarPageContent() {
                         type: 'info',
                     })
                 }
-            } else if (oldStatus === 'completed') {
+            } else if (normalizeStatusForSelect(oldStatus) === 'completed') {
                 // Oldin 'completed' bo'lgan bo'lsa va endi boshqasiga o'tsa - qoldiqni qaytarish
                 await reverseStockForOrder(id, orderNum, orderItems)
                 showToast(t('orders.stockReversedOk') || 'Ombor qoldig\'i qaytarildi', { type: 'info' })
@@ -507,7 +592,17 @@ function BuyurtmalarPageContent() {
 
             setOrders((prev) =>
                 prev.map((o) =>
-                    o.id === id ? { ...o, status: newStatus, updated_at: stamp } : o
+                    o.id === id
+                        ? {
+                              ...o,
+                              status: newStatus,
+                              updated_at: stamp,
+                              completed_at:
+                                  normalizeStatusForSelect(newStatus) === 'completed'
+                                      ? completed_at || o.completed_at || stamp
+                                      : null,
+                          }
+                        : o
                 )
             )
         } catch (error) {
@@ -716,6 +811,7 @@ function BuyurtmalarPageContent() {
 
     async function handlePrintOrder(item, showPrices) {
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const categoryActive = filterCategory && filterCategory !== 'all'
         let orderForPrint = item
         try {
             const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(item.id)
@@ -735,9 +831,26 @@ function BuyurtmalarPageContent() {
             console.error('handlePrintOrder refetch:', e)
             orderForPrint = { ...item, order_items: dedupeOrderItemsKeepNewest(item.order_items || [], products) }
         }
+
+        if (categoryActive) {
+            const filteredItems = filterOrderItemsByCategoryLabel(
+                orderForPrint.order_items || [],
+                filterCategory,
+                '—',
+                products
+            )
+            if (!filteredItems.length) {
+                await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
+                return
+            }
+            orderForPrint = { ...orderForPrint, order_items: filteredItems, total: null }
+        }
+
         const html = buildPrintDocumentHtml({
-            documentTitle: `Buyurtma-${String(item.id).slice(0, 8)}`,
-            listTitle: '',
+            documentTitle: categoryActive
+                ? `Buyurtma-${String(item.id).slice(0, 8)}-${filterCategory}`
+                : `Buyurtma-${String(item.id).slice(0, 8)}`,
+            listTitle: categoryActive ? `Kategoriya: ${filterCategory}` : '',
             orders: [orderForPrint],
             showPrices,
             labelColorFn,
@@ -757,7 +870,29 @@ function BuyurtmalarPageContent() {
             return
         }
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const categoryActive = filterCategory && filterCategory !== 'all'
         const ids = list.map((o) => o.id).filter(Boolean)
+
+        const mapOrdersForPrint = (byOrder) => {
+            let mapped = list.map((o) => {
+                const rows = dedupeOrderItemsKeepNewest(
+                    (byOrder ? byOrder.get(o.id) : null) || o.order_items || [],
+                    products
+                )
+                const items = categoryActive
+                    ? filterOrderItemsByCategoryLabel(rows, filterCategory, '—', products)
+                    : rows
+                // Kategoriya filtrida to'liq buyurtma jamini emas, faqat chop etilgan qatorlar yig'indisini ko'rsatish
+                return categoryActive
+                    ? { ...o, order_items: items, total: null }
+                    : { ...o, order_items: items }
+            })
+            if (categoryActive) {
+                mapped = mapped.filter((o) => (o.order_items || []).length > 0)
+            }
+            return mapped
+        }
+
         let ordersForPrint = list
         try {
             const { data: allRows, error } = await fetchOrderItemsForOrderIds(ids)
@@ -768,20 +903,21 @@ function BuyurtmalarPageContent() {
                 if (!byOrder.has(oid)) byOrder.set(oid, [])
                 byOrder.get(oid).push(oi)
             }
-            ordersForPrint = list.map((o) => ({
-                ...o,
-                order_items: dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [], products)
-            }))
+            ordersForPrint = mapOrdersForPrint(byOrder)
         } catch (e) {
             console.error('handlePrintOrderList refetch:', e)
-            ordersForPrint = list.map((o) => ({
-                ...o,
-                order_items: dedupeOrderItemsKeepNewest(o.order_items || [], products)
-            }))
+            ordersForPrint = mapOrdersForPrint(null)
         }
+
+        if (!ordersForPrint.length) {
+            await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
+            return
+        }
+
+        const categoryTitle = categoryActive ? ` · ${filterCategory}` : ''
         const html = buildPrintDocumentHtml({
             documentTitle: showPrices ? t('orders.listPrintTitleWithPrices') : t('orders.listPrintTitleNoPrices'),
-            listTitle: `${t('orders.listPrintCount')}: ${list.length}`,
+            listTitle: `${t('orders.listPrintCount')}: ${ordersForPrint.length}${categoryTitle}`,
             orders: ordersForPrint,
             showPrices,
             labelColorFn,
@@ -813,7 +949,7 @@ function BuyurtmalarPageContent() {
             ordersForPrint = list
                 .map((o) => {
                     const rows = dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [], products)
-                    const categoryRows = filterOrderItemsByCategoryLabel(rows, categoryLabel, '—')
+                    const categoryRows = filterOrderItemsByCategoryLabel(rows, categoryLabel, '—', products)
                     return { ...o, order_items: categoryRows }
                 })
                 .filter((o) => (o.order_items || []).length > 0)
@@ -822,7 +958,7 @@ function BuyurtmalarPageContent() {
             ordersForPrint = list
                 .map((o) => {
                     const rows = dedupeOrderItemsKeepNewest(o.order_items || [], products)
-                    const categoryRows = filterOrderItemsByCategoryLabel(rows, categoryLabel, '—')
+                    const categoryRows = filterOrderItemsByCategoryLabel(rows, categoryLabel, '—', products)
                     return { ...o, order_items: categoryRows }
                 })
                 .filter((o) => (o.order_items || []).length > 0)
@@ -891,7 +1027,12 @@ function BuyurtmalarPageContent() {
         }
     }
 
-    const ordersForList = ordersListView === 'active' ? orders : trashOrders
+    const ordersForList =
+        ordersListView === 'active'
+            ? orders
+            : ordersListView === 'archive'
+              ? archiveOrders
+              : trashOrders
     const unknownLabel = t('common.unknown')
     const { filteredOrders, totalSumma, statusStats, orderCategoryOptions, hasExtraFilters } =
         useOrderListFilters({
@@ -903,6 +1044,7 @@ function BuyurtmalarPageContent() {
             dateFrom,
             dateTo,
             unknownLabel,
+            productsList: products,
         })
 
     const clearOrderFilters = () => {
@@ -1255,11 +1397,17 @@ function BuyurtmalarPageContent() {
                     <p className="font-medium leading-snug">{t('orders.trashHint')}</p>
                 </div>
             ) : null}
+            {ordersListView === 'archive' ? (
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800">
+                    <p className="font-medium leading-snug">{t('orders.archiveHint')}</p>
+                </div>
+            ) : null}
 
             <OrdersViewTabs
                 t={t}
                 ordersListView={ordersListView}
                 trashOrderCount={trashOrderCount}
+                archiveOrderCount={archiveOrderCount}
                 onSwitchView={switchOrdersListView}
             />
 
@@ -1369,9 +1517,21 @@ function BuyurtmalarPageContent() {
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
                 handleRestoreOrder={handleRestoreOrder}
+                handleUnarchiveOrder={handleUnarchiveOrder}
                 handlePermanentDelete={handlePermanentDelete}
                 handleLinkCustomer={handleLinkCustomer}
+                handleOpenPartialShip={setPartialShipOrder}
+                filterCategory={filterCategory}
             />
+
+            {partialShipOrder ? (
+                <PartialShipModal
+                    order={partialShipOrder}
+                    products={products}
+                    onClose={() => setPartialShipOrder(null)}
+                    onSuccess={() => loadData({ silent: true })}
+                />
+            ) : null}
 
             {linkCustomerOrder ? (
                 <LinkCustomerModal

@@ -35,11 +35,10 @@ function parseOrderItemPrice(v) {
 }
 
 /**
- * Hisobot sanasi: avvalo `updated_at` (tugallash / oxirgi o‘zgarish), aks holda `created_at`.
- * Mahalliy kun bilan solishtirish uchun `dateKeyFromTimestampLocal`.
+ * Hisobot sanasi: avvalo `completed_at` (chiqib ketgan), keyin `updated_at`, aks holda `created_at`.
  */
 export function orderReportDateKey(order) {
-    const raw = order?.updated_at || order?.created_at || ''
+    const raw = order?.completed_at || order?.updated_at || order?.created_at || ''
     return dateKeyFromTimestampLocal(raw)
 }
 

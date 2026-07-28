@@ -1,7 +1,7 @@
 'use client'
 
 import React, { memo } from 'react'
-import { Archive, ShoppingCart } from 'lucide-react'
+import { Archive, ShoppingCart, Trash2 } from 'lucide-react'
 import OrderTableRow from './OrderTableRow'
 
 function OrdersTable({
@@ -22,20 +22,29 @@ function OrdersTable({
     handleEdit,
     handleDelete,
     handleRestoreOrder,
+    handleUnarchiveOrder,
     handlePermanentDelete,
     handleLinkCustomer,
+    handleOpenPartialShip,
+    filterCategory = 'all',
 }) {
     if (filteredOrders.length === 0) {
         return (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                     {ordersListView === 'trash' ? (
+                        <Trash2 size={48} className="mb-4 opacity-20" />
+                    ) : ordersListView === 'archive' ? (
                         <Archive size={48} className="mb-4 opacity-20" />
                     ) : (
                         <ShoppingCart size={48} className="mb-4 opacity-20" />
                     )}
                     <p className="font-medium text-lg">
-                        {ordersListView === 'trash' ? t('orders.trashEmpty') : t('orders.noOrders')}
+                        {ordersListView === 'trash'
+                            ? t('orders.trashEmpty')
+                            : ordersListView === 'archive'
+                              ? t('orders.archiveEmpty')
+                              : t('orders.noOrders')}
                     </p>
                 </div>
             </div>
@@ -66,7 +75,9 @@ function OrdersTable({
                                 </th>
                             )}
                             <th
-                                className={`w-[11%] min-w-[7.5rem] px-3 py-3 sm:px-4 ${ordersListView === 'trash' ? 'rounded-tl-2xl' : ''}`}
+                                className={`w-[11%] min-w-[7.5rem] px-3 py-3 sm:px-4 ${
+                                    ordersListView !== 'active' ? 'rounded-tl-2xl' : ''
+                                }`}
                             >
                                 {t('orders.idDate')}
                             </th>
@@ -108,8 +119,11 @@ function OrdersTable({
                                     handleEdit={handleEdit}
                                     handleDelete={handleDelete}
                                     handleRestoreOrder={handleRestoreOrder}
+                                    handleUnarchiveOrder={handleUnarchiveOrder}
                                     handlePermanentDelete={handlePermanentDelete}
                                     handleLinkCustomer={handleLinkCustomer}
+                                    handleOpenPartialShip={handleOpenPartialShip}
+                                    filterCategory={filterCategory}
                                 />
                         ))}
                     </tbody>
