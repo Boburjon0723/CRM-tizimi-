@@ -497,12 +497,76 @@ function groupOrderItemsForPrint(orderItems) {
 
 /** Kategoriya nomi (chop etish) — mahsulotdan */
 function categoryLabelFromGroupedLine(firstOi) {
-    const cat = firstOi?.products?.categories
+    const rawCat = firstOi?.products?.categories
+    const cat = Array.isArray(rawCat) ? rawCat[0] : rawCat
     if (cat && typeof cat === 'object') {
-        const n = (cat.name_uz || cat.name || '').trim()
+        const n = (cat.name_uz || cat.name || cat.name_en || '').trim()
         if (n) return n
     }
+    const p = firstOi?.products
+    if (p?.category != null && String(p.category).trim() !== '') {
+        return String(p.category).trim()
+    }
     return ''
+}
+
+/** Buyurtma qatori kategoriyasi — embed + katalog fallback */
+function resolveOrderItemCategoryLabel(oi, productsCatalog, language, uncategorizedLabel = '') {
+    const fromItem = categoryLabelFromGroupedLine(oi)
+    if (fromItem) return fromItem
+    const pid = oi?.product_id != null ? String(oi.product_id) : ''
+    const fromCatalog = pid
+        ? productsCatalog?.find((p) => String(p.id) === pid)
+        : null
+    const fromProd = categoryLabelFromProduct(fromCatalog || oi?.products, language)
+    if (fromProd) return fromProd
+    return uncategorizedLabel || ''
+}
+
+/** Chop etish / filtr: faqat tanlangan kategoriya qatorlari */
+function filterOrderItemsByCategory(orderItems, categoryKey, productsCatalog, language, uncategorizedLabel) {
+    if (!categoryKey || categoryKey === 'all') return orderItems || []
+    const want = normalizeModelKey(categoryKey)
+    return (orderItems || []).filter((oi) => {
+        const lab = resolveOrderItemCategoryLabel(oi, productsCatalog, language, uncategorizedLabel)
+        return normalizeModelKey(lab || uncategorizedLabel) === want
+    })
+}
+
+function orderHasCategory(order, categoryKey, productsCatalog, language, uncategorizedLabel) {
+    if (!categoryKey || categoryKey === 'all') return true
+    const items = order?.order_items || []
+    if (!items.length) return false
+    return filterOrderItemsByCategory(items, categoryKey, productsCatalog, language, uncategorizedLabel).length > 0
+}
+
+/** Chop etish uchun kategoriya meta — katalogdan `products.categories` boyitadi */
+function enrichOrderItemsCategoriesForPrint(orderItems, productsCatalog, language, uncategorizedLabel) {
+    return (orderItems || []).map((oi) => {
+        const label = resolveOrderItemCategoryLabel(oi, productsCatalog, language, uncategorizedLabel)
+        if (!label) return oi
+        const existing = oi.products?.categories
+        const hasEmbed =
+            existing &&
+            typeof existing === 'object' &&
+            !Array.isArray(existing) &&
+            (existing.name_uz || existing.name)
+        if (hasEmbed) return oi
+        const pid = oi.product_id != null ? String(oi.product_id) : ''
+        const catalog = pid ? productsCatalog?.find((p) => String(p.id) === pid) : null
+        return {
+            ...oi,
+            products: {
+                ...(typeof oi.products === 'object' && oi.products ? oi.products : {}),
+                ...(catalog || {}),
+                categories:
+                    catalog?.categories && typeof catalog.categories === 'object'
+                        ? catalog.categories
+                        : { name_uz: label, name: label },
+                category: catalog?.category ?? oi.products?.category ?? label,
+            },
+        }
+    })
 }
 
 /** Forma jadvali: mahsulot qatoridan kategoriya matni (tilga qarab) */
@@ -1119,6 +1183,8 @@ export default function Buyurtmalar() {
     const [searchTerm, setSearchTerm] = useState('')
     /** `all` bo‘lishi shart — `Hammasi` bilan hech qachon `matchesStatus` true bo‘lmaydi */
     const [filterStatus, setFilterStatus] = useState('all')
+    /** Mahsulot kategoriyasi bo‘yicha filtr (`all` yoki kategoriya nomi) */
+    const [filterCategory, setFilterCategory] = useState('all')
     /** Buyurtmalar jadvalidagi mahsulotlar ro‘yxatini yoyish/yig‘ish */
     const [orderListExpandedById, setOrderListExpandedById] = useState({})
     /** Yangi buyurtma: bir nechta qator — model kodi orqali mahsulot, soni qo‘lda */
@@ -1988,6 +2054,7 @@ export default function Buyurtmalar() {
 
     async function handlePrintOrder(item, showPrices) {
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const uncategorized = t('orders.categoryUncategorized')
         let orderForPrint = item
         try {
             const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(item.id)
@@ -1998,18 +2065,61 @@ export default function Buyurtmalar() {
                 .eq('id', item.id)
                 .single()
             if (ordErr) throw ordErr
+            const rawItems = dedupeOrderItemsKeepNewest(rows || [])
+            const filteredItems = filterOrderItemsByCategory(
+                rawItems,
+                filterCategory,
+                products,
+                language,
+                uncategorized
+            )
+            if (filterCategory !== 'all' && filteredItems.length === 0) {
+                await showAlert(t('orders.printCategoryEmpty'), { variant: 'info' })
+                return
+            }
+            const categoryOnly = filterCategory !== 'all'
             orderForPrint = {
                 ...item,
                 ...orderRow,
-                order_items: dedupeOrderItemsKeepNewest(rows || [])
+                order_items: enrichOrderItemsCategoriesForPrint(
+                    filteredItems,
+                    products,
+                    language,
+                    uncategorized
+                ),
+                /** Kategoriya filtrida saqlangan umumiy summa emas — faqat shu kategoriya qatorlari */
+                total: categoryOnly ? null : orderRow?.total ?? item.total,
             }
         } catch (e) {
             console.error('handlePrintOrder refetch:', e)
-            orderForPrint = { ...item, order_items: dedupeOrderItemsKeepNewest(item.order_items || []) }
+            const rawItems = dedupeOrderItemsKeepNewest(item.order_items || [])
+            const filteredItems = filterOrderItemsByCategory(
+                rawItems,
+                filterCategory,
+                products,
+                language,
+                uncategorized
+            )
+            if (filterCategory !== 'all' && filteredItems.length === 0) {
+                await showAlert(t('orders.printCategoryEmpty'), { variant: 'info' })
+                return
+            }
+            orderForPrint = {
+                ...item,
+                order_items: enrichOrderItemsCategoriesForPrint(
+                    filteredItems,
+                    products,
+                    language,
+                    uncategorized
+                ),
+                total: filterCategory !== 'all' ? null : item.total,
+            }
         }
+        const catSuffix =
+            filterCategory !== 'all' ? ` · ${filterCategory}` : ''
         const html = buildPrintDocumentHtml({
-            documentTitle: `Buyurtma-${String(item.id).slice(0, 8)}`,
-            listTitle: '',
+            documentTitle: `Buyurtma-${String(item.id).slice(0, 8)}${catSuffix}`,
+            listTitle: filterCategory !== 'all' ? `${t('orders.printCategoryOnly')}: ${filterCategory}` : '',
             orders: [orderForPrint],
             showPrices,
             labelColorFn
@@ -2027,6 +2137,7 @@ export default function Buyurtmalar() {
             return
         }
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const uncategorized = t('orders.categoryUncategorized')
         const ids = list.map((o) => o.id).filter(Boolean)
         let ordersForPrint = list
         try {
@@ -2038,20 +2149,63 @@ export default function Buyurtmalar() {
                 if (!byOrder.has(oid)) byOrder.set(oid, [])
                 byOrder.get(oid).push(oi)
             }
-            ordersForPrint = list.map((o) => ({
-                ...o,
-                order_items: dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [])
-            }))
+            ordersForPrint = list
+                .map((o) => {
+                    const rawItems = dedupeOrderItemsKeepNewest(byOrder.get(o.id) || o.order_items || [])
+                    const filteredItems = filterOrderItemsByCategory(
+                        rawItems,
+                        filterCategory,
+                        products,
+                        language,
+                        uncategorized
+                    )
+                    const categoryOnly = filterCategory !== 'all'
+                    return {
+                        ...o,
+                        order_items: enrichOrderItemsCategoriesForPrint(
+                            filteredItems,
+                            products,
+                            language,
+                            uncategorized
+                        ),
+                        total: categoryOnly ? null : o.total,
+                    }
+                })
+                .filter((o) => (o.order_items || []).length > 0)
         } catch (e) {
             console.error('handlePrintOrderList refetch:', e)
-            ordersForPrint = list.map((o) => ({
-                ...o,
-                order_items: dedupeOrderItemsKeepNewest(o.order_items || [])
-            }))
+            ordersForPrint = list
+                .map((o) => {
+                    const rawItems = dedupeOrderItemsKeepNewest(o.order_items || [])
+                    const filteredItems = filterOrderItemsByCategory(
+                        rawItems,
+                        filterCategory,
+                        products,
+                        language,
+                        uncategorized
+                    )
+                    return {
+                        ...o,
+                        order_items: enrichOrderItemsCategoriesForPrint(
+                            filteredItems,
+                            products,
+                            language,
+                            uncategorized
+                        ),
+                        total: filterCategory !== 'all' ? null : o.total,
+                    }
+                })
+                .filter((o) => (o.order_items || []).length > 0)
         }
+        if (!ordersForPrint.length) {
+            await showAlert(t('orders.printCategoryEmpty'), { variant: 'info' })
+            return
+        }
+        const catBanner =
+            filterCategory !== 'all' ? ` · ${t('orders.printCategoryOnly')}: ${filterCategory}` : ''
         const html = buildPrintDocumentHtml({
             documentTitle: showPrices ? t('orders.listPrintTitleWithPrices') : t('orders.listPrintTitleNoPrices'),
-            listTitle: `${t('orders.listPrintCount')}: ${list.length}`,
+            listTitle: `${t('orders.listPrintCount')}: ${ordersForPrint.length}${catBanner}`,
             orders: ordersForPrint,
             showPrices,
             labelColorFn
@@ -2072,6 +2226,18 @@ export default function Buyurtmalar() {
             orderFormTableRows.find((r) => r.type === 'line')?.line?.id,
         [orderFormTableRows]
     )
+
+    const categoryFilterOptions = useMemo(() => {
+        const byKey = new Map()
+        const uncategorized = t('orders.categoryUncategorized')
+        for (const p of products || []) {
+            const lab = categoryLabelFromProduct(p, language) || uncategorized
+            const key = normalizeModelKey(lab)
+            if (!key) continue
+            if (!byKey.has(key)) byKey.set(key, lab)
+        }
+        return Array.from(byKey.values()).sort((a, b) => a.localeCompare(b, 'uz'))
+    }, [products, language, t])
 
     const filteredOrders = orders.filter((b) => {
         const customerName = b.customer_name || b.customers?.name || t('common.unknown') || 'Noma\'lum'
@@ -2097,7 +2263,14 @@ export default function Buyurtmalar() {
             (filterStatus === 'completed' && (st === 'completed' || st === 'Tugallandi' || st === 'Tugallangan')) ||
             (filterStatus === 'cancelled' &&
                 (st === 'cancelled' || st === 'Bekor qilingan' || st === 'Bekor qilindi'))
-        return matchesSearch && matchesStatus
+        const matchesCategory = orderHasCategory(
+            b,
+            filterCategory,
+            products,
+            language,
+            t('orders.categoryUncategorized')
+        )
+        return matchesSearch && matchesStatus && matchesCategory
     })
 
     const totalSumma = filteredOrders.reduce((sum, b) => sum + (b.total || 0), 0)
@@ -2119,7 +2292,7 @@ export default function Buyurtmalar() {
 
 
     return (
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="w-full min-w-0 max-w-[1600px] mx-auto">
             <Header title={t('common.orders')} toggleSidebar={toggleSidebar} />
 
             <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950 shadow-sm">
@@ -2195,8 +2368,8 @@ export default function Buyurtmalar() {
                 </div>
             ) : null}
 
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                <div className="relative w-full md:w-96">
+            <div className="flex flex-col xl:flex-row justify-between items-stretch xl:items-center gap-4 mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                <div className="relative w-full xl:max-w-md xl:flex-1 min-w-0">
                     <Search className="absolute left-4 top-3.5 text-gray-400" size={20} />
                     <input
                         type="text"
@@ -2207,7 +2380,7 @@ export default function Buyurtmalar() {
                     />
                 </div>
 
-                    <div className="flex flex-wrap gap-3 w-full md:w-auto justify-end">
+                    <div className="flex flex-wrap gap-3 w-full xl:w-auto justify-start xl:justify-end min-w-0">
                     <button
                         type="button"
                         onClick={repeatLastOrder}
@@ -2226,18 +2399,35 @@ export default function Buyurtmalar() {
                         <Download size={18} />
                         <span className="hidden sm:inline">CSV</span>
                     </button>
-                    <div className="flex items-center gap-2 bg-gray-50 px-4 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 transition-all">
-                        <Filter size={20} className="text-gray-500" />
+                    <div className="flex items-center gap-2 bg-gray-50 px-4 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 transition-all min-w-0">
+                        <Filter size={20} className="text-gray-500 shrink-0" />
                         <select
                             value={filterStatus}
                             onChange={(e) => setFilterStatus(e.target.value)}
-                            className="bg-transparent py-3 outline-none text-gray-700 font-medium cursor-pointer"
+                            className="bg-transparent py-3 outline-none text-gray-700 font-medium cursor-pointer max-w-[160px]"
+                            title={t('orders.filterByStatus')}
                         >
                             <option value="all">{t('orders.allStatuses')}</option>
                             <option value="new">{t('orders.statusNew')}</option>
                             <option value="pending">{t('orders.statusProcessing')}</option>
                             <option value="completed">{t('orders.statusCompleted')}</option>
                             <option value="cancelled">{t('orders.statusCancelled')}</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2 bg-gray-50 px-4 rounded-xl border border-transparent focus-within:bg-white focus-within:border-blue-500 transition-all min-w-0">
+                        <Filter size={20} className="text-emerald-600 shrink-0" />
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            className="bg-transparent py-3 outline-none text-gray-700 font-medium cursor-pointer max-w-[180px]"
+                            title={t('orders.filterByCategory')}
+                        >
+                            <option value="all">{t('orders.allCategories')}</option>
+                            {categoryFilterOptions.map((cat) => (
+                                <option key={cat} value={cat}>
+                                    {cat}
+                                </option>
+                            ))}
                         </select>
                     </div>
 
@@ -2265,8 +2455,13 @@ export default function Buyurtmalar() {
                                 <span className="hidden sm:inline">{t('orders.listPrintShortNoPrices')}</span>
                             </button>
                         </div>
-                        <p className="text-[11px] text-gray-500 max-w-[280px] text-center sm:text-right leading-snug">
+                        <p className="text-[11px] text-gray-500 max-w-[320px] text-center sm:text-right leading-snug">
                             {t('orders.listPrintHint')}
+                            {filterCategory !== 'all' ? (
+                                <span className="block mt-1 font-semibold text-emerald-700">
+                                    {t('orders.printCategoryOnly')}: {filterCategory}
+                                </span>
+                            ) : null}
                         </p>
                     </div>
 
@@ -2790,31 +2985,33 @@ export default function Buyurtmalar() {
                 </div>
             )}
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden w-full min-w-0 mb-8">
                 {filteredOrders.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                         <ShoppingCart size={48} className="mb-4 opacity-20" />
                         <p className="font-medium text-lg">{t('orders.noOrders')}</p>
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
+                    <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain">
+                        <table className="w-full min-w-[1080px] text-left border-collapse">
                             <thead>
                                 <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                    <th className="px-6 py-4 rounded-tl-2xl">{t('orders.idDate')}</th>
-                                    <th className="px-6 py-4">{t('orders.customer')}</th>
-                                    <th className="px-6 py-4">{t('orders.products')}</th>
-                                    <th className="px-6 py-4">{t('orders.total')}</th>
-                                    <th className="px-6 py-4">{t('orders.payment')}</th>
-                                    <th className="px-6 py-4">{t('orders.status')}</th>
-                                    <th className="px-6 py-4">{t('orders.source')}</th>
-                                    <th className="px-6 py-4 rounded-tr-2xl text-right">{t('customers.actions')}</th>
+                                    <th className="px-4 lg:px-6 py-4 rounded-tl-2xl whitespace-nowrap">{t('orders.idDate')}</th>
+                                    <th className="px-4 lg:px-6 py-4 whitespace-nowrap">{t('orders.customer')}</th>
+                                    <th className="px-4 lg:px-6 py-4 min-w-[220px]">{t('orders.products')}</th>
+                                    <th className="px-4 lg:px-6 py-4 whitespace-nowrap">{t('orders.total')}</th>
+                                    <th className="px-4 lg:px-6 py-4 whitespace-nowrap">{t('orders.payment')}</th>
+                                    <th className="px-4 lg:px-6 py-4 whitespace-nowrap">{t('orders.status')}</th>
+                                    <th className="px-4 lg:px-6 py-4 whitespace-nowrap">{t('orders.source')}</th>
+                                    <th className="px-4 lg:px-6 py-4 rounded-tr-2xl text-right whitespace-nowrap sticky right-0 bg-gray-50 z-20 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]">
+                                        {t('customers.actions')}
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {filteredOrders.map((item) => (
-                                    <tr key={item.id} className="hover:bg-blue-50/30 transition-colors">
-                                        <td className="px-6 py-4">
+                                    <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
+                                        <td className="px-4 lg:px-6 py-4 align-top">
                                             {item.order_number ? (
                                                 <div className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded inline-block mb-1">
                                                     № {item.order_number}
@@ -2823,21 +3020,33 @@ export default function Buyurtmalar() {
                                             <div className="font-mono text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded inline-block mb-1">#{String(item.id).slice(0, 8)}</div>
                                             <div className="text-sm font-medium text-gray-700">{new Date(item.created_at).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}</div>
                                         </td>
-                                        <td className="px-6 py-4 font-medium text-gray-900">
+                                        <td className="px-4 lg:px-6 py-4 font-medium text-gray-900 align-top">
                                             <div className="font-bold">{item.customer_name || item.customers?.name || 'Noma\'lum'}</div>
                                             <div className="text-xs text-gray-500 font-mono mt-0.5">{item.customer_phone || item.customers?.phone}</div>
                                             {item.note && <div className="text-xs text-amber-600 italic mt-1 bg-amber-50 px-2 py-0.5 rounded inline-block">{item.note}</div>}
                                         </td>
-                                        <td className="px-6 py-4 text-gray-600 max-w-[300px]">
+                                        <td className="px-4 lg:px-6 py-4 text-gray-600 max-w-[320px] align-top">
                                             {item.order_items && item.order_items.length > 0 ? (
                                                 (() => {
                                                     const ois = normalizeOrderItemsForList(
                                                         dedupeOrderItemsKeepNewest(item.order_items || [])
                                                     )
+                                                    const visibleItems =
+                                                        filterCategory === 'all'
+                                                            ? ois
+                                                            : filterOrderItemsByCategory(
+                                                                  ois,
+                                                                  filterCategory,
+                                                                  products,
+                                                                  language,
+                                                                  t('orders.categoryUncategorized')
+                                                              )
                                                     const expanded = !!orderListExpandedById[item.id]
-                                                    const hasMore = ois.length > ORDER_LIST_ITEMS_PREVIEW
-                                                    const visible = expanded ? ois : ois.slice(0, ORDER_LIST_ITEMS_PREVIEW)
-                                                    const hiddenCount = ois.length - ORDER_LIST_ITEMS_PREVIEW
+                                                    const hasMore = visibleItems.length > ORDER_LIST_ITEMS_PREVIEW
+                                                    const visible = expanded
+                                                        ? visibleItems
+                                                        : visibleItems.slice(0, ORDER_LIST_ITEMS_PREVIEW)
+                                                    const hiddenCount = visibleItems.length - ORDER_LIST_ITEMS_PREVIEW
                                                     return (
                                                         <div className="space-y-1">
                                                             {visible.map((oi, idx) => (
@@ -2847,7 +3056,7 @@ export default function Buyurtmalar() {
                                                                 >
                                                                     <div className="flex items-start gap-2.5 min-w-0">
                                                                         {oi.image_url ? (
-                                                                            <div className="shrink-0 w-20 h-20 min-w-[5rem] max-w-[5rem] min-h-[5rem] max-h-[5rem] rounded-lg bg-white flex items-center justify-center overflow-hidden ring-1 ring-gray-200/60">
+                                                                            <div className="shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg bg-white flex items-center justify-center overflow-hidden ring-1 ring-gray-200/60">
                                                                                 <img
                                                                                     src={oi.image_url}
                                                                                     alt=""
@@ -2855,10 +3064,10 @@ export default function Buyurtmalar() {
                                                                                 />
                                                                             </div>
                                                                         ) : (
-                                                                            <div className="shrink-0 w-20 h-20 min-w-[5rem] max-w-[5rem] min-h-[5rem] max-h-[5rem] rounded-lg border border-dashed border-gray-200/90 bg-white" />
+                                                                            <div className="shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg border border-dashed border-gray-200/90 bg-white" />
                                                                         )}
                                                                         <div className="min-w-0 flex-1">
-                                                                            <div className="font-medium text-gray-800 line-clamp-1">
+                                                                            <div className="font-medium text-gray-800 line-clamp-2">
                                                                                 {oi.product_name || oi.products?.name}
                                                                             </div>
                                                                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
@@ -2922,10 +3131,10 @@ export default function Buyurtmalar() {
                                                 <span className="text-gray-400 italic text-xs">Bo'sh</span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 font-bold text-gray-900 font-mono">
+                                        <td className="px-4 lg:px-6 py-4 font-bold text-gray-900 font-mono align-top whitespace-nowrap">
                                             ${formatUsd(item.total)}
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 lg:px-6 py-4 align-top">
                                             <div className="flex flex-col gap-1 text-xs">
                                                 <span className="font-medium text-gray-600 bg-gray-100 px-2 py-1 rounded inline-block text-center">
                                                     {item.payment_method_detail || t('orders.cash')}
@@ -2943,7 +3152,7 @@ export default function Buyurtmalar() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 lg:px-6 py-4 align-top">
                                             <select
                                                 value={normalizeStatusForSelect(item.status)}
                                                 onChange={(e) => handleStatusChange(item.id, e.target.value)}
@@ -2959,7 +3168,7 @@ export default function Buyurtmalar() {
                                                 <option value="cancelled">{t('orders.statusCancelled')}</option>
                                             </select>
                                         </td>
-                                        <td className="px-6 py-4">
+                                        <td className="px-4 lg:px-6 py-4 align-top">
                                             <span
                                                 className={`text-[10px] uppercase font-bold px-2 py-1 rounded-lg ${
                                                     item.source === 'website'
@@ -2976,12 +3185,12 @@ export default function Buyurtmalar() {
                                                       : t('orders.sourceStoreShort')}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-1 flex-wrap justify-end">
+                                        <td className="px-3 lg:px-4 py-4 text-right align-top sticky right-0 bg-white group-hover:bg-blue-50/30 z-10 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]">
+                                            <div className="flex items-center justify-end gap-1 flex-nowrap">
                                                 <button
                                                     type="button"
                                                     onClick={() => handlePrintOrder(item, true)}
-                                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors shrink-0"
                                                     title={t('orders.printWithPrices')}
                                                 >
                                                     <Receipt size={18} />
@@ -2989,7 +3198,7 @@ export default function Buyurtmalar() {
                                                 <button
                                                     type="button"
                                                     onClick={() => handlePrintOrder(item, false)}
-                                                    className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors"
+                                                    className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors shrink-0"
                                                     title={t('orders.printNoPrices')}
                                                 >
                                                     <List size={18} />
@@ -2997,15 +3206,17 @@ export default function Buyurtmalar() {
                                                 <button
                                                     type="button"
                                                     onClick={() => handleEdit(item)}
-                                                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-md shadow-blue-600/25 transition-colors hover:bg-blue-700"
+                                                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-bold text-white shadow-md shadow-blue-600/25 transition-colors hover:bg-blue-700 shrink-0"
                                                     title={t('orders.editOrder')}
                                                 >
                                                     <Edit size={16} className="shrink-0" />
-                                                    <span>{t('common.edit')}</span>
+                                                    <span className="hidden xl:inline">{t('common.edit')}</span>
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={() => handleDelete(item.id)}
-                                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                                                    title={t('common.delete')}
                                                 >
                                                     <Trash2 size={18} />
                                                 </button>

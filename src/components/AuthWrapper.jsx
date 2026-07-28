@@ -129,8 +129,9 @@ export default function AuthWrapper({ children }) {
                 />
             )}
 
-            <main className={`flex-1 transition-all duration-300 lg:ml-64 md:ml-0 overflow-x-hidden`}>
-                <div className="p-4 md:p-6 lg:p-8">
+            {/* Sidebar w-72 — margin mos; min-w-0 jadval kesilmasin */}
+            <main className="flex-1 min-w-0 transition-all duration-300 lg:ml-72 md:ml-0">
+                <div className="w-full min-w-0 p-3 sm:p-4 md:p-6 lg:p-8">
                     {children}
                 </div>
             </main>
