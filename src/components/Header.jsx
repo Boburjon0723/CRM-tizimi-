@@ -152,12 +152,25 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                                 onClick={() => {
                                                     markAsRead(notification.id)
                                                     setShowNotifications(false)
-                                                    window.location.href = '/buyurtmalar'
+                                                    window.location.href = notification.href || '/buyurtmalar'
                                                 }}
                                             >
                                                 <div className="flex items-start gap-3">
-                                                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                                                        <ShoppingBag size={20} className="text-blue-600" />
+                                                    <div
+                                                        className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                                                            notification.type === 'stale_order'
+                                                                ? 'bg-amber-100'
+                                                                : 'bg-blue-100'
+                                                        }`}
+                                                    >
+                                                        <ShoppingBag
+                                                            size={20}
+                                                            className={
+                                                                notification.type === 'stale_order'
+                                                                    ? 'text-amber-700'
+                                                                    : 'text-blue-600'
+                                                            }
+                                                        />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-start justify-between gap-2">
@@ -174,7 +187,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
                                                                 <X size={14} />
                                                             </button>
                                                         </div>
-                                                        <p className="text-sm text-gray-600 mt-1">
+                                                        <p className="text-sm text-gray-600 mt-1 line-clamp-3">
                                                             {notification.message}
                                                         </p>
                                                         <p className="text-xs text-gray-400 mt-1">

@@ -28,6 +28,7 @@ import {
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
+import { STALE_ORDER_DAYS, daysSinceCreated, isStaleOpenOrder } from '@/lib/staleOrders'
 
 function escapeHtml(s) {
     if (s == null) return ''
@@ -2106,6 +2107,7 @@ export default function Buyurtmalar() {
         Jarayonda: orders.filter(b => b.status === 'Jarayonda' || b.status === 'pending').length,
         Tugallandi: orders.filter(b => b.status === 'Tugallandi' || b.status === 'completed').length
     }
+    const staleOpenCount = orders.filter((b) => isStaleOpenOrder(b)).length
 
     if (loading) {
         return (
@@ -2125,6 +2127,22 @@ export default function Buyurtmalar() {
             <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm text-blue-950 shadow-sm">
                 <p className="font-semibold text-blue-900">{t('orders.tableEditHint')}</p>
             </div>
+
+            {staleOpenCount > 0 ? (
+                <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-sm">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="shrink-0 text-amber-600 mt-0.5" size={20} />
+                        <div>
+                            <p className="font-bold text-amber-900">
+                                {t('orders.staleOrdersBannerTitle')
+                                    .replace('{n}', String(staleOpenCount))
+                                    .replace('{days}', String(STALE_ORDER_DAYS))}
+                            </p>
+                            <p className="text-amber-800/90 mt-0.5">{t('orders.staleOrdersBannerHint')}</p>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
@@ -2822,6 +2840,12 @@ export default function Buyurtmalar() {
                                             ) : null}
                                             <div className="font-mono text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded inline-block mb-1">#{String(item.id).slice(0, 8)}</div>
                                             <div className="text-sm font-medium text-gray-700">{new Date(item.created_at).toLocaleDateString(language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US')}</div>
+                                            {isStaleOpenOrder(item) ? (
+                                                <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded">
+                                                    <AlertTriangle size={11} className="shrink-0" />
+                                                    {daysSinceCreated(item.created_at)}+ {t('orders.staleDaysShort')}
+                                                </div>
+                                            ) : null}
                                         </td>
                                         <td className="px-6 py-4 font-medium text-gray-900">
                                             <div className="font-bold">{item.customer_name || item.customers?.name || 'Noma\'lum'}</div>

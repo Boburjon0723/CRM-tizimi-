@@ -197,6 +197,10 @@ export const translations = {
             listPrintSection: 'Ro\'yxatni chop etish',
             listPrintHint:
                 'Yashil — narx va jami; kulrang — faqat mahsulot, kod, rang va son (narxsiz). Filtr va qidiruv natijasi chop etiladi.',
+            staleOrdersBannerTitle: '{n} ta buyurtma {days}+ kun Yangi/Jarayonda',
+            staleOrdersBannerHint:
+                'Bu buyurtmalar avtomatik ogohlantiriladi (CRM bildirishnoma + Telegram bot). Groq AI matn yozadi.',
+            staleDaysShort: 'kun',
             productCode: 'Kod',
             printPopupBlocked: 'Brauzer yangi oynani bloklagan. Popup ruxsat bering.',
             printWithPrices: 'Chop etish (narx bilan)',
@@ -689,6 +693,10 @@ export const translations = {
             listPrintSection: 'Печать списка',
             listPrintHint:
                 'Зелёная кнопка — с ценами и суммой; серая — только товар, код, цвет и количество. Учитываются фильтр и поиск.',
+            staleOrdersBannerTitle: '{n} заказов в статусе Новый/В процессе {days}+ дней',
+            staleOrdersBannerHint:
+                'Эти заказы получают авто-оповещение (CRM + Telegram). Текст пишет Groq AI.',
+            staleDaysShort: 'дн.',
             productCode: 'Код',
             printPopupBlocked: 'Браузер заблокировал всплывающее окно. Разрешите pop-up.',
             printWithPrices: 'Печать (с ценами)',
@@ -1181,6 +1189,10 @@ export const translations = {
             listPrintSection: 'Print list',
             listPrintHint:
                 'Green: prices and line totals. Gray: items only (no prices). Uses current filter and search.',
+            staleOrdersBannerTitle: '{n} orders New/Processing for {days}+ days',
+            staleOrdersBannerHint:
+                'These orders trigger auto-alerts (CRM + Telegram bot). Groq AI writes the message.',
+            staleDaysShort: 'days',
             productCode: 'Code',
             printPopupBlocked: 'Pop-up blocked. Allow pop-ups for this site.',
             printWithPrices: 'Print (with prices)',
