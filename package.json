@@ -17,6 +17,8 @@
     "icons:apple": "node scripts/generate-apple-touch.cjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:unit": "node --test tests/unit/*.test.cjs",
+    "test:partial-ship-db": "node scripts/check-partial-ship-db.js",
     "electron:dev": "cross-env NODE_ENV=development electron .",
     "electron:build": "next build && electron-builder"
   },

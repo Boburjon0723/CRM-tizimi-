@@ -140,11 +140,32 @@ export async function fetchOrdersPageWithFallback(options = {}) {
 
     async function trySelect(filters) {
         for (const sel of ORDERS_SELECT_FALLBACKS) {
-            let q = supabase.from('orders').select(sel).order('created_at', { ascending: false })
+            // Avvalo tugallanish ketma-ketligi (completed_at); ustun yo‘q bo‘lsa created_at
+            let q = supabase
+                .from('orders')
+                .select(sel)
+                .order('completed_at', { ascending: false, nullsFirst: true })
+                .order('created_at', { ascending: true })
             if (filters.excludeDeleted) q = q.is('deleted_at', null)
             if (filters.excludeArchived) q = q.is('archived_at', null)
-            const res = await q
-            if (!res.error) return res
+            let res = await q
+            if (
+                res.error &&
+                /completed_at|column|does not exist|42703|schema cache|nullsfirst|nullsFirst/i.test(
+                    String(res.error.message || '')
+                )
+            ) {
+                q = supabase.from('orders').select(sel).order('created_at', { ascending: false })
+                if (filters.excludeDeleted) q = q.is('deleted_at', null)
+                if (filters.excludeArchived) q = q.is('archived_at', null)
+                res = await q
+            }
+            if (!res.error) {
+                return {
+                    ...res,
+                    data: sortOrdersByCompletionSequence(res.data || []),
+                }
+            }
             // archived_at yo‘q bo‘lsa — faqat deleted_at filtri bilan qayta urinib ko‘ramiz
             if (
                 filters.excludeArchived &&
@@ -153,7 +174,12 @@ export async function fetchOrdersPageWithFallback(options = {}) {
                 let q2 = supabase.from('orders').select(sel).order('created_at', { ascending: false })
                 if (filters.excludeDeleted) q2 = q2.is('deleted_at', null)
                 const res2 = await q2
-                if (!res2.error) return res2
+                if (!res2.error) {
+                    return {
+                        ...res2,
+                        data: sortOrdersByCompletionSequence(res2.data || []),
+                    }
+                }
                 if (filters.excludeDeleted && isDeletedAtMissingError(res2.error)) return null
                 if (!isSchemaOrEmbedError(res2.error)) return res2
             }
@@ -194,8 +220,23 @@ export async function fetchArchivedOrdersPageWithFallback() {
             .select(sel)
             .not('archived_at', 'is', null)
             .is('deleted_at', null)
+            .order('completed_at', { ascending: false, nullsFirst: false })
             .order('archived_at', { ascending: false })
         let res = await q
+        if (
+            res.error &&
+            /completed_at|column|does not exist|42703|schema cache|nullsfirst|nullsFirst/i.test(
+                String(res.error.message || '')
+            )
+        ) {
+            q = supabase
+                .from('orders')
+                .select(sel)
+                .not('archived_at', 'is', null)
+                .is('deleted_at', null)
+                .order('archived_at', { ascending: false })
+            res = await q
+        }
         if (res.error && isDeletedAtMissingError(res.error)) {
             res = await supabase
                 .from('orders')
@@ -203,7 +244,12 @@ export async function fetchArchivedOrdersPageWithFallback() {
                 .not('archived_at', 'is', null)
                 .order('archived_at', { ascending: false })
         }
-        if (!res.error) return res
+        if (!res.error) {
+            return {
+                ...res,
+                data: sortOrdersByCompletionSequence(res.data || []),
+            }
+        }
         if (isArchivedAtMissingError(res.error)) return { data: [], error: null }
         if (!isSchemaOrEmbedError(res.error)) return res
         console.warn('archived orders select fallback:', res.error?.message)
@@ -1669,6 +1715,41 @@ export function normalizeStatusForSelect(status) {
     if (s === 'completed' || s === 'tugallandi' || s === 'tugallangan') return 'completed'
     if (s === 'cancelled' || s === 'bekor qilingan' || s === 'bekor qilindi') return 'cancelled'
     return 'new'
+}
+
+/**
+ * Buyurtmalar tartibi: tugallanish ketma-ketligi (completed_at), buyurtma sanasi (created_at) emas.
+ * - Hali tugallanmaganlar yuqorida (navbat)
+ * - Tugallanganlar: completed_at bo‘yicha (eng so‘nggi tugallanganlar oldinda)
+ */
+export function sortOrdersByCompletionSequence(list) {
+    const arr = Array.isArray(list) ? [...list] : []
+    const ts = (v) => {
+        if (!v) return null
+        const t = new Date(v).getTime()
+        return Number.isNaN(t) ? null : t
+    }
+    return arr.sort((a, b) => {
+        const aCompleted = normalizeStatusForSelect(a?.status) === 'completed'
+        const bCompleted = normalizeStatusForSelect(b?.status) === 'completed'
+        if (aCompleted !== bCompleted) return aCompleted ? 1 : -1
+
+        if (aCompleted && bCompleted) {
+            const ta = ts(a.completed_at) ?? ts(a.updated_at) ?? 0
+            const tb = ts(b.completed_at) ?? ts(b.updated_at) ?? 0
+            if (tb !== ta) return tb - ta
+        } else {
+            // Tugallanmagan: navbat — eng eski ochiq buyurtma oldinda (ketma-ketlik)
+            const ta = ts(a.created_at) ?? ts(a.updated_at) ?? 0
+            const tb = ts(b.created_at) ?? ts(b.updated_at) ?? 0
+            if (ta !== tb) return ta - tb
+        }
+
+        const an = String(a?.order_number || '')
+        const bn = String(b?.order_number || '')
+        if (an && bn && an !== bn) return an.localeCompare(bn, undefined, { numeric: true })
+        return String(a?.id || '').localeCompare(String(b?.id || ''))
+    })
 }
 
 /** Status o‘zgarishida completed_at (chiqib ketgan sana) ni to‘ldirish / tozalash */

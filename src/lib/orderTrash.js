@@ -23,9 +23,11 @@ function normalizeCompletedStatus(status) {
     )
 }
 
-/** Chiqib ketgan / tugallangan sana */
+/** Chiqib ketgan / tugallangan sana — arxiv muddati SHU sanadan hisoblanadi (created_at emas). */
 export function getCompletedOrderTimestamp(order) {
-    const raw = order?.completed_at || order?.updated_at || order?.created_at || ''
+    // Avvalo completed_at; yo‘q bo‘lsa legacy: updated_at (status o‘zgargan paytga yaqin).
+    // created_at — buyurtma tushgan sana — arxiv uchun ISHLATILMAYDI.
+    const raw = order?.completed_at || order?.updated_at || ''
     if (!raw) return null
     const t = new Date(raw).getTime()
     return Number.isNaN(t) ? null : t
@@ -34,6 +36,8 @@ export function getCompletedOrderTimestamp(order) {
 export function shouldAutoArchiveCompletedOrder(order, nowMs = Date.now()) {
     if (!order || order.deleted_at || order.archived_at) return false
     if (!normalizeCompletedStatus(order.status)) return false
+    // completed_at yo‘q + updated_at ham yo‘q — arxivlamaymiz (created_at ga tayanmaymiz)
+    if (!order.completed_at && !order.updated_at) return false
     const t = getCompletedOrderTimestamp(order)
     if (t == null) return false
     const ageMs = nowMs - t
@@ -92,8 +96,8 @@ export async function migrateCompletedFromTrashToArchive(supabaseClient) {
 
     const toMove = (data || []).filter((o) => {
         if (!normalizeCompletedStatus(o.status)) return false
-        // updated_at o‘chirishda yangilangan bo‘lishi mumkin — completed_at / created_at ishlatiladi
-        const raw = o.completed_at || o.created_at
+        // Faqat tugallangan sana (completed_at); yo‘q bo‘lsa updated_at. created_at emas.
+        const raw = o.completed_at || o.updated_at
         if (!raw) return false
         const t = new Date(raw).getTime()
         if (Number.isNaN(t)) return false

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { deductStockForCompletedOrder } from '@/services/inventoryService'
+import { deductStockForCompletedOrder, reverseStockForOrder } from '@/services/inventoryService'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
 import { parseOrderItemQty, updateOrderStatusWithCompletedAt } from '../utils'
@@ -24,12 +24,14 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
         let cancelled = false
         setLoading(true)
         setRows([])
+        const orderSnapshot = order
+        const productsSnapshot = products
         ;(async () => {
             try {
-                const shippedMap = await loadOrderShippedMap(order.id)
+                const shippedMap = await loadOrderShippedMap(orderSnapshot.id)
                 if (cancelled) return
                 setRows(
-                    buildPartialShipRows(order, products, shippedMap).map((r) => ({
+                    buildPartialShipRows(orderSnapshot, productsSnapshot, shippedMap).map((r) => ({
                         ...r,
                         selected: false,
                         ship_qty: 0,
@@ -51,7 +53,9 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
         return () => {
             cancelled = true
         }
-    }, [order?.id, order, products, onClose, showAlert, t])
+        // Faqat order.id — parent re-render confirm paytida tanlovni nolga tashlamasligi uchun
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [order?.id])
 
     const summary = useMemo(() => {
         let ordered = 0
@@ -101,9 +105,79 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
         )
     }
 
+    async function reloadRows() {
+        const shippedMap = await loadOrderShippedMap(order.id)
+        setRows(
+            buildPartialShipRows(order, products, shippedMap).map((r) => ({
+                ...r,
+                selected: false,
+                ship_qty: 0,
+            }))
+        )
+    }
+
+    async function clearErroneousShipProgress() {
+        if (!order?.id || summary.shipped <= 0) return
+        const ok = await showConfirm(
+            'Bu buyurtmadagi «chiqqan» yozuvlar tozalanadi va ombor qoldig‘i qaytariladi. Davom etasizmi?',
+            {
+                title: 'Noto‘g‘ri chiqimni tozalash',
+                variant: 'warning',
+            }
+        )
+        if (!ok) return
+        setSaving(true)
+        try {
+            const shippedMap = await loadOrderShippedMap(order.id)
+            const toReverse = []
+            for (const [key, qty] of shippedMap.entries()) {
+                const n = Number(qty) || 0
+                if (n <= 0) continue
+                const sep = key.indexOf('::')
+                const product_id = sep >= 0 ? key.slice(0, sep) : key
+                const colorRaw = sep >= 0 ? key.slice(sep + 2) : '—'
+                toReverse.push({
+                    product_id,
+                    color: !colorRaw || colorRaw === '—' ? null : colorRaw,
+                    quantity: n,
+                })
+            }
+            if (!toReverse.length) {
+                await showAlert('Tozalash uchun chiqim topilmadi', { variant: 'info' })
+                return
+            }
+            const res = await reverseStockForOrder(
+                order.id,
+                order.order_number || order.id,
+                toReverse
+            )
+            if (!res?.success) {
+                const errText = (res?.errors || [])
+                    .map((e) => `${e.product_id}: ${e.error}`)
+                    .join('\n')
+                await showAlert(errText || t('common.saveError'), { variant: 'error' })
+                return
+            }
+            showToast('Chiqim yozuvlari tozalandi', { type: 'success' })
+            await reloadRows()
+            await onSuccess?.({
+                orderId: order.id,
+                status: order.status,
+                willComplete: false,
+                orderSnapshot: order,
+            })
+        } catch (error) {
+            console.error('clearErroneousShipProgress:', error)
+            await showAlert(error?.message || String(error), { variant: 'error' })
+        } finally {
+            setSaving(false)
+        }
+    }
+
     async function submitPartialShipment() {
         if (!order) return
         const toShip = rows
+            .filter((r) => r.selected && r.remaining_qty > 0)
             .map((r) => ({
                 product_id: r.product_id,
                 color: r.color || null,
@@ -115,6 +189,8 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
             await showAlert(t('orders.partialNothingToShip'), { variant: 'warning' })
             return
         }
+        const shipNowTotal = toShip.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
+        const remainingAfter = Math.max(0, summary.remaining - shipNowTotal)
         const ok = await showConfirm(
             t('orders.partialConfirmSubmit') ||
                 `Tanlangan ${toShip.length} qatorni tugallaysizmi?`,
@@ -140,7 +216,7 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                 return
             }
 
-            const willComplete = summary.remainingAfter <= 0
+            const willComplete = remainingAfter <= 0
             const newStatus = willComplete ? 'completed' : 'pending'
             const { error: stErr } = await updateOrderStatusWithCompletedAt(
                 supabase,
@@ -156,8 +232,14 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                     : t('orders.partialSavedOk'),
                 { type: 'success' }
             )
+            const payload = {
+                orderId: order.id,
+                status: newStatus,
+                willComplete,
+                orderSnapshot: order,
+            }
             onClose()
-            await onSuccess?.({ status: newStatus, willComplete })
+            await onSuccess?.(payload)
         } catch (error) {
             console.error('submitPartialShipment:', error)
             await showAlert(error?.message || String(error), {
@@ -262,7 +344,18 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                                     </span>
                                 )}
                             </label>
-                            <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2">
+                                {summary.shipped > 0 ? (
+                                    <button
+                                        type="button"
+                                        disabled={saving}
+                                        onClick={() => void clearErroneousShipProgress()}
+                                        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                                        title="Agar chiqim qilmagan bo‘lsangiz — noto‘g‘ri yozuvlarni tozalaydi"
+                                    >
+                                        Noto‘g‘ri chiqimni tozalash
+                                    </button>
+                                ) : null}
                                 <button
                                     type="button"
                                     onClick={() => toggleSelectAll(true)}

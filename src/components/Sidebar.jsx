@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
-import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon, Megaphone } from 'lucide-react'
+import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon, Megaphone, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { EMPLOYEES_SECTION_UNLOCK_KEY } from '@/lib/employeesSectionPin'
 import { useLayout } from '@/context/LayoutContext'
@@ -52,6 +52,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
     { href: '/mahsulotlar', icon: Package, label: t('common.products') },
     { href: '/ombor', icon: Warehouse, label: t('common.warehouse') },
     { href: '/buyurtmalar', icon: ShoppingCart, label: t('common.orders') },
+    { href: '/ai', icon: Sparkles, label: t('common.ai') },
     { href: '/mijozlar', icon: UserCircle, label: t('common.customers') },
     { href: '/xabarlar', icon: MessageSquare, label: t('common.messages') },
     { href: '/xodimlar', icon: Users, label: t('common.employees') },

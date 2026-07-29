@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { groqGenerateText, hasGroqConfig } from '@/lib/groq'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,7 +17,6 @@ function getOpenRouterKey() {
     return (process.env.OPENROUTER_API_KEY || '').trim()
 }
 
-/** Eski 1.5-flash nomi ba’zan 404; 2.0-flash va -latest sinovdan o‘tadi */
 function pickGeminiModel() {
     const m = (process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim()
     return m || 'gemini-2.0-flash'
@@ -34,7 +34,6 @@ function isQuotaError(err) {
     return /429|quota|Resource exhausted|Too Many Requests|free_tier/i.test(msg)
 }
 
-/** Model nomi noto‘g‘ri yoki API versiyasi — keyingi modelni sinash */
 function isRetryableGeminiError(err) {
     const msg = String(err?.message || err || '')
     if (isQuotaError(err)) return true
@@ -112,14 +111,16 @@ function localeInstruction(locale) {
 }
 
 export async function POST(request) {
+    const hasGroq = hasGroqConfig()
     const orKey = getOpenRouterKey()
     const geminiKey = getGeminiKey()
-    if (!orKey && !geminiKey) {
+    if (!hasGroq && !orKey && !geminiKey) {
         return NextResponse.json(
             {
                 ok: false,
                 error: 'missing_key',
-                message: 'OPENROUTER_API_KEY yoki GEMINI_API_KEY sozlanmagan.',
+                message:
+                    'GROQ_API_KEY (tavsiya), OPENROUTER_API_KEY yoki GEMINI_API_KEY sozlanmagan.',
             },
             { status: 503 }
         )
@@ -161,10 +162,23 @@ ${localeInstruction(locale)}
 JSON ma’lumot:
 ${raw}`
 
+    if (hasGroq) {
+        const groq = await groqGenerateText(prompt, {
+            system:
+                'Siz Nuur Home CRM biznes tahlilchisisiz. Qisqa, aniq, amaliy hisobot yozing. Faqat hisobot matnini qaytaring.',
+            temperature: 0.35,
+            max_tokens: 2048,
+        })
+        if (groq.ok && groq.text) {
+            return NextResponse.json({ ok: true, text: groq.text, via: 'groq', model: groq.model })
+        }
+        console.warn('crm-ai groq insights failed:', groq.error)
+    }
+
     if (orKey) {
         try {
             const text = await generateWithOpenRouter(orKey, prompt)
-            return NextResponse.json({ ok: true, text })
+            return NextResponse.json({ ok: true, text, via: 'openrouter' })
         } catch (e) {
             const msg = e?.message || String(e)
             console.error('crm-ai openrouter:', msg)
@@ -175,13 +189,7 @@ ${raw}`
                     { status: 429 }
                 )
             }
-            /** OpenRouter: kredit yo‘q (402) yoki boshqa xato — zaxira: to‘g‘ridan-to‘g‘ri Gemini */
-            const canFallbackGemini =
-                geminiKey &&
-                (st === 402 ||
-                    st === 401 ||
-                    /Insufficient credits|402|payment required/i.test(msg))
-            if (canFallbackGemini) {
+            if (geminiKey) {
                 try {
                     const genAI = new GoogleGenerativeAI(geminiKey)
                     const trimmed = await generateReportTextGemini(genAI, prompt, pickGeminiModel())
@@ -206,20 +214,27 @@ ${raw}`
         }
     }
 
+    if (!geminiKey) {
+        return NextResponse.json(
+            {
+                ok: false,
+                error: 'all_providers_failed',
+                message: 'Groq/OpenRouter ishlamadi va GEMINI_API_KEY yo‘q.',
+            },
+            { status: 502 }
+        )
+    }
+
     try {
         const genAI = new GoogleGenerativeAI(geminiKey)
         const trimmed = await generateReportTextGemini(genAI, prompt, pickGeminiModel())
-        return NextResponse.json({ ok: true, text: trimmed })
+        return NextResponse.json({ ok: true, text: trimmed, via: 'gemini' })
     } catch (e) {
         const msg = e?.message || String(e)
         console.error('crm-ai gemini:', msg)
         if (isQuotaError(e)) {
             return NextResponse.json(
-                {
-                    ok: false,
-                    error: 'quota_exceeded',
-                    message: msg.slice(0, 400),
-                },
+                { ok: false, error: 'quota_exceeded', message: msg.slice(0, 400) },
                 { status: 429 }
             )
         }

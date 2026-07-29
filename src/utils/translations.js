@@ -6,6 +6,7 @@ export const translations = {
             products: 'Mahsulotlar',
             warehouse: 'Ombor',
             orders: 'Buyurtmalar',
+            ai: 'AI',
             customers: 'Mijozlar',
             messages: 'Xabarlar',
             employees: 'Xodimlar',
@@ -438,6 +439,9 @@ export const translations = {
             restoreOrderTitle: 'Korzinkadan asosiy ro‘yxatga qaytarish',
             unarchiveOrder: 'Asosiyga',
             unarchiveOrderTitle: 'Arxivdan asosiy ro‘yxatga chiqarish',
+            unarchiveToPendingHint:
+                'Buyurtma asosiy ro‘yxatga qaytarildi (Jarayonda) — qayta arxivlanmasligi uchun.',
+            statusUnarchivedOk: 'Status yangilandi — buyurtma asosiy ro‘yxatga qaytdi.',
             moveToTrashTitle: 'Korzinkaga ko‘chirish',
             permanentDeleteTitle: 'Butunlay o‘chirish',
             autoArchivedCompleted: '{n} ta eski tugallangan buyurtma (1 oy+) arxivga o‘tkazildi.',
@@ -1387,17 +1391,17 @@ export const translations = {
             loadPartialProducts: 'Mahsulotlar ro‘yxati yuklanmadi.',
             refreshData: 'Ma’lumotlarni yangilash',
             categoryFooterTotal: 'Jami (barcha kategoriyalar)',
-            aiPanelTitle: 'AI hisobot (OpenRouter / Gemini)',
+            aiPanelTitle: 'AI hisobot (Groq)',
             aiPanelHint:
-                'Yig‘ma raqamlar server orqali yuboriladi (OpenRouter yoki Google Gemini); kalit faqat .env da. Telefon raqamlar matnda takrorlanmaydi.',
+                'Yig‘ma raqamlar server orqali Groq ga yuboriladi (zaxira: OpenRouter / Gemini); kalit faqat .env da. Telefon raqamlar matnda takrorlanmaydi.',
             aiGenerate: 'Hisobot olish',
             aiLoading: 'AI yozmoqda…',
             aiError: 'AI javobini olishda xato. Model yoki tarmoqni tekshiring.',
             aiErrorKey:
-                'AI kalit sozlanmagan. OpenRouter (openrouter.ai) yoki Google AI Studio kalitini server .env ga qo‘shing (OPENROUTER_API_KEY yoki GEMINI_API_KEY).',
+                'AI kalit sozlanmagan. Groq (console.groq.com) yoki OpenRouter / Gemini kalitini server .env ga qo‘shing (GROQ_API_KEY, OPENROUTER_API_KEY yoki GEMINI_API_KEY).',
             aiNet: 'Tarmoq xatosi — qayta urinib ko‘ring.',
             aiQuotaError:
-                'Google Gemini bepul limiti tugagan yoki vaqtinchalik to‘ldi. Bir necha soatdan keyin qayta urinib ko‘ring yoki Google Cloud loyihangizda Gemini API uchun billing yoqing (https://ai.google.dev/pricing).',
+                'AI limiti tugagan yoki vaqtinchalik to‘ldi. Keyinroq urinib ko‘ring yoki Groq / Gemini billingni tekshiring.',
         },
         website: {
             title: 'Web Sayt Boshqaruvi',
@@ -1523,6 +1527,7 @@ export const translations = {
             products: 'Продукты',
             warehouse: 'Склад',
             orders: 'Заказы',
+            ai: 'AI',
             customers: 'Клиенты',
             messages: 'Сообщения',
             employees: 'Сотрудники',
@@ -1950,6 +1955,9 @@ export const translations = {
             restoreOrderTitle: 'Вернуть из корзины в основной список',
             unarchiveOrder: 'В основной',
             unarchiveOrderTitle: 'Вынести из архива в основной список',
+            unarchiveToPendingHint:
+                'Заказ возвращён в основной список (В процессе), чтобы снова не архивировался.',
+            statusUnarchivedOk: 'Статус обновлён — заказ вернулся в основной список.',
             moveToTrashTitle: 'В корзину',
             permanentDeleteTitle: 'Удалить навсегда',
             autoArchivedCompleted: '{n} старых завершённых заказов (1 мес.+) перенесены в архив.',
@@ -2884,17 +2892,17 @@ export const translations = {
             loadPartialProducts: 'Не загружен список товаров.',
             refreshData: 'Обновить данные',
             categoryFooterTotal: 'Итого (все категории)',
-            aiPanelTitle: 'AI-отчёт (OpenRouter / Gemini)',
+            aiPanelTitle: 'AI-отчёт (Groq)',
             aiPanelHint:
-                'Сводные цифры отправляются через сервер (OpenRouter или Google Gemini); ключ только в .env. Телефоны в тексте не повторяются.',
+                'Сводные цифры отправляются через сервер в Groq (резерв: OpenRouter / Gemini); ключ только в .env. Телефоны в тексте не повторяются.',
             aiGenerate: 'Получить отчёт',
             aiLoading: 'AI пишет…',
             aiError: 'Не удалось получить ответ AI. Проверьте модель или сеть.',
             aiErrorKey:
-                'Не задан ключ AI. Добавьте OPENROUTER_API_KEY (openrouter.ai) или GEMINI_API_KEY в .env на сервере.',
+                'Не задан ключ AI. Добавьте GROQ_API_KEY (console.groq.com) или OPENROUTER_API_KEY / GEMINI_API_KEY в .env на сервере.',
             aiNet: 'Ошибка сети — попробуйте снова.',
             aiQuotaError:
-                'Исчерпан бесплатный лимит Google Gemini или временная блокировка. Попробуйте позже или включите биллинг для Gemini API в Google Cloud (https://ai.google.dev/pricing).',
+                'Лимит AI исчерпан или временная блокировка. Попробуйте позже или проверьте billing Groq / Gemini.',
         },
         website: {
             title: 'Управление веб-сайтом',
@@ -3020,6 +3028,7 @@ export const translations = {
             products: 'Products',
             warehouse: 'Warehouse',
             orders: 'Orders',
+            ai: 'AI',
             customers: 'Customers',
             messages: 'Messages',
             employees: 'Employees',
@@ -3450,6 +3459,9 @@ export const translations = {
             restoreOrderTitle: 'Restore from trash to main list',
             unarchiveOrder: 'To main',
             unarchiveOrderTitle: 'Move from archive back to main list',
+            unarchiveToPendingHint:
+                'Order moved to the main list (Processing) so it will not be auto-archived again.',
+            statusUnarchivedOk: 'Status updated — order returned to the main list.',
             moveToTrashTitle: 'Move to trash',
             permanentDeleteTitle: 'Delete permanently',
             autoArchivedCompleted: '{n} old completed order(s) (1 mo+) moved to archive.',
@@ -4395,17 +4407,17 @@ export const translations = {
             loadPartialProducts: 'Product list could not be loaded.',
             refreshData: 'Refresh data',
             categoryFooterTotal: 'Total (all categories)',
-            aiPanelTitle: 'AI report (OpenRouter / Gemini)',
+            aiPanelTitle: 'AI report (Groq)',
             aiPanelHint:
-                'Aggregates are sent via your server (OpenRouter or Google Gemini); the API key stays in .env. Phone numbers are not repeated in the text.',
+                'Aggregates are sent via your server to Groq (fallback: OpenRouter / Gemini); the API key stays in .env. Phone numbers are not repeated in the text.',
             aiGenerate: 'Get report',
             aiLoading: 'AI is writing…',
             aiError: 'Could not get an AI response. Check the model or network.',
             aiErrorKey:
-                'No AI key set. Add OPENROUTER_API_KEY (openrouter.ai) or GEMINI_API_KEY to server .env (e.g. Vercel).',
+                'No AI key set. Add GROQ_API_KEY (console.groq.com) or OPENROUTER_API_KEY / GEMINI_API_KEY to server .env (e.g. Vercel).',
             aiNet: 'Network error — try again.',
             aiQuotaError:
-                'Google Gemini free quota is exceeded or rate-limited. Try again later, or enable billing for the Gemini API in Google Cloud (https://ai.google.dev/pricing).',
+                'AI quota exceeded or rate-limited. Try again later, or check Groq / Gemini billing.',
         },
         website: {
             title: 'Web Site Management',

@@ -87,6 +87,7 @@ import {
     filterOrderItemsByCategoryLabel,
     buildConsolidatedPrintHtml,
     updateOrderStatusWithCompletedAt,
+    sortOrdersByCompletionSequence,
 } from './utils'
 
 import StatsCards from './components/StatsCards'
@@ -99,7 +100,12 @@ import LinkCustomerModal from './components/LinkCustomerModal'
 import OrderFormPanel from './components/OrderFormPanel'
 import { useOrderListFilters } from './hooks/useOrderListFilters'
 import { enrichOrderLinesFromDb, createDefaultOrderForm, getProductsByModelCode } from './lib/orderFormUtils'
-import { getOutstandingItemsForDeduction, attachFulfillmentToOrders } from './lib/partialShipUtils'
+import {
+    getOutstandingItemsForDeduction,
+    attachFulfillmentToOrders,
+    computeOrderFulfillment,
+    loadOrderShippedMap,
+} from './lib/partialShipUtils'
 import PartialShipModal from './components/PartialShipModal'
 
 
@@ -356,15 +362,15 @@ function BuyurtmalarPageContent() {
             if (colorLibError) console.warn('product_colors:', colorLibError)
 
             if (seq !== loadDataSeqRef.current) return
-            setOrders(activeOrders)
+            setOrders(sortOrdersByCompletionSequence(activeOrders))
             setCustomers(customersData || [])
             setProducts(productsData || [])
             setProductColors(colorLibData || [])
 
-            // Qisman chiqim belgisi uchun stock_movements dan progress
+            // Qisman chiqim progressi (avtomatik ombor chiqimi yo‘q — faqat ko‘rsatish)
             void attachFulfillmentToOrders(activeOrders).then((enriched) => {
                 if (seq !== loadDataSeqRef.current) return
-                setOrders(enriched)
+                setOrders(sortOrdersByCompletionSequence(enriched))
             })
         } catch (error) {
             console.error('Error loading data:', error)
@@ -431,16 +437,34 @@ function BuyurtmalarPageContent() {
         }
     }
 
-    /** Arxivdan asosiy ro‘yxatga (archived_at = null) */
+    /** Arxivdan asosiy ro‘yxatga (archived_at = null). Eski tugallangan qayta arxivlanmasin deb pending qilinadi. */
     async function handleUnarchiveOrder(id) {
         try {
-            const { error } = await supabase.from('orders').update({ archived_at: null }).eq('id', id)
+            const order = archiveOrders.find((o) => String(o.id) === String(id))
+            const patch = { archived_at: null }
+            if (order && shouldAutoArchiveCompletedOrder({ ...order, archived_at: null, deleted_at: null })) {
+                patch.status = 'pending'
+                patch.completed_at = null
+                patch.updated_at = new Date().toISOString()
+            }
+            let { error } = await supabase.from('orders').update(patch).eq('id', id)
+            if (error && /completed_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))) {
+                const { completed_at: _c, ...withoutCompleted } = patch
+                ;({ error } = await supabase.from('orders').update(withoutCompleted).eq('id', id))
+            }
             if (error) {
                 if (isArchivedAtMissingError(error)) {
                     await showAlert(t('orders.archivedAtMigrationHint'), { variant: 'warning' })
                     return
                 }
                 throw error
+            }
+            if (patch.status === 'pending') {
+                showToast(
+                    t('orders.unarchiveToPendingHint') ||
+                        'Buyurtma asosiy ro‘yxatga qaytarildi (Jarayonda) — qayta arxivlanmasligi uchun.',
+                    { type: 'info' }
+                )
             }
             await loadData({ silent: true })
             await loadArchiveOrders()
@@ -553,11 +577,20 @@ function BuyurtmalarPageContent() {
     }
 
     async function handleStatusChange(id, newStatus) {
-        const order = orders.find((o) => o.id === id)
+        // Faol / arxiv / korzinka — status select hammasi uchun ishlashi kerak
+        const order =
+            orders.find((o) => String(o.id) === String(id)) ||
+            archiveOrders.find((o) => String(o.id) === String(id)) ||
+            trashOrders.find((o) => String(o.id) === String(id))
         if (!order) return
 
         const oldStatus = order.status
-        if (oldStatus === newStatus) return
+        if (normalizeStatusForSelect(oldStatus) === normalizeStatusForSelect(newStatus)) return
+
+        const nextNorm = normalizeStatusForSelect(newStatus)
+        // Arxivdan Yangi / Jarayonda ga o‘tkazilsa — asosiy ro‘yxatga qaytadi
+        const leaveArchive =
+            Boolean(order.archived_at) && (nextNorm === 'new' || nextNorm === 'pending')
 
         try {
             const { error, stamp, completed_at } = await updateOrderStatusWithCompletedAt(
@@ -569,11 +602,19 @@ function BuyurtmalarPageContent() {
 
             if (error) throw error
 
+            if (leaveArchive) {
+                const { error: archErr } = await supabase
+                    .from('orders')
+                    .update({ archived_at: null })
+                    .eq('id', id)
+                if (archErr && !isArchivedAtMissingError(archErr)) throw archErr
+            }
+
             // 1. Stock Automation: Deduct or reverse
             const orderItems = order.order_items || []
             const orderNum = order.order_number || order.id
 
-            if (newStatus === 'completed') {
+            if (nextNorm === 'completed') {
                 // Qisman jo'natish bo'lgan bo'lsa ham faqat qolgan qismini ayiramiz.
                 const outstanding = await getOutstandingItemsForDeduction(id, orderItems)
                 if (outstanding.length > 0) {
@@ -590,21 +631,48 @@ function BuyurtmalarPageContent() {
                 showToast(t('orders.stockReversedOk') || 'Ombor qoldig\'i qaytarildi', { type: 'info' })
             }
 
+            if (leaveArchive || ordersListViewRef.current === 'archive') {
+                if (leaveArchive) {
+                    showToast(
+                        t('orders.statusUnarchivedOk') ||
+                            'Status yangilandi — buyurtma asosiy ro‘yxatga qaytdi.',
+                        { type: 'success' }
+                    )
+                }
+                await loadData({ silent: true })
+                await loadArchiveOrders()
+                return
+            }
+
             setOrders((prev) =>
-                prev.map((o) =>
-                    o.id === id
-                        ? {
-                              ...o,
-                              status: newStatus,
-                              updated_at: stamp,
-                              completed_at:
-                                  normalizeStatusForSelect(newStatus) === 'completed'
-                                      ? completed_at || o.completed_at || stamp
-                                      : null,
-                          }
-                        : o
+                sortOrdersByCompletionSequence(
+                    prev.map((o) =>
+                        o.id === id
+                            ? {
+                                  ...o,
+                                  status: newStatus,
+                                  updated_at: stamp,
+                                  completed_at:
+                                      nextNorm === 'completed'
+                                          ? completed_at || o.completed_at || stamp
+                                          : null,
+                                  archived_at: leaveArchive ? null : o.archived_at,
+                              }
+                            : o
+                    )
                 )
             )
+
+            // Status o‘zgagandan keyin chiqim progressini yangilash
+            void attachFulfillmentToOrders([{ ...order, status: newStatus }]).then((enriched) => {
+                const f = enriched[0]?.fulfillment
+                if (!f) return
+                setOrders((prev) =>
+                    sortOrdersByCompletionSequence(
+                        prev.map((o) => (String(o.id) === String(id) ? { ...o, fulfillment: f } : o))
+                    )
+                )
+            })
         } catch (error) {
             console.error('Error updating status:', error)
             await showAlert(t('common.saveError'), { variant: 'error' })
@@ -1529,7 +1597,60 @@ function BuyurtmalarPageContent() {
                     order={partialShipOrder}
                     products={products}
                     onClose={() => setPartialShipOrder(null)}
-                    onSuccess={() => loadData({ silent: true })}
+                    onSuccess={async (info) => {
+                        const oid = info?.orderId
+                        if (!oid) {
+                            await loadData({ silent: true })
+                            return
+                        }
+                        // Tez yangilash: butun ro‘yxatni qayta yuklamasdan faqat shu buyurtma
+                        setOrders((prev) =>
+                            sortOrdersByCompletionSequence(
+                                prev.map((o) =>
+                                    String(o.id) === String(oid)
+                                        ? {
+                                              ...o,
+                                              status: info.status || o.status,
+                                              completed_at:
+                                                  info.status === 'completed'
+                                                      ? o.completed_at || new Date().toISOString()
+                                                      : o.completed_at,
+                                          }
+                                        : o
+                                )
+                            )
+                        )
+                        try {
+                            const snap =
+                                info.orderSnapshot ||
+                                orders.find((o) => String(o.id) === String(oid))
+                            if (!snap) {
+                                await loadData({ silent: true })
+                                return
+                            }
+                            const map = await loadOrderShippedMap(oid)
+                            const fulfillment = computeOrderFulfillment(
+                                { ...snap, status: info.status || snap.status },
+                                map
+                            )
+                            setOrders((prev) =>
+                                sortOrdersByCompletionSequence(
+                                    prev.map((o) =>
+                                        String(o.id) === String(oid)
+                                            ? {
+                                                  ...o,
+                                                  status: info.status || o.status,
+                                                  fulfillment,
+                                              }
+                                            : o
+                                    )
+                                )
+                            )
+                        } catch (e) {
+                            console.warn('partial ship refresh:', e)
+                            await loadData({ silent: true })
+                        }
+                    }}
                 />
             ) : null}
 

@@ -118,6 +118,36 @@ export async function attachFulfillmentToOrders(ordersList) {
     }
 }
 
+/**
+ * Status «completed», lekin omborda hali qolgan bo‘lsa — qolganini chiqim qilib to‘ldirish.
+ * (Tugallangan + Qisman chiqqan nomuvofiqligini tuzatadi)
+ */
+export async function syncOutstandingForCompletedOrders(ordersList) {
+    const { normalizeStatusForSelect } = await import('../utils')
+    const list = Array.isArray(ordersList) ? ordersList : []
+    let fixed = 0
+    for (const o of list) {
+        if (normalizeStatusForSelect(o.status) !== 'completed') continue
+        const remaining = Number(o.fulfillment?.remaining) || 0
+        if (remaining <= 0) continue
+        try {
+            const outstanding = await getOutstandingItemsForDeduction(o.id, o.order_items || [])
+            if (!outstanding.length) continue
+            const { deductStockForCompletedOrder } = await import('@/services/inventoryService')
+            const res = await deductStockForCompletedOrder(
+                o.id,
+                o.order_number || o.id,
+                outstanding
+            )
+            if (res?.success) fixed += 1
+            else console.warn('syncOutstandingForCompletedOrders:', o.id, res?.errors)
+        } catch (e) {
+            console.warn('syncOutstandingForCompletedOrders:', o.id, e)
+        }
+    }
+    return fixed
+}
+
 export async function getOutstandingItemsForDeduction(orderId, items) {
     const shippedMap = await loadOrderShippedMap(orderId)
     const agg = new Map()
@@ -142,6 +172,58 @@ export async function getOutstandingItemsForDeduction(orderId, items) {
     return out
 }
 
+/**
+ * So‘ralgan chiqimni buyurtma qoldig‘iga qisqartiradi (ortiqcha chiqim yo‘q).
+ * order_items dan buyurtma miqdorini olib, stock_movements bilan solishtiradi.
+ */
+export async function clampShipItemsToOutstanding(orderId, requestedItems) {
+    if (!orderId || !requestedItems?.length) return []
+    const shippedMap = await loadOrderShippedMap(orderId)
+
+    let { data: orderItems, error } = await supabase
+        .from('order_items')
+        .select('product_id, color, quantity')
+        .eq('order_id', orderId)
+    if (error) {
+        console.warn('clampShipItemsToOutstanding order_items:', error.message)
+        orderItems = []
+    }
+
+    const orderedByKey = new Map()
+    for (const oi of orderItems || []) {
+        if (!oi?.product_id) continue
+        const key = orderItemShipKey(oi.product_id, oi.color || '—')
+        orderedByKey.set(key, (Number(orderedByKey.get(key)) || 0) + parseOrderItemQty(oi.quantity || 0))
+    }
+
+    // So‘rovni kalit bo‘yicha yig‘ish (bir xil mahsulot+rang bir necha marta kelishi mumkin)
+    const wantByKey = new Map()
+    for (const item of requestedItems) {
+        if (!item?.product_id) continue
+        const key = orderItemShipKey(item.product_id, item.color || '—')
+        const prev = wantByKey.get(key) || {
+            product_id: item.product_id,
+            color: item.color || null,
+            product_name: item.product_name,
+            quantity: 0,
+        }
+        prev.quantity += parseOrderItemQty(item.quantity || 0)
+        if (item.color != null && item.color !== '') prev.color = item.color
+        if (item.product_name) prev.product_name = item.product_name
+        wantByKey.set(key, prev)
+    }
+
+    const out = []
+    for (const [key, item] of wantByKey.entries()) {
+        const ordered = Number(orderedByKey.get(key)) || 0
+        const shipped = Number(shippedMap.get(key)) || 0
+        const remaining = Math.max(0, ordered - shipped)
+        const qty = Math.min(Math.max(0, Number(item.quantity) || 0), remaining)
+        if (qty > 0) out.push({ ...item, quantity: qty })
+    }
+    return out
+}
+
 export function productAvailableForOrderItem(product, colorRaw) {
     const total = Number(product?.stock)
     const totalSafe = Number.isFinite(total) && total >= 0 ? total : 0
@@ -157,14 +239,48 @@ export function productAvailableForOrderItem(product, colorRaw) {
     return totalSafe
 }
 
+/**
+ * Bir xil product+rang kaliti bo‘yicha chiqimni qatorlarga taqsimlaydi.
+ * Har bir qator uchun chiqqan hech qachon buyurtma miqdoridan oshmaydi.
+ */
+export function allocateShippedAcrossRows(rowDefs, shippedMap) {
+    const map = shippedMap instanceof Map ? shippedMap : new Map()
+    const groups = new Map()
+    rowDefs.forEach((row, index) => {
+        const key = row.shipKey
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push({ row, index })
+    })
+
+    const allocated = new Array(rowDefs.length)
+    for (const [shipKey, members] of groups.entries()) {
+        const orderedTotal = members.reduce(
+            (s, m) => s + (Number(m.row.ordered_qty) || 0),
+            0
+        )
+        // Omborda ortiqcha chiqim bo‘lsa ham — faqat buyurtma chegarasigacha
+        let left = Math.min(orderedTotal, Math.max(0, Number(map.get(shipKey)) || 0))
+        for (const { row, index } of members) {
+            const ordered = Math.max(0, Number(row.ordered_qty) || 0)
+            const shipped = Math.min(ordered, left)
+            left -= shipped
+            allocated[index] = {
+                ...row,
+                shipped_qty: shipped,
+                remaining_qty: Math.max(0, ordered - shipped),
+            }
+        }
+    }
+    return allocated
+}
+
 export function buildPartialShipRows(order, products, shippedMap) {
     const rawItems = dedupeOrderItemsKeepNewest(order.order_items || [], products)
-    return rawItems
-        .map((oi, idx) => {
+    const rowDefs = rawItems
+        .map((oi) => {
             const ordered = parseOrderItemQty(oi.quantity || 0)
-            const key = orderItemShipKey(oi.product_id, oi.color || '—')
-            const shipped = Number(shippedMap.get(key)) || 0
-            const remaining = Math.max(0, ordered - shipped)
+            if (ordered <= 0) return null
+            const shipKey = orderItemShipKey(oi.product_id, oi.color || '—')
             const prod = products.find((p) => String(p.id) === String(oi.product_id))
             const available = productAvailableForOrderItem(prod, oi.color || '—')
             const imageUrl =
@@ -173,18 +289,32 @@ export function buildPartialShipRows(order, products, shippedMap) {
                 (prod?.image_url != null && String(prod.image_url).trim()) ||
                 ''
             return {
-                key: `${key}-${idx}`,
+                shipKey,
                 product_id: oi.product_id,
                 product_name: oi.product_name || oi.products?.name || displayProductName(prod),
                 size: oi.size || prod?.size || '',
                 color: oi.color || null,
                 image_url: imageUrl || null,
                 ordered_qty: ordered,
-                shipped_qty: shipped,
-                remaining_qty: remaining,
                 available_qty: available,
-                ship_qty: remaining > 0 ? Math.min(remaining, available) : 0,
             }
         })
-        .filter((r) => r.ordered_qty > 0)
+        .filter(Boolean)
+
+    return allocateShippedAcrossRows(rowDefs, shippedMap).map((r, idx) => {
+        const remaining = Number(r.remaining_qty) || 0
+        return {
+            key: `${r.shipKey}-${idx}`,
+            product_id: r.product_id,
+            product_name: r.product_name,
+            size: r.size,
+            color: r.color,
+            image_url: r.image_url,
+            ordered_qty: r.ordered_qty,
+            shipped_qty: r.shipped_qty,
+            remaining_qty: remaining,
+            available_qty: r.available_qty,
+            ship_qty: remaining > 0 ? Math.min(remaining, r.available_qty) : 0,
+        }
+    })
 }

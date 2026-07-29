@@ -54,12 +54,15 @@ function OrderTableRow({
 }) {
     const itemStatus = normalizeStatusForSelect(item.status)
     const fulfillment = item.fulfillment
-    const isPartial = fulfillment?.state === 'partial'
-    const isFullShipped = fulfillment?.state === 'full'
+    // Status tugallangan bo‘lsa «Qisman chiqqan» ko‘rsatilmaydi (chiqim qoldig‘i alohida sinxronlanadi)
+    const isPartial = itemStatus !== 'completed' && fulfillment?.state === 'partial'
+    const isFullShipped =
+        fulfillment?.state === 'full' ||
+        (itemStatus === 'completed' && (fulfillment?.ordered || 0) > 0)
     const canPartialShip =
         ordersListView === 'active' &&
         itemStatus !== 'cancelled' &&
-        !(itemStatus === 'completed' && fulfillment?.state === 'full')
+        itemStatus !== 'completed'
 
     const categoryActive = filterCategory && filterCategory !== 'all'
     const listItemsRaw = normalizeOrderItemsForList(

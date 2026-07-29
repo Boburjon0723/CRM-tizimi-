@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react'
 import { Sparkles, Loader2 } from 'lucide-react'
 
 /**
- * CRM statistikalaridan AI qisqa hisobot (Google Gemini, server API).
+ * CRM statistikalaridan AI qisqa hisobot (Groq asosiy; OpenRouter / Gemini zaxira).
  * summary — faqat yig‘ma raqamlar (PII minimallashtirilgan).
  */
 export default function CrmAiInsightsPanel({ t, language, summary }) {
