@@ -1324,6 +1324,9 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const date = escapeHtml(new Date(item.created_at).toLocaleDateString())
     const shortId = escapeHtml(String(item.id).slice(0, 8))
     const orderNumHtml = item.order_number ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>` : ''
+    const portionNoteHtml = item._print_note
+        ? `<p style="margin:0 0 12px;padding:8px 10px;background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;color:#0e7490;font-size:0.85rem;font-weight:600">${escapeHtml(String(item._print_note))}</p>`
+        : ''
     const groupedRaw = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || [], productsList), productsList)
     const grouped = sortGroupedBucketsForPrint(groupedRaw)
     const withNote = (!showPrices && !!tableConfig?.includePrintNoteColumn) || (showPrices && !!tableConfig?.includePrintNoteWithPrices)
@@ -1391,7 +1394,7 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const thNote = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
     const thExtra = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
     
-    return `<div class="order-block"><div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>Sana:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}</div>`
+    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>Sana:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}</div>`
 }
 
 export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {

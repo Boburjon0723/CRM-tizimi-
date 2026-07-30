@@ -318,3 +318,42 @@ export function buildPartialShipRows(order, products, shippedMap) {
         }
     })
 }
+
+/**
+ * Chop etish uchun faqat chiqqan miqdorlar (order_items formatida).
+ * @returns {{ items: object[], shippedTotal: number, orderedTotal: number }}
+ */
+export function buildShippedPortionOrderItems(order, products, shippedMap) {
+    const rawItems = dedupeOrderItemsKeepNewest(order?.order_items || [], products || [])
+    const rowDefs = rawItems
+        .map((oi) => {
+            const ordered = parseOrderItemQty(oi.quantity || 0)
+            if (ordered <= 0) return null
+            return {
+                shipKey: orderItemShipKey(oi.product_id, oi.color || '—'),
+                ordered_qty: ordered,
+                source: oi,
+            }
+        })
+        .filter(Boolean)
+
+    const allocated = allocateShippedAcrossRows(rowDefs, shippedMap)
+    const items = []
+    let shippedTotal = 0
+    let orderedTotal = 0
+    allocated.forEach((r) => {
+        orderedTotal += Number(r.ordered_qty) || 0
+        const shipped = Number(r.shipped_qty) || 0
+        if (shipped <= 0) return
+        shippedTotal += shipped
+        const oi = r.source || {}
+        items.push({
+            ...oi,
+            quantity: shipped,
+            // Chop etishda «buyurtma» o‘rniga chiqqan miqdor ko‘rinsin
+            _print_shipped_portion: true,
+            _print_ordered_qty: r.ordered_qty,
+        })
+    })
+    return { items, shippedTotal, orderedTotal }
+}

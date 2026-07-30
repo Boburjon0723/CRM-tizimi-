@@ -105,6 +105,7 @@ import {
     attachFulfillmentToOrders,
     computeOrderFulfillment,
     loadOrderShippedMap,
+    buildShippedPortionOrderItems,
 } from './lib/partialShipUtils'
 import PartialShipModal from './components/PartialShipModal'
 
@@ -932,6 +933,87 @@ function BuyurtmalarPageContent() {
         }
     }
 
+    /** Faqat ombordan chiqqan qismni chop etish (qisman tugallash) */
+    async function handlePrintShippedPortion(item, showPrices = false) {
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        let orderForPrint = item
+        try {
+            const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(item.id)
+            if (oiErr) throw oiErr
+            const { data: orderRow, error: ordErr } = await supabase
+                .from('orders')
+                .select(`*, customers (id, name, phone)`)
+                .eq('id', item.id)
+                .single()
+            if (ordErr) throw ordErr
+            orderForPrint = {
+                ...item,
+                ...orderRow,
+                order_items: dedupeOrderItemsKeepNewest(rows || [], products),
+            }
+        } catch (e) {
+            console.error('handlePrintShippedPortion refetch:', e)
+            orderForPrint = {
+                ...item,
+                order_items: dedupeOrderItemsKeepNewest(item.order_items || [], products),
+            }
+        }
+
+        try {
+            const shippedMap = await loadOrderShippedMap(orderForPrint.id)
+            const { items, shippedTotal, orderedTotal } = buildShippedPortionOrderItems(
+                orderForPrint,
+                products,
+                shippedMap
+            )
+            if (!items.length) {
+                await showAlert(
+                    t('orders.partialPrintEmpty') ||
+                        'Chop etish uchun chiqqan mahsulot yo‘q. Avval qisman tugallang.',
+                    { variant: 'info' }
+                )
+                return
+            }
+
+            const portionTotal = items.reduce((s, oi) => {
+                const q = Number(oi.quantity) || 0
+                const p = Number(oi.price) || 0
+                return s + q * p
+            }, 0)
+
+            const html = buildPrintDocumentHtml({
+                documentTitle: `Chiqqan-${String(item.order_number || item.id).slice(0, 24)}`,
+                listTitle:
+                    t('orders.partialPrintListTitle') ||
+                    `Chiqqan qism: ${shippedTotal}/${orderedTotal} dona`,
+                orders: [
+                    {
+                        ...orderForPrint,
+                        order_items: items,
+                        total: showPrices ? portionTotal : null,
+                        _print_note:
+                            t('orders.partialPrintNote') ||
+                            'Diqqat: bu hujjatda faqat ombordan chiqqan mahsulotlar.',
+                    },
+                ],
+                showPrices,
+                labelColorFn,
+                productsList: products,
+                tableConfig,
+            })
+            if (!openPrintTab(html)) {
+                showToast(
+                    t('orders.printPopupBlocked') ||
+                        'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.',
+                    { type: 'info' }
+                )
+            }
+        } catch (e) {
+            console.error('handlePrintShippedPortion:', e)
+            await showAlert(e?.message || String(e), { variant: 'error' })
+        }
+    }
+
     async function handlePrintOrderList(list, showPrices) {
         if (!list?.length) {
             await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
@@ -1581,6 +1663,7 @@ function BuyurtmalarPageContent() {
                 setOrderListExpandedById={setOrderListExpandedById}
                 handleStatusChange={handleStatusChange}
                 handlePrintOrder={handlePrintOrder}
+                handlePrintShippedPortion={handlePrintShippedPortion}
                 handleDuplicateOrder={handleDuplicateOrder}
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
@@ -1597,6 +1680,7 @@ function BuyurtmalarPageContent() {
                     order={partialShipOrder}
                     products={products}
                     onClose={() => setPartialShipOrder(null)}
+                    onPrintShipped={handlePrintShippedPortion}
                     onSuccess={async (info) => {
                         const oid = info?.orderId
                         if (!oid) {

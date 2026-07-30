@@ -18,6 +18,7 @@ function OrdersTable({
     setOrderListExpandedById,
     handleStatusChange,
     handlePrintOrder,
+    handlePrintShippedPortion,
     handleDuplicateOrder,
     handleEdit,
     handleDelete,
@@ -115,6 +116,7 @@ function OrdersTable({
                                     }
                                     handleStatusChange={handleStatusChange}
                                     handlePrintOrder={handlePrintOrder}
+                                    handlePrintShippedPortion={handlePrintShippedPortion}
                                     handleDuplicateOrder={handleDuplicateOrder}
                                     handleEdit={handleEdit}
                                     handleDelete={handleDelete}

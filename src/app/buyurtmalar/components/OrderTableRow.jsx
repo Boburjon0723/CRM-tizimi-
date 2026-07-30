@@ -13,6 +13,7 @@ import {
     RotateCcw,
     UserPlus,
     PackageCheck,
+    Printer,
 } from 'lucide-react'
 import {
     normalizeOrderItemsForList,
@@ -42,6 +43,7 @@ function OrderTableRow({
     onToggleExpand,
     handleStatusChange,
     handlePrintOrder,
+    handlePrintShippedPortion,
     handleDuplicateOrder,
     handleEdit,
     handleDelete,
@@ -63,6 +65,8 @@ function OrderTableRow({
         ordersListView === 'active' &&
         itemStatus !== 'cancelled' &&
         itemStatus !== 'completed'
+    const canPrintShipped =
+        Number(fulfillment?.shipped) > 0 && itemStatus !== 'cancelled'
 
     const categoryActive = filterCategory && filterCategory !== 'all'
     const listItemsRaw = normalizeOrderItemsForList(
@@ -323,6 +327,19 @@ function OrderTableRow({
                                     title={t('orders.partialShipShort') || 'Qisman tugallash'}
                                 >
                                     <PackageCheck size={17} />
+                                </button>
+                            ) : null}
+                            {canPrintShipped ? (
+                                <button
+                                    type="button"
+                                    onClick={() => handlePrintShippedPortion?.(item, false)}
+                                    className="shrink-0 p-1.5 sm:p-2 text-cyan-700 bg-cyan-50 hover:bg-cyan-100 ring-1 ring-cyan-200 rounded-lg transition-colors"
+                                    title={
+                                        t('orders.partialPrintShort') ||
+                                        'Chiqqan qismni chop etish'
+                                    }
+                                >
+                                    <Printer size={17} />
                                 </button>
                             ) : null}
                             <button

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { X, CheckCircle2 } from 'lucide-react'
+import { X, CheckCircle2, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { deductStockForCompletedOrder, reverseStockForOrder } from '@/services/inventoryService'
 import { useLanguage } from '@/context/LanguageContext'
@@ -12,7 +12,7 @@ import {
     buildPartialShipRows,
 } from '../lib/partialShipUtils'
 
-export default function PartialShipModal({ order, products, onClose, onSuccess }) {
+export default function PartialShipModal({ order, products, onClose, onSuccess, onPrintShipped }) {
     const { t } = useLanguage()
     const { showAlert, showConfirm, showToast } = useDialog()
     const [rows, setRows] = useState([])
@@ -240,6 +240,17 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
             }
             onClose()
             await onSuccess?.(payload)
+            if (typeof onPrintShipped === 'function' && shipNowTotal > 0) {
+                const printOk = await showConfirm(
+                    t('orders.partialPrintAfterConfirm') ||
+                        'Chiqqan qismni hozir chop etasizmi?',
+                    {
+                        title: t('orders.partialPrintShort') || 'Chiqqan qismni chop etish',
+                        variant: 'info',
+                    }
+                )
+                if (printOk) await onPrintShipped(order, false)
+            }
         } catch (error) {
             console.error('submitPartialShipment:', error)
             await showAlert(error?.message || String(error), {
@@ -345,6 +356,18 @@ export default function PartialShipModal({ order, products, onClose, onSuccess }
                                 )}
                             </label>
                         <div className="flex items-center gap-2">
+                                {summary.shipped > 0 ? (
+                                    <button
+                                        type="button"
+                                        disabled={saving}
+                                        onClick={() => onPrintShipped?.(order, false)}
+                                        className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 hover:bg-cyan-100 disabled:opacity-50 inline-flex items-center gap-1.5"
+                                        title={t('orders.partialPrintShort') || 'Chiqqan qismni chop etish'}
+                                    >
+                                        <Printer size={14} />
+                                        {t('orders.partialPrintShort') || 'Chiqqan qismni chop etish'}
+                                    </button>
+                                ) : null}
                                 {summary.shipped > 0 ? (
                                     <button
                                         type="button"
