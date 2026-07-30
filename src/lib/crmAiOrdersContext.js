@@ -482,8 +482,29 @@ ${body}
 Qoidalar: faqat shu ma’lumot; yo‘q bo‘lsa «topilmadi». Mijoz ismini to‘liq yozmasa ham (masalan «Rust» → Rustam) mos kelganlar yuqorida. Chiqqan=ombor chiqimi, qolgan=hali chiqmagan.`
 }
 
+
+function isSmallTalkQuery(userText = '') {
+    const t = String(userText || '')
+        .toLowerCase()
+        .normalize('NFKC')
+        .replace(/[ʼ'`´‘’]/g, "'")
+        .trim()
+    if (!t) return true
+    if (t.length > 40) return false
+    return /^(salom|assalomu alaykum|assalom|hello|hi|hey|qalesan|qalaysiz|rahmat|tashakkur|ok|okay|ha|yo'?q|nima qila olasan|yordam|help)([\s!.?]|$)/i.test(
+        t
+    )
+}
+
 export async function buildFullCrmAiContext(userText = '') {
     try {
+        if (isSmallTalkQuery(userText)) {
+            return `Siz Nuur Home CRM AI yordamchisisiz.
+Foydalanuvchi faqat salom / oddiy suhbat yozdi.
+Qisqa va samimiy javob bering (1–3 jumla). Buyurtma, hamkor yoki xarajat ro‘yxatini CHIQarmaNG.
+Nima haqida so‘rash mumkinligini qisqa eslatib o‘ting: buyurtmalar, hamkorlar qarzi, bo‘lim xarajatlari.`
+        }
+
         const { buildPartnerFinanceAiContext, isPartnerFinanceQuery } = await import(
             '@/lib/crmAiPartnerFinanceContext'
         )
@@ -510,7 +531,6 @@ export async function buildFullCrmAiContext(userText = '') {
             partnerBudget = 1800
             deptBudget = 1800
         } else {
-            // Oddiy buyurtma savoli — faqat buyurtmalar asosiy
             ordersBudget = 3200
             partnerBudget = 600
             deptBudget = 600
@@ -535,17 +555,20 @@ Ko‘rasiz:
 1) Buyurtmalar — mijoz, mahsulot, chiqqan/qolgan
 2) Hamkorlar moliyasi — qarz, to‘lov, xomashyo
 3) Bo‘limlar — xarajatlar (sana, nom, yo‘l, summa)
-Savolga qarab mos bo‘limdan aniq raqamlar bilan javob bering.
 
-FORMATLASHTIRISH QOIDALARI (majburiy):
-- Bo’lim sarlavhalarini === SARLAVHA === formatda yozing (masalan: === HAMKORLAR QARZI ===).
-- Hamkorlar/qarz ro’yxatini "- Nomi: qiymat" formatda yozing.
-- Buyurtma mahsulotlarini MAJBURIY jadval (markdown table) formatda ber:
-  | Mahsulot | Rang | Buyurtma | Chiqqan | Qolgan |
-  Har bir mahsulot/rang alohida qatorda.
-- Xarajatlarni ham jadval formatda ber: | Sana | Nomi | Summa |
-- Yig’indi / jami qatorni alohida satrada yozing: Jami: $xxx
-- Ixcham, aniq raqamlar bilan javob bering. Ortiqcha gap yo’q.
+JAVOB QOIDALARI (majburiy):
+- Faqat foydalanuvchi SO‘RAGAN mavzu bo‘yicha javob bering.
+- So‘ralmagan bo‘limlarni (buyurtma/hamkor/xarajat) dump qilib chiqarmang.
+- Salom / rahmat / umumiy suhbatga — qisqa javob, ma’lumotlar jadvali yo‘q.
+- Aniq savol bo‘lsa — mos bo‘limdan aniq raqamlar bilan javob bering.
+
+FORMATLASHTIRISH (faqat ma’lumot so‘ralganda):
+- Bo‘lim sarlavhalarini === SARLAVHA === formatda yozing.
+- Hamkorlar/qarz: "- Nomi: qiymat"
+- Buyurtma mahsulotlari: | Mahsulot | Ranglar (miqdor) | Buyurtma | Chiqqan | Qolgan |
+- Xarajatlar: | Sana | Nomi | Summa |
+- Yig‘indi: Jami: $xxx
+- Ixcham javob. Ortiqcha gap yo‘q.
 
 ${ordersCtx}
 
