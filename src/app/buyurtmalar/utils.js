@@ -135,35 +135,70 @@ export const ORDERS_SELECT_FALLBACKS = [
 `,
 ]
 
+function isWorkspaceColumnMissingError(err) {
+    return /workspace|column|does not exist|42703|schema cache/i.test(String(err?.message || err || ''))
+}
+
+/** workspace: 'legacy' | 'buyurtmalar2' | null (hammasi) */
+function applyOrdersWorkspaceFilter(q, workspace) {
+    if (workspace === 'buyurtmalar2') return q.eq('workspace', 'buyurtmalar2')
+    if (workspace === 'legacy') return q.neq('workspace', 'buyurtmalar2')
+    return q
+}
+
+export function filterOrdersByWorkspace(rows, workspace) {
+    const list = rows || []
+    if (workspace === 'buyurtmalar2') return list.filter((o) => o?.workspace === 'buyurtmalar2')
+    if (workspace === 'legacy') return list.filter((o) => o?.workspace !== 'buyurtmalar2')
+    return list
+}
+
 export async function fetchOrdersPageWithFallback(options = {}) {
-    const { activeOnly = true } = options
+    const { activeOnly = true, workspace = null } = options
 
     async function trySelect(filters) {
         for (const sel of ORDERS_SELECT_FALLBACKS) {
+            const run = async (orderByCompleted, withWorkspace) => {
+                let q = supabase.from('orders').select(sel)
+                if (orderByCompleted) {
+                    q = q
+                        .order('completed_at', { ascending: false, nullsFirst: true })
+                        .order('created_at', { ascending: true })
+                } else {
+                    q = q.order('created_at', { ascending: false })
+                }
+                if (filters.excludeDeleted) q = q.is('deleted_at', null)
+                if (filters.excludeArchived) q = q.is('archived_at', null)
+                if (withWorkspace) q = applyOrdersWorkspaceFilter(q, workspace)
+                return q
+            }
+
             // Avvalo tugallanish ketma-ketligi (completed_at); ustun yo‘q bo‘lsa created_at
-            let q = supabase
-                .from('orders')
-                .select(sel)
-                .order('completed_at', { ascending: false, nullsFirst: true })
-                .order('created_at', { ascending: true })
-            if (filters.excludeDeleted) q = q.is('deleted_at', null)
-            if (filters.excludeArchived) q = q.is('archived_at', null)
-            let res = await q
+            let res = await run(true, Boolean(workspace))
+            if (res.error && workspace && isWorkspaceColumnMissingError(res.error)) {
+                if (workspace === 'buyurtmalar2') {
+                    return { data: [], error: null, workspaceMissing: true }
+                }
+                res = await run(true, false)
+            }
             if (
                 res.error &&
                 /completed_at|column|does not exist|42703|schema cache|nullsfirst|nullsFirst/i.test(
                     String(res.error.message || '')
                 )
             ) {
-                q = supabase.from('orders').select(sel).order('created_at', { ascending: false })
-                if (filters.excludeDeleted) q = q.is('deleted_at', null)
-                if (filters.excludeArchived) q = q.is('archived_at', null)
-                res = await q
+                res = await run(false, Boolean(workspace))
+                if (res.error && workspace && isWorkspaceColumnMissingError(res.error)) {
+                    if (workspace === 'buyurtmalar2') {
+                        return { data: [], error: null, workspaceMissing: true }
+                    }
+                    res = await run(false, false)
+                }
             }
             if (!res.error) {
                 return {
                     ...res,
-                    data: sortOrdersByCompletionSequence(res.data || []),
+                    data: sortOrdersByCompletionSequence(filterOrdersByWorkspace(res.data || [], workspace)),
                 }
             }
             // archived_at yo‘q bo‘lsa — faqat deleted_at filtri bilan qayta urinib ko‘ramiz
@@ -173,11 +208,22 @@ export async function fetchOrdersPageWithFallback(options = {}) {
             ) {
                 let q2 = supabase.from('orders').select(sel).order('created_at', { ascending: false })
                 if (filters.excludeDeleted) q2 = q2.is('deleted_at', null)
-                const res2 = await q2
+                if (workspace) q2 = applyOrdersWorkspaceFilter(q2, workspace)
+                let res2 = await q2
+                if (res2.error && workspace && isWorkspaceColumnMissingError(res2.error)) {
+                    if (workspace === 'buyurtmalar2') {
+                        return { data: [], error: null, workspaceMissing: true }
+                    }
+                    q2 = supabase.from('orders').select(sel).order('created_at', { ascending: false })
+                    if (filters.excludeDeleted) q2 = q2.is('deleted_at', null)
+                    res2 = await q2
+                }
                 if (!res2.error) {
                     return {
                         ...res2,
-                        data: sortOrdersByCompletionSequence(res2.data || []),
+                        data: sortOrdersByCompletionSequence(
+                            filterOrdersByWorkspace(res2.data || [], workspace)
+                        ),
                     }
                 }
                 if (filters.excludeDeleted && isDeletedAtMissingError(res2.error)) return null
@@ -197,14 +243,28 @@ export async function fetchOrdersPageWithFallback(options = {}) {
     return trySelect({ excludeDeleted: false, excludeArchived: false })
 }
 
-export async function fetchDeletedOrdersPageWithFallback() {
+export async function fetchDeletedOrdersPageWithFallback(options = {}) {
+    const { workspace = 'legacy' } = options
     for (const sel of ORDERS_SELECT_FALLBACKS) {
-        const res = await supabase
+        let q = supabase
             .from('orders')
             .select(sel)
             .not('deleted_at', 'is', null)
             .order('created_at', { ascending: false })
-        if (!res.error) return res
+        if (workspace) q = applyOrdersWorkspaceFilter(q, workspace)
+        let res = await q
+        if (res.error && workspace && isWorkspaceColumnMissingError(res.error)) {
+            if (workspace === 'buyurtmalar2') return { data: [], error: null, workspaceMissing: true }
+            q = supabase
+                .from('orders')
+                .select(sel)
+                .not('deleted_at', 'is', null)
+                .order('created_at', { ascending: false })
+            res = await q
+        }
+        if (!res.error) {
+            return { ...res, data: filterOrdersByWorkspace(res.data || [], workspace) }
+        }
         if (isDeletedAtMissingError(res.error)) return { data: [], error: null }
         if (!isSchemaOrEmbedError(res.error)) return res
         console.warn('deleted orders select fallback:', res.error?.message)
@@ -213,7 +273,8 @@ export async function fetchDeletedOrdersPageWithFallback() {
 }
 
 /** Arxiv: archived_at bor, korzinkada emas */
-export async function fetchArchivedOrdersPageWithFallback() {
+export async function fetchArchivedOrdersPageWithFallback(options = {}) {
+    const { workspace = 'legacy' } = options
     for (const sel of ORDERS_SELECT_FALLBACKS) {
         let q = supabase
             .from('orders')
@@ -222,7 +283,19 @@ export async function fetchArchivedOrdersPageWithFallback() {
             .is('deleted_at', null)
             .order('completed_at', { ascending: false, nullsFirst: false })
             .order('archived_at', { ascending: false })
+        if (workspace) q = applyOrdersWorkspaceFilter(q, workspace)
         let res = await q
+        if (res.error && workspace && isWorkspaceColumnMissingError(res.error)) {
+            if (workspace === 'buyurtmalar2') return { data: [], error: null, workspaceMissing: true }
+            q = supabase
+                .from('orders')
+                .select(sel)
+                .not('archived_at', 'is', null)
+                .is('deleted_at', null)
+                .order('completed_at', { ascending: false, nullsFirst: false })
+                .order('archived_at', { ascending: false })
+            res = await q
+        }
         if (
             res.error &&
             /completed_at|column|does not exist|42703|schema cache|nullsfirst|nullsFirst/i.test(
@@ -235,19 +308,40 @@ export async function fetchArchivedOrdersPageWithFallback() {
                 .not('archived_at', 'is', null)
                 .is('deleted_at', null)
                 .order('archived_at', { ascending: false })
+            if (workspace) q = applyOrdersWorkspaceFilter(q, workspace)
             res = await q
+            if (res.error && workspace && isWorkspaceColumnMissingError(res.error)) {
+                if (workspace === 'buyurtmalar2') return { data: [], error: null, workspaceMissing: true }
+                q = supabase
+                    .from('orders')
+                    .select(sel)
+                    .not('archived_at', 'is', null)
+                    .is('deleted_at', null)
+                    .order('archived_at', { ascending: false })
+                res = await q
+            }
         }
         if (res.error && isDeletedAtMissingError(res.error)) {
-            res = await supabase
+            let q3 = supabase
                 .from('orders')
                 .select(sel)
                 .not('archived_at', 'is', null)
                 .order('archived_at', { ascending: false })
+            if (workspace) q3 = applyOrdersWorkspaceFilter(q3, workspace)
+            res = await q3
+            if (res.error && workspace && isWorkspaceColumnMissingError(res.error)) {
+                if (workspace === 'buyurtmalar2') return { data: [], error: null, workspaceMissing: true }
+                res = await supabase
+                    .from('orders')
+                    .select(sel)
+                    .not('archived_at', 'is', null)
+                    .order('archived_at', { ascending: false })
+            }
         }
         if (!res.error) {
             return {
                 ...res,
-                data: sortOrdersByCompletionSequence(res.data || []),
+                data: sortOrdersByCompletionSequence(filterOrdersByWorkspace(res.data || [], workspace)),
             }
         }
         if (isArchivedAtMissingError(res.error)) return { data: [], error: null }
@@ -1321,7 +1415,11 @@ export function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
 export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, tableConfig) {
     const customerName = escapeHtml(item.customer_name || item.customers?.name || 'Noma\'lum')
     const phone = escapeHtml(item.customer_phone || item.customers?.phone || '-')
-    const date = escapeHtml(new Date(item.created_at).toLocaleDateString())
+    const dateRaw = item._print_date || item.created_at
+    const date = dateRaw
+        ? escapeHtml(new Date(dateRaw).toLocaleDateString())
+        : '—'
+    const dateLabel = escapeHtml(String(item._print_date_label || 'Sana').trim() || 'Sana')
     const shortId = escapeHtml(String(item.id).slice(0, 8))
     const orderNumHtml = item.order_number ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>` : ''
     const portionNoteHtml = item._print_note
@@ -1394,7 +1492,7 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const thNote = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
     const thExtra = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
     
-    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>Sana:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}</div>`
+    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>${dateLabel}:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}</div>`
 }
 
 export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {

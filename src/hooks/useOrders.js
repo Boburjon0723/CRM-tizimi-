@@ -17,7 +17,10 @@ export function useOrders() {
     return useQuery({
         queryKey: ORDERS_QUERY_KEY,
         queryFn: async () => {
-            const { data, error } = await fetchOrdersPageWithFallback({ activeOnly: true })
+            const { data, error } = await fetchOrdersPageWithFallback({
+                activeOnly: true,
+                workspace: 'legacy',
+            })
             if (error) throw error
             return data || []
         },
@@ -32,7 +35,7 @@ export function useTrashOrders(enabled = false) {
     return useQuery({
         queryKey: TRASH_ORDERS_QUERY_KEY,
         queryFn: async () => {
-            const { data, error } = await fetchDeletedOrdersPageWithFallback()
+            const { data, error } = await fetchDeletedOrdersPageWithFallback({ workspace: 'legacy' })
             if (error) throw error
             return data || []
         },
@@ -47,10 +50,17 @@ export function useTrashOrderCount() {
     return useQuery({
         queryKey: TRASH_COUNT_QUERY_KEY,
         queryFn: async () => {
-            const res = await supabase
+            let res = await supabase
                 .from('orders')
                 .select('id', { count: 'exact', head: true })
                 .not('deleted_at', 'is', null)
+                .neq('workspace', 'buyurtmalar2')
+            if (res.error && /workspace|column|does not exist|42703|schema cache/i.test(String(res.error.message || ''))) {
+                res = await supabase
+                    .from('orders')
+                    .select('id', { count: 'exact', head: true })
+                    .not('deleted_at', 'is', null)
+            }
             if (res.error && !isDeletedAtMissingError(res.error)) throw res.error
             return res.count ?? 0
         },

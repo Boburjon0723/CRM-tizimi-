@@ -84,6 +84,11 @@ export async function saveOrder({
                 : form.status === 'cancelled' || form.status === 'Bekor qilindi'
                   ? 'cancelled'
                   : form.status
+    const orderWorkspace = form.workspace === 'buyurtmalar2' ? 'buyurtmalar2' : 'legacy'
+    const isWorkspaceMissingError = (err) =>
+        /workspace/i.test(String(err?.message || err || '')) &&
+        /column|does not exist|42703|schema cache/i.test(String(err?.message || err || ''))
+
     let baseOrderPayload = {
         customer_id: form.customer_id || null,
         customer_name: resolvedCustomerName,
@@ -93,6 +98,7 @@ export async function saveOrder({
         note: noteCombined,
         source: normalizeSourceForDb(form.source),
         updated_at: stamp,
+        workspace: orderWorkspace,
     }
     baseOrderPayload = withCompletedAtOnStatusChange(
         baseOrderPayload,
@@ -172,14 +178,32 @@ export async function saveOrder({
         if (itemErrorEdit) throw itemErrorEdit
 
         let { error: updErr } = await supabase.from('orders').update(baseOrderPayload).eq('id', orderIdStr)
+        if (updErr && isWorkspaceMissingError(updErr)) {
+            if (orderWorkspace === 'buyurtmalar2') {
+                await showAlert(
+                    t('orders2.workspaceMigrationHint') ||
+                        'Buyurtmalar jadvalida `workspace` ustuni yo‘q. Supabase da `add_orders_workspace.sql` ni ishga tushiring.',
+                    { variant: 'warning' }
+                )
+                return { ok: false }
+            }
+            const { workspace: _w, ...noWs } = baseOrderPayload
+            ;({ error: updErr } = await supabase.from('orders').update(noWs).eq('id', orderIdStr))
+        }
         if (updErr && /completed_at|updated_at|column|does not exist|42703|schema cache/i.test(String(updErr.message || ''))) {
+            // workspace ni olib tashlamang — faqat completed_at / updated_at
             const { completed_at: _c, updated_at: _u, ...rest } = baseOrderPayload
             ;({ error: updErr } = await supabase.from('orders').update(rest).eq('id', orderIdStr))
+            if (updErr && isWorkspaceMissingError(updErr) && orderWorkspace === 'legacy') {
+                const { workspace: _w2, completed_at: _c2, updated_at: _u2, ...rest2 } = baseOrderPayload
+                ;({ error: updErr } = await supabase.from('orders').update(rest2).eq('id', orderIdStr))
+            }
         }
         if (updErr) throw updErr
 
         const newStatus = baseOrderPayload.status
-        if (newStatus !== oldStatus) {
+        const skipStock = orderWorkspace === 'buyurtmalar2'
+        if (!skipStock && newStatus !== oldStatus) {
             const items = itemPayloadsEdit
             const num = oldOrder?.order_number || orderIdStr
             if (newStatus === 'completed') {
@@ -202,35 +226,66 @@ export async function saveOrder({
     }
 
     let newOrder = null
-    let ins = await supabase
-        .from('orders')
-        .insert([{ ...baseOrderPayload, order_number: displayOrderNo }])
-        .select()
-        .single()
+    let includeWorkspace = true
 
-    const errMsg = ins.error ? String(ins.error.message || ins.error) : ''
-    if (ins.error && /completed_at|updated_at|column|does not exist|42703|schema cache/i.test(errMsg)) {
-        const { completed_at: _c, updated_at: _u, ...rest } = baseOrderPayload
+    const buildInsertRow = (stripKeys = []) => {
+        const row = { ...baseOrderPayload, order_number: displayOrderNo }
+        if (!includeWorkspace) delete row.workspace
+        for (const k of stripKeys) delete row[k]
+        return row
+    }
+
+    const failIfBuyurtmalar2NeedsWorkspace = async (err) => {
+        if (orderWorkspace === 'buyurtmalar2' && isWorkspaceMissingError(err)) {
+            await showAlert(
+                t('orders2.workspaceMigrationHint') ||
+                    'Buyurtmalar jadvalida `workspace` ustuni yo‘q. Supabase da `add_orders_workspace.sql` ni ishga tushiring.',
+                { variant: 'warning' }
+            )
+            return true
+        }
+        return false
+    }
+
+    let ins = await supabase.from('orders').insert([buildInsertRow()]).select().single()
+
+    if (ins.error && isWorkspaceMissingError(ins.error)) {
+        if (await failIfBuyurtmalar2NeedsWorkspace(ins.error)) return { ok: false }
+        includeWorkspace = false
+        ins = await supabase.from('orders').insert([buildInsertRow()]).select().single()
+    }
+
+    if (
+        ins.error &&
+        /completed_at|updated_at/i.test(String(ins.error.message || '')) &&
+        /column|does not exist|42703|schema cache/i.test(String(ins.error.message || ''))
+    ) {
         ins = await supabase
             .from('orders')
-            .insert([{ ...rest, order_number: displayOrderNo }])
+            .insert([buildInsertRow(['completed_at', 'updated_at'])])
             .select()
             .single()
     }
-    const errMsg2 = ins.error ? String(ins.error.message || ins.error) : ''
-    if (ins.error && /order_number|column.*does not exist|schema cache/i.test(errMsg2)) {
-        const { completed_at: _c2, updated_at: _u2, ...rest2 } = baseOrderPayload
+
+    if (ins.error && isWorkspaceMissingError(ins.error)) {
+        if (await failIfBuyurtmalar2NeedsWorkspace(ins.error)) return { ok: false }
+        includeWorkspace = false
         ins = await supabase
             .from('orders')
-            .insert([
-                {
-                    ...rest2,
-                    note: `${t('orders.orderNumberPrefix')} ${displayOrderNo}\n${noteCombined || ''}`,
-                },
-            ])
+            .insert([buildInsertRow(['completed_at', 'updated_at'])])
             .select()
             .single()
-    } else if (ins.error && !/completed_at|updated_at|column|does not exist|42703|schema cache/i.test(errMsg)) {
+    }
+
+    const errMsg2 = ins.error ? String(ins.error.message || '') : ''
+    if (ins.error && /order_number/i.test(errMsg2) && /column|does not exist|schema cache/i.test(errMsg2)) {
+        const row = buildInsertRow(['completed_at', 'updated_at', 'order_number'])
+        row.note = `${t('orders.orderNumberPrefix')} ${displayOrderNo}\n${noteCombined || ''}`
+        ins = await supabase.from('orders').insert([row]).select().single()
+    } else if (
+        ins.error &&
+        !/completed_at|updated_at|workspace|order_number|column|does not exist|42703|schema cache/i.test(errMsg2)
+    ) {
         throw ins.error
     }
     if (ins.error) throw ins.error
@@ -275,7 +330,7 @@ export async function saveOrder({
         throw itemError
     }
 
-    if (baseOrderPayload.status === 'completed') {
+    if (baseOrderPayload.status === 'completed' && orderWorkspace !== 'buyurtmalar2') {
         await deductStockForCompletedOrder(orderId, displayOrderNo, itemPayloads)
         showToast(t('orders.stockDeductedOk') || "Ombor qoldig'i yangilandi", { type: 'success' })
     }

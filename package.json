@@ -19,6 +19,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:unit": "node --test tests/unit/*.test.cjs",
     "test:partial-ship-db": "node scripts/check-partial-ship-db.js",
+    "test:workspace": "node scripts/check-workspace-columns.js && node --test tests/unit/workspace-columns.test.cjs",
     "electron:dev": "cross-env NODE_ENV=development electron .",
     "electron:build": "next build && electron-builder"
   },

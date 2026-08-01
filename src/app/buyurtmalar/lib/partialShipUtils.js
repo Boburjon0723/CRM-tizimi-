@@ -52,6 +52,23 @@ export async function loadOrderShippedMap(orderId) {
     return applyMovementRowsToMap(out, rows)
 }
 
+/** Buyurtma bo‘yicha eng so‘nggi ombor chiqimi (sale) sanasi */
+export async function fetchLatestOrderShipDate(orderId) {
+    if (!orderId) return null
+    const q = await supabase
+        .from('stock_movements')
+        .select('created_at')
+        .eq('order_id', orderId)
+        .eq('type', 'sale')
+        .order('created_at', { ascending: false })
+        .limit(1)
+    if (q.error && /created_at|column|does not exist|42703/i.test(String(q.error.message || ''))) {
+        return null
+    }
+    if (q.error) throw q.error
+    return q.data?.[0]?.created_at || null
+}
+
 /** Bir nechta buyurtma uchun jo‘natilgan miqdorlar: Map<orderId, Map<shipKey, qty>> */
 export async function loadOrdersShippedMaps(orderIds) {
     const result = new Map()

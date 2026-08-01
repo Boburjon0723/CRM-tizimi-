@@ -52,6 +52,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
     { href: '/mahsulotlar', icon: Package, label: t('common.products') },
     { href: '/ombor', icon: Warehouse, label: t('common.warehouse') },
     { href: '/buyurtmalar', icon: ShoppingCart, label: t('common.orders') },
+    { href: '/buyurtmalar2', icon: ShoppingCart, label: t('common.orders2') },
     { href: '/ai', icon: Sparkles, label: t('common.ai') },
     { href: '/mijozlar', icon: UserCircle, label: t('common.customers') },
     { href: '/xabarlar', icon: MessageSquare, label: t('common.messages') },

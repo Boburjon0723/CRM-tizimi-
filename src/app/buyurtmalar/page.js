@@ -296,7 +296,10 @@ function BuyurtmalarPageContent() {
             await migrateCompletedFromTrashToArchive(supabase)
             if (seq !== loadDataSeqRef.current) return
 
-            const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback({ activeOnly: true })
+            const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback({
+                activeOnly: true,
+                workspace: 'legacy',
+            })
             if (ordersError) throw ordersError
             if (seq !== loadDataSeqRef.current) return
 
@@ -319,19 +322,34 @@ function BuyurtmalarPageContent() {
             }
 
             let trashCnt = 0
-            const trashCntRes = await supabase
+            let trashCntRes = await supabase
                 .from('orders')
                 .select('id', { count: 'exact', head: true })
                 .not('deleted_at', 'is', null)
+                .neq('workspace', 'buyurtmalar2')
+            if (trashCntRes.error && /workspace|column|does not exist|42703|schema cache/i.test(String(trashCntRes.error.message || ''))) {
+                trashCntRes = await supabase
+                    .from('orders')
+                    .select('id', { count: 'exact', head: true })
+                    .not('deleted_at', 'is', null)
+            }
             if (!trashCntRes.error) trashCnt = trashCntRes.count ?? 0
             else if (!isDeletedAtMissingError(trashCntRes.error)) console.warn('trash count:', trashCntRes.error)
 
             let archiveCnt = 0
-            const archiveCntRes = await supabase
+            let archiveCntRes = await supabase
                 .from('orders')
                 .select('id', { count: 'exact', head: true })
                 .not('archived_at', 'is', null)
                 .is('deleted_at', null)
+                .neq('workspace', 'buyurtmalar2')
+            if (archiveCntRes.error && /workspace|column|does not exist|42703|schema cache/i.test(String(archiveCntRes.error.message || ''))) {
+                archiveCntRes = await supabase
+                    .from('orders')
+                    .select('id', { count: 'exact', head: true })
+                    .not('archived_at', 'is', null)
+                    .is('deleted_at', null)
+            }
             if (!archiveCntRes.error) archiveCnt = archiveCntRes.count ?? 0
             else if (!isArchivedAtMissingError(archiveCntRes.error)) console.warn('archive count:', archiveCntRes.error)
 

@@ -249,7 +249,19 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
                         variant: 'info',
                     }
                 )
-                if (printOk) await onPrintShipped(order, false)
+                if (printOk) {
+                    const withPrice = await showConfirm(
+                        t('orders.partialPrintPriceConfirm') ||
+                            'Narxli chop etilsinmi?\nHa = narxli, Yo‘q = narxsiz',
+                        {
+                            title: t('orders.partialPrintShort') || 'Chiqqan qismni chop etish',
+                            variant: 'info',
+                            confirmLabel: t('orders.partialPrintWithPrice') || 'Narxli',
+                            cancelLabel: t('orders.partialPrintWithoutPrice') || 'Narxsiz',
+                        }
+                    )
+                    await onPrintShipped(order, Boolean(withPrice))
+                }
             }
         } catch (error) {
             console.error('submitPartialShipment:', error)
@@ -355,18 +367,36 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
                                     </span>
                                 )}
                             </label>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                                 {summary.shipped > 0 ? (
-                                    <button
-                                        type="button"
-                                        disabled={saving}
-                                        onClick={() => onPrintShipped?.(order, false)}
-                                        className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 hover:bg-cyan-100 disabled:opacity-50 inline-flex items-center gap-1.5"
-                                        title={t('orders.partialPrintShort') || 'Chiqqan qismni chop etish'}
-                                    >
-                                        <Printer size={14} />
-                                        {t('orders.partialPrintShort') || 'Chiqqan qismni chop etish'}
-                                    </button>
+                                    <>
+                                        <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => onPrintShipped?.(order, true)}
+                                            className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 hover:bg-cyan-100 disabled:opacity-50 inline-flex items-center gap-1.5"
+                                            title={
+                                                t('orders.partialPrintWithPrice') ||
+                                                'Chiqqan qismni narxli chop etish'
+                                            }
+                                        >
+                                            <Printer size={14} />
+                                            {t('orders.partialPrintWithPrice') || 'Chiqqan · narxli'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => onPrintShipped?.(order, false)}
+                                            className="rounded-lg border border-cyan-200 bg-white px-3 py-1.5 text-xs font-bold text-cyan-800 hover:bg-cyan-50 disabled:opacity-50 inline-flex items-center gap-1.5"
+                                            title={
+                                                t('orders.partialPrintWithoutPrice') ||
+                                                'Chiqqan qismni narxsiz chop etish'
+                                            }
+                                        >
+                                            <Printer size={14} />
+                                            {t('orders.partialPrintWithoutPrice') || 'Chiqqan · narxsiz'}
+                                        </button>
+                                    </>
                                 ) : null}
                                 {summary.shipped > 0 ? (
                                     <button

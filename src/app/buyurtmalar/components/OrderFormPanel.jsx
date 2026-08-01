@@ -39,6 +39,9 @@ export default function OrderFormPanel({
     onSaved,
     onMergeArchived,
     loadTrashOrders,
+    /** Ixtiyoriy: Buyurtmalar2 uchun saveBuyurtma2Order */
+    saveOrderFn = null,
+    forceWorkspace = null,
 }) {
     const { t, language } = useLanguage()
     const { showAlert, showConfirm, showToast } = useDialog()
@@ -386,8 +389,11 @@ export default function OrderFormPanel({
             savingOrderRef.current = true
             setIsSavingOrder(true)
             try {
-                const result = await saveOrder({
-                    form,
+                const persist = saveOrderFn || saveOrder
+                const result = await persist({
+                    form: forceWorkspace
+                        ? { ...form, workspace: forceWorkspace }
+                        : form,
                     orderLines,
                     editId,
                     orders,
@@ -440,6 +446,8 @@ export default function OrderFormPanel({
             loadTrashOrders,
             onSaved,
             onClose,
+            saveOrderFn,
+            forceWorkspace,
         ]
     )
 
