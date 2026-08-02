@@ -424,6 +424,19 @@ export default function MoliyaBoshqaruvPage() {
         ? balanceByPartner[selectedId] || { UZS: 0, USD: 0 }
         : { UZS: 0, USD: 0 }
 
+    /** 4 operatsiya turi bo‘yicha alohida yig‘indi (qarz balansi bilan bog‘lanmagan) */
+    const selectedTypeTotals = useMemo(() => {
+        const types = ['supply', 'sale_out', 'payment_in', 'payment']
+        const out = {}
+        for (const key of types) {
+            out[key] = {
+                UZS: sumPartnerEntriesByType(selectedEntries, key, 'UZS'),
+                USD: sumPartnerEntriesByType(selectedEntries, key, 'USD'),
+            }
+        }
+        return out
+    }, [selectedEntries])
+
     const sortedSelectedEntries = useMemo(() => {
         return [...selectedEntries].sort((a, b) => {
             const da = entryDateKey(a)
@@ -1438,6 +1451,61 @@ export default function MoliyaBoshqaruvPage() {
                                             <p className="text-lg font-bold text-gray-400">—</p>
                                         ) : null}
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="mb-6">
+                                <p className="text-xs font-bold text-gray-500 uppercase mb-3">
+                                    {t('finances.partnerTypeTotalsTitle')}
+                                </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                                    {[
+                                        {
+                                            key: 'supply',
+                                            label: t('finances.partnerAddSupply'),
+                                            box: 'border-slate-200 bg-slate-50/80',
+                                            val: 'text-slate-900',
+                                        },
+                                        {
+                                            key: 'sale_out',
+                                            label: t('finances.partnerAddSaleOut'),
+                                            box: 'border-amber-200 bg-amber-50/70',
+                                            val: 'text-amber-950',
+                                        },
+                                        {
+                                            key: 'payment_in',
+                                            label: t('finances.partnerAddPaymentIn'),
+                                            box: 'border-emerald-200 bg-emerald-50/80',
+                                            val: 'text-emerald-950',
+                                        },
+                                        {
+                                            key: 'payment',
+                                            label: t('finances.partnerAddPayment'),
+                                            box: 'border-blue-200 bg-blue-50/70',
+                                            val: 'text-blue-950',
+                                        },
+                                    ].map(({ key, label, box, val }) => {
+                                        const tot = selectedTypeTotals[key] || { UZS: 0, USD: 0 }
+                                        const hasUzs = tot.UZS > 0.01
+                                        const hasUsd = tot.USD > 0.01
+                                        return (
+                                            <div
+                                                key={key}
+                                                className={`rounded-xl border p-3.5 ${box}`}
+                                            >
+                                                <p className="text-[11px] font-bold text-gray-600 leading-snug">
+                                                    {label}
+                                                </p>
+                                                <div className={`mt-1.5 space-y-0.5 text-sm font-bold tabular-nums ${val}`}>
+                                                    {hasUzs ? <p>{formatFinAmount(tot.UZS, 'UZS')}</p> : null}
+                                                    {hasUsd ? <p>{formatFinAmount(tot.USD, 'USD')}</p> : null}
+                                                    {!hasUzs && !hasUsd ? (
+                                                        <p className="text-gray-400 font-semibold">—</p>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
                                 </div>
                             </div>
 
