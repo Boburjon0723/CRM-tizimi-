@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import ExcelJS from 'exceljs'
 import { supabase } from '@/lib/supabase'
 import { withTimeout } from '@/lib/withTimeout'
 import { mergeProductInventoryRow } from '@/lib/productInventoryMerge'
+import { loadExcelJS } from '@/lib/lazyOffice'
 import Header from '@/components/Header'
 import {
     Plus,
@@ -1345,6 +1345,7 @@ export default function Mahsulotlar() {
         setExportLoading(true);
         
         try {
+            const ExcelJS = await loadExcelJS()
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('Mahsulotlar');
 

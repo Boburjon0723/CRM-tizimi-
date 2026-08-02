@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import * as XLSX from 'xlsx'
+import dynamic from 'next/dynamic'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import {
@@ -20,25 +20,27 @@ import {
     AlertCircle,
     AlertTriangle,
 } from 'lucide-react'
-import {
-    AreaChart,
-    Area,
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-    PieChart,
-    Pie,
-    Cell,
-    Legend,
-} from 'recharts'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { isDeletedAtMissingError } from '@/lib/orderTrash'
 import CrmAiInsightsPanel from '@/components/CrmAiInsightsPanel'
+import { loadXlsx } from '@/lib/lazyOffice'
+
+const StatsCharts = dynamic(() => import('./StatsCharts'), {
+    ssr: false,
+    loading: () => (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-[320px] rounded-2xl border border-gray-100 bg-gray-50 animate-pulse" />
+            ))}
+        </div>
+    ),
+})
+
+const StatsCategoryPie = dynamic(() => import('./StatsCharts').then((m) => m.StatsCategoryPie), {
+    ssr: false,
+    loading: () => <div className="h-full w-full rounded-xl bg-gray-50 animate-pulse" />,
+})
 
 const LS_MODE = 'crm_stat_date_mode'
 const LS_DAYS = 'crm_stat_filter_days'
@@ -406,8 +408,8 @@ export default function StatistikaPage() {
             setLoading(true)
             setLoadError(null)
             setPartialWarning(null)
-            const transPromise = supabase.from('transactions').select('*')
-            const productsPromise = supabase.from('products').select('*')
+            const transPromise = supabase.from('transactions').select('id, type, amount, date')
+            const productsPromise = supabase.from('products').select('id, name, size, code')
 
             const [financeRes, productsRes] = await Promise.all([transPromise, productsPromise])
 
@@ -418,31 +420,38 @@ export default function StatistikaPage() {
                 console.error('Statistika products:', productsRes.error)
             }
 
+            const ordersSelect = `
+                id, status, created_at, updated_at, total, customer_id, order_number,
+                customers (id, name, phone),
+                order_items (
+                    quantity,
+                    price,
+                    product_id,
+                    product_name,
+                    size,
+                    products (
+                        id,
+                        name,
+                        size,
+                        categories (name)
+                    )
+                )
+            `
+
             let ordersRes = await supabase
                 .from('orders')
-                .select(
-                    `
-                *,
-                customers (id, name, phone),
-                order_items (
-                    quantity,
-                    price,
-                    product_id,
-                    product_name,
-                    size,
-                    products (
-                        id,
-                        name,
-                        size,
-                        categories (name)
-                    )
-                )
-            `
-                )
+                .select(ordersSelect)
                 .is('deleted_at', null)
             if (ordersRes.error && isDeletedAtMissingError(ordersRes.error)) {
-                ordersRes = await supabase.from('orders').select(
-                    `
+                ordersRes = await supabase.from('orders').select(ordersSelect)
+            }
+            // Tor select ishlamasa — eski keng select (ustun farqi uchun)
+            if (ordersRes.error) {
+                console.warn('Statistika narrow orders select failed, fallback:', ordersRes.error.message)
+                ordersRes = await supabase
+                    .from('orders')
+                    .select(
+                        `
                 *,
                 customers (id, name, phone),
                 order_items (
@@ -459,7 +468,29 @@ export default function StatistikaPage() {
                     )
                 )
             `
+                    )
+                    .is('deleted_at', null)
+                if (ordersRes.error && isDeletedAtMissingError(ordersRes.error)) {
+                    ordersRes = await supabase.from('orders').select(
+                        `
+                *,
+                customers (id, name, phone),
+                order_items (
+                    quantity,
+                    price,
+                    product_id,
+                    product_name,
+                    size,
+                    products (
+                        id,
+                        name,
+                        size,
+                        categories (name)
+                    )
                 )
+            `
+                    )
+                }
             }
 
             if (ordersRes.error) {
@@ -998,6 +1029,7 @@ export default function StatistikaPage() {
         setExcelImportError('')
         try {
             const buf = await file.arrayBuffer()
+            const XLSX = await loadXlsx()
             const wb = XLSX.read(buf, { type: 'array' })
             const sheetName = wb.SheetNames[0]
             const sheet = wb.Sheets[sheetName]
@@ -1176,7 +1208,7 @@ export default function StatistikaPage() {
         downloadBlob(`${exportFileBase}-mahsulotlar.csv`, blob)
     }, [exportFileBase, productAnalyticsRows, t])
 
-    const exportProductsXlsx = useCallback(() => {
+    const exportProductsXlsx = useCallback(async () => {
         const hdr = [
             t('statistics.colRank'),
             t('statistics.colProduct'),
@@ -1187,6 +1219,7 @@ export default function StatistikaPage() {
             hdr,
             ...productAnalyticsRows.map((row, i) => [i + 1, row.name, row.qty, Number(row.revenue) || 0]),
         ]
+        const XLSX = await loadXlsx()
         const ws = XLSX.utils.aoa_to_sheet(aoa)
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'Products')
@@ -1210,7 +1243,7 @@ export default function StatistikaPage() {
         downloadBlob(`${exportFileBase}-kategoriyalar.csv`, blob)
     }, [categoryAnalyticsRows, exportFileBase, t])
 
-    const exportCategoriesXlsx = useCallback(() => {
+    const exportCategoriesXlsx = useCallback(async () => {
         const hdr = [
             t('statistics.colRank'),
             t('statistics.colCategory'),
@@ -1221,6 +1254,7 @@ export default function StatistikaPage() {
             hdr,
             ...categoryAnalyticsRows.map((row, i) => [i + 1, row.name, row.qty, Number(row.revenue) || 0]),
         ]
+        const XLSX = await loadXlsx()
         const ws = XLSX.utils.aoa_to_sheet(aoa)
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'Categories')
@@ -1248,7 +1282,7 @@ export default function StatistikaPage() {
         downloadBlob(`${exportFileBase}-mijozlar.csv`, blob)
     }, [customerAnalyticsRows, exportFileBase, t])
 
-    const exportCustomersXlsx = useCallback(() => {
+    const exportCustomersXlsx = useCallback(async () => {
         const hdr = [
             t('statistics.colRank'),
             t('statistics.colCustomer'),
@@ -1268,6 +1302,7 @@ export default function StatistikaPage() {
                 Number(row.total) || 0,
             ]),
         ]
+        const XLSX = await loadXlsx()
         const ws = XLSX.utils.aoa_to_sheet(aoa)
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'Customers')
@@ -1295,7 +1330,7 @@ export default function StatistikaPage() {
         downloadBlob(`${exportFileBase}-mijoz-model.csv`, blob)
     }, [customerModelAnalyticsRows, exportFileBase, t])
 
-    const exportCustomerModelsXlsx = useCallback(() => {
+    const exportCustomerModelsXlsx = useCallback(async () => {
         const hdr = [
             t('statistics.colRank'),
             t('statistics.colCustomer'),
@@ -1315,6 +1350,7 @@ export default function StatistikaPage() {
                 Number(row.revenue) || 0,
             ]),
         ]
+        const XLSX = await loadXlsx()
         const ws = XLSX.utils.aoa_to_sheet(aoa)
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'CustModels')
@@ -1764,148 +1800,20 @@ export default function StatistikaPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-4 text-gray-800">{t('statistics.topProductsBar')}</h3>
-                    <div className="h-[320px]">
-                        {topProductsBarData.length === 0 ? (
-                            <p className="text-sm text-gray-400 py-12 text-center">{t('statistics.noData')}</p>
-                        ) : (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart
-                                    layout="vertical"
-                                    data={topProductsBarData}
-                                    margin={{ top: 8, right: 12, left: 8, bottom: 8 }}
-                                >
-                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                                    <XAxis type="number" tick={{ fontSize: 10 }} />
-                                    <YAxis type="category" dataKey="label" width={108} tick={{ fontSize: 9 }} />
-                                    <Tooltip
-                                        formatter={(v) => [v, t('statistics.chartQtyShort')]}
-                                        labelFormatter={(_, p) => (p?.[0]?.payload?.full ? String(p[0].payload.full) : '')}
-                                    />
-                                    <Bar dataKey="qty" fill="#6366f1" radius={[0, 4, 4, 0]} name={t('statistics.chartQtyShort')} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        )}
-                    </div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-4 text-gray-800">{t('statistics.topCustomersBar')}</h3>
-                    <div className="h-[320px]">
-                        {topCustomersBarData.length === 0 ? (
-                            <p className="text-sm text-gray-400 py-12 text-center">{t('statistics.noData')}</p>
-                        ) : (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart
-                                    layout="vertical"
-                                    data={topCustomersBarData}
-                                    margin={{ top: 8, right: 12, left: 8, bottom: 8 }}
-                                >
-                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} />
-                                    <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 9 }} />
-                                    <Tooltip
-                                        formatter={(v) => [`$${formatUsd(v)}`, t('statistics.colTotalSpent')]}
-                                        labelFormatter={(_, p) => (p?.[0]?.payload?.full ? String(p[0].payload.full) : '')}
-                                    />
-                                    <Bar dataKey="total" fill="#059669" radius={[0, 4, 4, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <StatsCharts
+                t={t}
+                locale={locale}
+                formatUsd={formatUsd}
+                colors={COLORS}
+                topProductsBarData={topProductsBarData}
+                topCustomersBarData={topCustomersBarData}
+                salesChartData={salesChartData}
+                financeChartData={financeChartData}
+                categoryData={categoryData}
+                emptyLabel={t('statistics.noData')}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-6 flex items-center gap-2 text-gray-800">
-                        <TrendingUp size={20} className="text-blue-500" />
-                        {t('statistics.salesTrend')}
-                    </h3>
-                    <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={salesChartData}>
-                                <defs>
-                                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
-                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                <XAxis
-                                    dataKey="date"
-                                    tick={{ fontSize: 10 }}
-                                    interval="preserveStartEnd"
-                                    tickFormatter={(v) => {
-                                        try {
-                                            return new Date(v + 'T12:00:00').toLocaleDateString(locale, {
-                                                month: 'short',
-                                                day: 'numeric',
-                                            })
-                                        } catch {
-                                            return v
-                                        }
-                                    }}
-                                />
-                                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} width={48} />
-                                <Tooltip
-                                    formatter={(val) => [`$${formatUsd(val)}`, t('statistics.totalSalesPeriod')]}
-                                    labelFormatter={(l) => l}
-                                    contentStyle={{
-                                        borderRadius: '12px',
-                                        border: 'none',
-                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                                    }}
-                                />
-                                <Area
-                                    type="monotone"
-                                    dataKey="amount"
-                                    stroke="#3b82f6"
-                                    fillOpacity={1}
-                                    fill="url(#colorSales)"
-                                    strokeWidth={2}
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-6 text-gray-800">{t('statistics.incomeExpense')}</h3>
-                    <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={financeChartData} barSize={20}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                                <XAxis dataKey="date" tick={{ fontSize: 9 }} hide={financeChartData.length > 18} />
-                                <YAxis tick={{ fontSize: 10 }} width={44} />
-                                <Tooltip
-                                    formatter={(val) => `$${formatUsd(val)}`}
-                                    contentStyle={{
-                                        borderRadius: '12px',
-                                        border: 'none',
-                                        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                                    }}
-                                    cursor={{ fill: 'transparent' }}
-                                />
-                                <Legend wrapperStyle={{ paddingTop: '12px' }} />
-                                <Bar
-                                    dataKey="income"
-                                    name={t('statistics.chartIncomeFromOrders')}
-                                    fill="#10b981"
-                                    radius={[4, 4, 0, 0]}
-                                />
-                                <Bar
-                                    dataKey="expense"
-                                    name={t('statistics.chartExpenseFromFinance')}
-                                    fill="#ef4444"
-                                    radius={[4, 4, 0, 0]}
-                                />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
                 <div
                     ref={printRefCategories}
                     className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col"
@@ -1945,25 +1853,7 @@ export default function StatistikaPage() {
                     </p>
                     <p className="text-xs text-gray-500 mb-3 print:hidden">{t('statistics.categoryTableHint')}</p>
                     <div className="h-[260px] flex items-center justify-center shrink-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={categoryData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={62}
-                                    outerRadius={92}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {categoryData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} strokeWidth={0} />
-                                    ))}
-                                </Pie>
-                                <Tooltip formatter={(val) => `$${formatUsd(val)}`} />
-                                <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                            </PieChart>
-                        </ResponsiveContainer>
+                        <StatsCategoryPie categoryData={categoryData} colors={COLORS} formatUsd={formatUsd} />
                     </div>
                     <h4 className="text-sm font-bold flex items-center gap-2 text-gray-800 mt-4 mb-2 border-t border-gray-100 pt-4">
                         <FolderTree size={18} className="text-amber-600 shrink-0" />
