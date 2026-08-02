@@ -41,9 +41,13 @@ import {
     normalizeFinCurrency,
 } from '@/utils/financeCurrency'
 import {
+    buildPartnerLedgerRows,
     downloadPartnerFinanceReportXlsx,
     filterPartnerFinanceEntries,
+    formatLedgerAmount,
+    openPartnerLedgerPrintWindow,
     openPartnerReportPrintWindow,
+    sumPartnerEntriesByType,
 } from '@/utils/partnerFinanceReportExport'
 
 const MOLIYA_DELETE_PIN = String(process.env.NEXT_PUBLIC_MOLIYA_DELETE_PIN ?? '').trim()
@@ -614,6 +618,100 @@ export default function MoliyaBoshqaruvPage() {
             })
         }
     }, [getPartnerReportTables, t, showAlert])
+
+    function printSelectedPartnerLedger() {
+        if (!selectedPartner) return
+        const entries = selectedEntries
+        const types = [
+            { key: 'supply', title: t('finances.partnerAddSupply') },
+            { key: 'sale_out', title: t('finances.partnerAddSaleOut') },
+            { key: 'payment_in', title: t('finances.partnerAddPaymentIn') },
+            { key: 'payment', title: t('finances.partnerAddPayment') },
+        ]
+        const typeSections = types.map(({ key, title }) => {
+            const uzs = sumPartnerEntriesByType(entries, key, 'UZS')
+            const usd = sumPartnerEntriesByType(entries, key, 'USD')
+            const count = entries.filter((e) => e.entry_type === key).length
+            return {
+                title,
+                totalUzs: `${formatLedgerAmount(uzs)} UZS`,
+                totalUsd: `${formatLedgerAmount(usd)} USD`,
+                countLabel: `${count} ${t('finances.partnerLedgerOpsCount')}`,
+            }
+        })
+
+        const ourParts = []
+        if (selectedBalances.UZS > 0.01) {
+            const s = formatOurDebtFin(selectedBalances.UZS, 'UZS')
+            if (s) ourParts.push(s)
+        }
+        if (selectedBalances.USD > 0.01) {
+            const s = formatOurDebtFin(selectedBalances.USD, 'USD')
+            if (s) ourParts.push(s)
+        }
+        const theyParts = []
+        if (selectedBalances.UZS < -0.01) theyParts.push(formatFinAmount(-selectedBalances.UZS, 'UZS'))
+        if (selectedBalances.USD < -0.01) theyParts.push(formatFinAmount(-selectedBalances.USD, 'USD'))
+
+        const typeLabelFn = (et) => entryTypeLabel(et, t)
+        const balLabels = {
+            weOweShort: t('finances.partnerLedgerWeOweShort'),
+            theyOweShort: t('finances.partnerLedgerTheyOweShort'),
+        }
+        const currencySections = ['UZS', 'USD']
+            .map((cur) => {
+                const rows = buildPartnerLedgerRows(entries, cur, typeLabelFn, balLabels)
+                const last = rows[rows.length - 1]
+                const raw = last?.balanceRaw ?? 0
+                let finalBalanceLabel = ''
+                if (rows.length) {
+                    if (raw > 0.01) {
+                        finalBalanceLabel = `${t('finances.partnerLedgerFinal')}: ${t('finances.partnerStatusWeOwe')} — ${formatLedgerAmount(raw)} ${cur}`
+                    } else if (raw < -0.01) {
+                        finalBalanceLabel = `${t('finances.partnerLedgerFinal')}: ${t('finances.partnerStatusTheyOwe')} — ${formatLedgerAmount(-raw)} ${cur}`
+                    } else {
+                        finalBalanceLabel = `${t('finances.partnerLedgerFinal')}: ${t('finances.partnerStatusClosed')}`
+                    }
+                }
+                return {
+                    currencyLabel:
+                        cur === 'UZS'
+                            ? `${t('finances.partnerLedgerTitle')} — ${t('finances.finCurrencyUzs')}`
+                            : `${t('finances.partnerLedgerTitle')} — ${t('finances.finCurrencyUsd')}`,
+                    rows,
+                    emptyLabel: t('finances.partnerLedgerEmptyCurrency'),
+                    finalBalanceLabel,
+                }
+            })
+            .filter((sec) => sec.rows.length > 0)
+
+        const printedAt = new Date().toLocaleString(
+            language === 'ru' ? 'ru-RU' : language === 'en' ? 'en-US' : 'uz-UZ'
+        )
+        const ok = openPartnerLedgerPrintWindow({
+            title: `${t('finances.partnerLedgerPrintTitle')} — ${pickLocalizedName(selectedPartner, language)}`,
+            partnerName: pickLocalizedName(selectedPartner, language),
+            partnerPhone: selectedPartner.phone || '',
+            printedAtLabel: `${t('finances.partnerLedgerPrintedAt')}: ${printedAt}`,
+            statusLabel: statusForDualBalance(selectedBalances.UZS, selectedBalances.USD, t).label,
+            balanceOurDebtLabel: t('finances.partnerBalanceOurDebt'),
+            balanceTheyOweLabel: t('finances.partnerBalanceTheyOwe'),
+            ourDebtText: ourParts.length ? ourParts.join(' · ') : '—',
+            theyOweText: theyParts.length ? theyParts.join(' · ') : '—',
+            typeSectionsTitle: t('finances.partnerLedgerFourParts'),
+            typeSections,
+            ledgerTitle: t('finances.partnerLedgerDebitCredit'),
+            balanceLegend: t('finances.partnerLedgerBalanceLegend'),
+            colDate: t('finances.partnerLedgerColDate'),
+            colOp: t('finances.partnerLedgerColOp'),
+            colKirim: t('finances.partnerLedgerColKirim'),
+            colChiqim: t('finances.partnerLedgerColChiqim'),
+            colBalans: t('finances.partnerLedgerColBalans'),
+            currencySections,
+            emptyAllLabel: t('finances.noEntriesYet'),
+        })
+        if (!ok) void showAlert(t('finances.partnerReportPrintBlocked'), { variant: 'warning' })
+    }
 
     function openPartnerReportModal() {
         const d = new Date()
@@ -1399,7 +1497,18 @@ export default function MoliyaBoshqaruvPage() {
                                 </ResponsiveContainer>
                             </div>
 
-                            <h3 className="text-sm font-bold text-gray-800 mb-1">{t('finances.partnerHistoryTitle')}</h3>
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                                <h3 className="text-sm font-bold text-gray-800">{t('finances.partnerHistoryTitle')}</h3>
+                                <button
+                                    type="button"
+                                    onClick={printSelectedPartnerLedger}
+                                    disabled={sortedSelectedEntries.length === 0}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <Printer size={15} />
+                                    {t('finances.partnerLedgerPrint')}
+                                </button>
+                            </div>
                             <p className="text-xs text-gray-400 mb-3">{t('finances.trxClickRowHint')}</p>
                             <div className="overflow-x-auto rounded-xl border border-gray-100">
                                 <table className="w-full text-left text-sm">
