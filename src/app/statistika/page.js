@@ -25,6 +25,15 @@ import { useLanguage } from '@/context/LanguageContext'
 import { isDeletedAtMissingError } from '@/lib/orderTrash'
 import CrmAiInsightsPanel from '@/components/CrmAiInsightsPanel'
 import { loadXlsx } from '@/lib/lazyOffice'
+import {
+    enrichOrdersForStatistics,
+    effectiveSalesItems,
+    sumEffectiveSalesRevenue,
+    isSalesCountableOrder,
+    salesAnchorDate,
+    salesAnchorDayKey,
+    isCompletedOrderStatus,
+} from '@/utils/statisticsOrderSales'
 
 const StatsCharts = dynamic(() => import('./StatsCharts'), {
     ssr: false,
@@ -52,29 +61,15 @@ const LS_SELECTED_ORDER_IDS = 'crm_selected_order_ids'
 const VALID_FILTER_RANGES = ['7', '30', '90', '365']
 const TOP_N_BAR = 10
 
-function isOrderCompletedStatus(status) {
-    const s = String(status || '').toLowerCase()
-    return s === 'completed' || s === 'tugallandi' || s === 'tugallangan'
-}
-
 function dateInPeriodBounds(d, start, end) {
     if (!(d instanceof Date) || Number.isNaN(d.getTime())) return false
     return d >= start && d <= end
 }
 
-/** Tugallangan buyurtma uchun hisobot sanasi: `updated_at` (status o‘zgarganda), aks holda `created_at` */
-function completionAnchorDate(o) {
-    const raw =
-        o.updated_at != null && o.updated_at !== ''
-            ? o.updated_at
-            : o.created_at
-    return new Date(raw)
-}
-
-/** Savdo trendi: «hammasi» — yaratilgan kun; «tugallangan» — tugallangan (yangilangan) kun */
+/** Savdo trendi: «hammasi» — yaratilgan kun; «tugallangan+qisman» — hisobot sanasi */
 function orderTrendDayKey(o, orderStatusFilter) {
     if (orderStatusFilter === 'completed') {
-        return completionAnchorDate(o).toLocaleDateString('en-CA')
+        return salesAnchorDayKey(o) || new Date(o.created_at).toLocaleDateString('en-CA')
     }
     return new Date(o.created_at).toLocaleDateString('en-CA')
 }
@@ -286,15 +281,20 @@ function isMissingRelationError(err) {
     const msg = String(err?.message || '')
     return code === '42P01' || /does not exist|relation .* does not exist/i.test(msg)
 }
-/** Mahsulot qatorlari (narx × dona) — kategoriya/mahsulot/kartochka yig‘indilari bir xil asosda */
-function sumOrderLineRevenue(order) {
+/** To‘liq buyurtma qatorlari (narx × dona) — «barcha holatlar» filtri uchun */
+function sumFullOrderLineRevenue(order) {
     let s = 0
     for (const item of order?.order_items || []) {
         const q = parseItemQty(item.quantity)
         const lineQty = q > 0 ? q : 1
         s += (Number(item.price) || 0) * lineQty
     }
-    return s
+    return Math.round(s * 100) / 100
+}
+
+/** Savdo (tugallangan + qisman chiqqan miqdor) */
+function sumOrderLineRevenue(order, products = []) {
+    return sumEffectiveSalesRevenue(order, products)
 }
 
 /** Buyurtmalar sahifasidagi `resolvedOrderItemSizeRaw` bilan mos: model kodi */
@@ -421,7 +421,7 @@ export default function StatistikaPage() {
             }
 
             const ordersSelect = `
-                id, status, created_at, updated_at, total, customer_id, order_number,
+                id, status, created_at, updated_at, completed_at, total, customer_id, customer_name, customer_phone, order_number,
                 customers (id, name, phone),
                 order_items (
                     quantity,
@@ -429,6 +429,7 @@ export default function StatistikaPage() {
                     product_id,
                     product_name,
                     size,
+                    color,
                     products (
                         id,
                         name,
@@ -460,6 +461,7 @@ export default function StatistikaPage() {
                     product_id,
                     product_name,
                     size,
+                    color,
                     products (
                         id,
                         name,
@@ -481,6 +483,7 @@ export default function StatistikaPage() {
                     product_id,
                     product_name,
                     size,
+                    color,
                     products (
                         id,
                         name,
@@ -508,8 +511,14 @@ export default function StatistikaPage() {
                 setPartialWarning(parts.join(' '))
             }
 
+            let ordersRaw = ordersRes.error ? [] : ordersRes.data || []
+            // Enrich: qisman chiqim (stock_movements) + oxirgi chiqim sanasi
+            if (ordersRaw.length) {
+                ordersRaw = await enrichOrdersForStatistics(ordersRaw)
+            }
+
             setData({
-                orders: ordersRes.error ? [] : ordersRes.data || [],
+                orders: ordersRaw,
                 finance: financeRes.error ? [] : financeRes.data || [],
                 products: productsRes.error ? [] : productsRes.data || [],
             })
@@ -639,17 +648,26 @@ export default function StatistikaPage() {
     )
 
     /**
-     * Davr: tugallangan sana — `orders.updated_at` (status «tugallandi» payti), buyurtmalar jadvalidagi hisobot bilan mos.
-     * Faqat `completed` / `tugallandi` / `tugallangan` qatorlar.
+     * Davr: tugallangan + qisman chiqqan.
+     * Sana: completed_at (yoki qisman uchun oxirgi ombor chiqimi).
+     * Summa/dona: qisman buyurtmada faqat chiqqan miqdor.
      */
     const completedOrdersInPeriod = useMemo(
         () =>
-            data.orders.filter(
-                (o) =>
-                    isOrderCompletedStatus(o.status) &&
-                    dateInPeriodBounds(completionAnchorDate(o), periodStart, periodEnd)
-            ),
+            data.orders.filter((o) => {
+                if (!isSalesCountableOrder(o)) return false
+                const anchor = salesAnchorDate(o)
+                return anchor && dateInPeriodBounds(anchor, periodStart, periodEnd)
+            }),
         [data.orders, periodStart, periodEnd]
+    )
+
+    const partialOrdersInPeriodCount = useMemo(
+        () =>
+            completedOrdersInPeriod.filter(
+                (o) => !isCompletedOrderStatus(o.status) && (Number(o.fulfillment?.shipped) || 0) > 0
+            ).length,
+        [completedOrdersInPeriod]
     )
 
     const filteredOrders = useMemo(() => {
@@ -663,28 +681,38 @@ export default function StatistikaPage() {
     )
 
     const totalIncomeFromCompletedOrders = useMemo(
-        () => completedOrdersInPeriod.reduce((sum, o) => sum + sumOrderLineRevenue(o), 0),
-        [completedOrdersInPeriod]
+        () =>
+            completedOrdersInPeriod.reduce(
+                (sum, o) => sum + sumOrderLineRevenue(o, data.products),
+                0
+            ),
+        [completedOrdersInPeriod, data.products]
     )
 
     const salesChartData = useMemo(() => {
         const salesTrend = {}
         for (const o of filteredOrders) {
             const day = orderTrendDayKey(o, orderStatusFilter)
-            salesTrend[day] = (salesTrend[day] || 0) + sumOrderLineRevenue(o)
+            if (!day) continue
+            const amount =
+                orderStatusFilter === 'completed'
+                    ? sumOrderLineRevenue(o, data.products)
+                    : sumFullOrderLineRevenue(o)
+            salesTrend[day] = (salesTrend[day] || 0) + amount
         }
         return Object.entries(salesTrend)
             .map(([date, amount]) => ({ date, amount }))
             .sort((a, b) => a.date.localeCompare(b.date))
-    }, [filteredOrders, orderStatusFilter])
+    }, [filteredOrders, orderStatusFilter, data.products])
 
-    /** Kirim: tugallangan buyurtmalar (kun bo‘yicha); chiqim: moliya jadvalidagi xarajatlar */
+    /** Kirim: tugallangan + qisman chiqqan; chiqim: moliya jadvalidagi xarajatlar */
     const financeChartData = useMemo(() => {
         const trend = {}
         for (const o of completedOrdersInPeriod) {
-            const day = completionAnchorDate(o).toLocaleDateString('en-CA')
+            const day = salesAnchorDayKey(o)
+            if (!day) continue
             if (!trend[day]) trend[day] = { date: day, income: 0, expense: 0 }
-            trend[day].income += sumOrderLineRevenue(o)
+            trend[day].income += sumOrderLineRevenue(o, data.products)
         }
         for (const f of filteredFinance) {
             if (f.type !== 'expense') continue
@@ -704,13 +732,13 @@ export default function StatistikaPage() {
             trend[day].expense += Number(f.amount) || 0
         }
         return Object.values(trend).sort((a, b) => a.date.localeCompare(b.date))
-    }, [completedOrdersInPeriod, filteredFinance])
+    }, [completedOrdersInPeriod, filteredFinance, data.products])
 
     /** Kategoriya: sotilgan dona + qator summasi (diagramma — summa ulushi) */
     const categoryAnalyticsRows = useMemo(() => {
         const map = new Map()
         for (const o of completedOrdersInPeriod) {
-            for (const item of o.order_items || []) {
+            for (const item of effectiveSalesItems(o, data.products)) {
                 const catRaw = item.products?.categories?.name
                 const cat =
                     catRaw != null && String(catRaw).trim() !== ''
@@ -733,7 +761,7 @@ export default function StatistikaPage() {
             return b.revenue - a.revenue
         })
         return list
-    }, [filteredOrders, t])
+    }, [completedOrdersInPeriod, data.products, t])
 
     const categoryData = useMemo(
         () => categoryAnalyticsRows.map((r) => ({ name: r.name, value: r.revenue })),
@@ -752,7 +780,10 @@ export default function StatistikaPage() {
 
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
-    const totalSales = completedOrdersInPeriod.reduce((sum, o) => sum + sumOrderLineRevenue(o), 0)
+    const totalSales = completedOrdersInPeriod.reduce(
+        (sum, o) => sum + sumOrderLineRevenue(o, data.products),
+        0
+    )
     const totalExpense = filteredFinance
         .filter((f) => f.type === 'expense')
         .reduce((sum, f) => sum + (Number(f.amount) || 0), 0)
@@ -772,7 +803,7 @@ export default function StatistikaPage() {
             })
         }
         for (const o of completedOrdersInPeriod) {
-            for (const item of o.order_items || []) {
+            for (const item of effectiveSalesItems(o, data.products)) {
                 const qty = parseItemQty(item.quantity)
                 const q = qty > 0 ? qty : 1
                 const rev = (Number(item.price) || 0) * q
@@ -807,7 +838,7 @@ export default function StatistikaPage() {
             return String(a.name).localeCompare(String(b.name), 'uz')
         })
         return list
-    }, [data.products, filteredOrders, t])
+    }, [data.products, completedOrdersInPeriod, t])
 
     const unsoldCount = productAnalyticsRows.filter((r) => r.qty === 0).length
 
@@ -836,8 +867,8 @@ export default function StatistikaPage() {
             }
             const c = map.get(key)
             c.orders += 1
-            c.total += sumOrderLineRevenue(o)
-            for (const item of o.order_items || []) {
+            c.total += sumOrderLineRevenue(o, data.products)
+            for (const item of effectiveSalesItems(o, data.products)) {
                 const q = parseItemQty(item.quantity)
                 c.itemQty += q > 0 ? q : 1
             }
@@ -848,7 +879,7 @@ export default function StatistikaPage() {
             return b.orders - a.orders
         })
         return list
-    }, [completedOrdersInPeriod, t])
+    }, [completedOrdersInPeriod, data.products, t])
 
     /** Mijoz × model (katalog kodi): qaysi modeldan qancha olgani */
     const customerModelAnalyticsRows = useMemo(() => {
@@ -866,7 +897,7 @@ export default function StatistikaPage() {
                       ? `ph:${phoneRaw}`
                       : `nm:${name}`
 
-            for (const item of o.order_items || []) {
+            for (const item of effectiveSalesItems(o, data.products)) {
                 const modelCode = resolvedOrderItemModelCode(item, data.products)
                 const q = parseItemQty(item.quantity)
                 const lineQty = q > 0 ? q : 1
@@ -1141,6 +1172,7 @@ export default function StatistikaPage() {
             rangeTo,
             ordersInPeriod: filteredOrders.length,
             completedInPeriod: completedOrdersInPeriod.length,
+            partialInPeriod: partialOrdersInPeriodCount,
             totalSalesUsd: Math.round(Number(totalSales) * 100) / 100,
             totalIncomeCompletedUsd: Math.round(Number(totalIncomeFromCompletedOrders) * 100) / 100,
             totalExpenseUsd: Math.round(Number(totalExpense) * 100) / 100,
@@ -1175,6 +1207,7 @@ export default function StatistikaPage() {
             rangeTo,
             filteredOrders.length,
             completedOrdersInPeriod.length,
+            partialOrdersInPeriodCount,
             totalSales,
             totalIncomeFromCompletedOrders,
             totalExpense,
@@ -1550,7 +1583,11 @@ export default function StatistikaPage() {
                 <span className="font-bold">{t('statistics.activePeriod')}:</span>{' '}
                 <span className="font-mono tabular-nums">{periodLabel}</span>
                 <span className="text-blue-800/80 ml-2">
-                    ({t('statistics.ordersInPeriod')}: {filteredOrders.length}; {t('statistics.orderStatusFilter')}:{' '}
+                    ({t('statistics.ordersInPeriod')}: {filteredOrders.length}
+                    {orderStatusFilter === 'completed' && partialOrdersInPeriodCount > 0
+                        ? ` · ${t('orders.partialBadgePartial') || 'Qisman'}: ${partialOrdersInPeriodCount}`
+                        : ''}
+                    ; {t('statistics.orderStatusFilter')}:{' '}
                     {orderStatusFilter === 'completed'
                         ? t('statistics.orderStatusCompleted')
                         : t('statistics.orderStatusAll')}

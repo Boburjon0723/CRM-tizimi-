@@ -69,6 +69,34 @@ export async function fetchLatestOrderShipDate(orderId) {
     return q.data?.[0]?.created_at || null
 }
 
+/** Bir nechta buyurtma uchun eng so‘nggi sale sanasi: Map<orderId, iso> */
+export async function loadOrdersLatestShipDates(orderIds) {
+    const result = new Map()
+    const ids = [...new Set((orderIds || []).filter(Boolean))]
+    if (!ids.length) return result
+    const CHUNK = 80
+    for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK)
+        let q = await supabase
+            .from('stock_movements')
+            .select('order_id, created_at')
+            .in('order_id', chunk)
+            .eq('type', 'sale')
+        if (q.error && /created_at|column|does not exist|42703/i.test(String(q.error.message || ''))) {
+            return result
+        }
+        if (q.error) throw q.error
+        for (const r of q.data || []) {
+            const oid = r.order_id
+            const at = r.created_at
+            if (!oid || !at) continue
+            const prev = result.get(oid)
+            if (!prev || new Date(at) > new Date(prev)) result.set(oid, at)
+        }
+    }
+    return result
+}
+
 /** Bir nechta buyurtma uchun jo‘natilgan miqdorlar: Map<orderId, Map<shipKey, qty>> */
 export async function loadOrdersShippedMaps(orderIds) {
     const result = new Map()
