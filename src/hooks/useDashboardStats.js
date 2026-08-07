@@ -79,13 +79,31 @@ export function useRecentOrders() {
 
             if (res.error) throw res.error
 
-            return (res.data || []).map((order) => ({
-                id: order.id,
-                mijoz: order.customers?.name || 'Mijoz',
-                mahsulot: 'Order #' + order.id.toString().slice(0, 8),
-                summa: order.total,
-                status: order.status,
-            }))
+            return (res.data || []).map((order) => {
+                const isV2 = order.workspace === 'buyurtmalar2'
+                const statusRaw = String(order.status || '').toLowerCase()
+                let statusLabel = order.status
+                if (statusRaw === 'new' || statusRaw === 'yangi') statusLabel = 'Yangi'
+                else if (statusRaw === 'pending' || statusRaw === 'jarayonda') statusLabel = 'Jarayonda'
+                else if (statusRaw === 'completed' || statusRaw === 'yakunlangan') statusLabel = 'Tugallandi'
+                else if (statusRaw === 'cancelled' || statusRaw === 'bekor_qilingan') statusLabel = 'Bekor'
+
+                return {
+                    id: order.id,
+                    mijoz:
+                        order.customers?.name ||
+                        order.customer_name ||
+                        'Mijoz',
+                    mahsulot:
+                        (isV2 ? 'B2 #' : 'Order #') + String(order.id).slice(0, 8),
+                    summa: order.total,
+                    status: statusLabel,
+                    href: isV2
+                        ? `/buyurtmalar2?highlight=${encodeURIComponent(String(order.id))}`
+                        : `/buyurtmalar?highlight=${encodeURIComponent(String(order.id))}`,
+                    workspace: order.workspace || 'legacy',
+                }
+            })
         },
         staleTime: 60 * 1000,
     })

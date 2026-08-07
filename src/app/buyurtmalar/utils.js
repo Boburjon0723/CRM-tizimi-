@@ -163,7 +163,7 @@ export async function fetchOrdersPageWithFallback(options = {}) {
                 if (orderByCompleted) {
                     q = q
                         .order('completed_at', { ascending: false, nullsFirst: true })
-                        .order('created_at', { ascending: true })
+                        .order('created_at', { ascending: false })
                 } else {
                     q = q.order('created_at', { ascending: false })
                 }
@@ -1819,8 +1819,9 @@ export function normalizeStatusForSelect(status) {
 }
 
 /**
- * Buyurtmalar tartibi: tugallanish ketma-ketligi (completed_at), buyurtma sanasi (created_at) emas.
- * - Hali tugallanmaganlar yuqorida (navbat)
+ * Buyurtmalar tartibi:
+ * - Hali tugallanmaganlar yuqorida
+ * - Ichida: eng so‘nggi sana (created_at) tepada
  * - Tugallanganlar: completed_at bo‘yicha (eng so‘nggi tugallanganlar oldinda)
  */
 export function sortOrdersByCompletionSequence(list) {
@@ -1840,16 +1841,16 @@ export function sortOrdersByCompletionSequence(list) {
             const tb = ts(b.completed_at) ?? ts(b.updated_at) ?? 0
             if (tb !== ta) return tb - ta
         } else {
-            // Tugallanmagan: navbat — eng eski ochiq buyurtma oldinda (ketma-ketlik)
+            // Tugallanmagan: eng yangi buyurtma tepada
             const ta = ts(a.created_at) ?? ts(a.updated_at) ?? 0
             const tb = ts(b.created_at) ?? ts(b.updated_at) ?? 0
-            if (ta !== tb) return ta - tb
+            if (ta !== tb) return tb - ta
         }
 
         const an = String(a?.order_number || '')
         const bn = String(b?.order_number || '')
-        if (an && bn && an !== bn) return an.localeCompare(bn, undefined, { numeric: true })
-        return String(a?.id || '').localeCompare(String(b?.id || ''))
+        if (an && bn && an !== bn) return bn.localeCompare(an, undefined, { numeric: true })
+        return String(b?.id || '').localeCompare(String(a?.id || ''))
     })
 }
 

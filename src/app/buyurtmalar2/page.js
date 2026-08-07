@@ -12,8 +12,10 @@ import {
     PackageCheck,
     Eye,
     EyeOff,
+    Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { isDeletedAtMissingError } from '@/lib/orderTrash'
 import Header from '@/components/Header'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
@@ -47,6 +49,7 @@ import {
     labelColorCanonical,
     dedupeOrderItemsKeepNewest,
     categoryLabelFromProduct,
+    sortOrdersByCompletionSequence,
 } from '@/app/buyurtmalar/utils'
 
 const WORKSPACE = 'buyurtmalar2'
@@ -142,7 +145,7 @@ function categoriesForOrder(order, products, language) {
 export default function Buyurtmalar2Page() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
-    const { showAlert, showToast } = useDialog()
+    const { showAlert, showToast, showConfirm } = useDialog()
 
     const [loading, setLoading] = useState(true)
     const [schemaMissing, setSchemaMissing] = useState(false)
@@ -251,6 +254,30 @@ export default function Buyurtmalar2Page() {
                 .order('name')
 
             if (seq !== loadSeqRef.current) return
+
+            // customer_id bo‘sh bo‘lsa — nomi bo‘yicha Buyurtmalar2 mijoziga bog‘lash
+            const nameToCustomer = new Map()
+            for (const c of customersData) {
+                const n = String(c.name || '')
+                    .trim()
+                    .toLowerCase()
+                if (n && !nameToCustomer.has(n)) nameToCustomer.set(n, c)
+            }
+            for (const o of ordersList) {
+                if (o.customer_id) continue
+                const n = String(o.customer_name || '')
+                    .trim()
+                    .toLowerCase()
+                const match = n ? nameToCustomer.get(n) : null
+                if (!match) continue
+                const { error: linkErr } = await supabase
+                    .from('orders')
+                    .update({ customer_id: match.id })
+                    .eq('id', o.id)
+                    .eq('workspace', WORKSPACE)
+                if (!linkErr) o.customer_id = match.id
+            }
+
             setOrders(ordersList)
             setCustomers(customersData)
             setProducts(productsData || [])
@@ -311,14 +338,27 @@ export default function Buyurtmalar2Page() {
 
     const ordersByCustomer = useMemo(() => {
         const map = new Map()
+        const nameToId = new Map()
+        for (const c of customers) {
+            const n = String(c.name || '')
+                .trim()
+                .toLowerCase()
+            if (n && !nameToId.has(n)) nameToId.set(n, String(c.id))
+        }
         for (const o of orders) {
-            const cid = o.customer_id ? String(o.customer_id) : ''
+            let cid = o.customer_id ? String(o.customer_id) : ''
+            if (!cid) {
+                const n = String(o.customer_name || '')
+                    .trim()
+                    .toLowerCase()
+                if (n) cid = nameToId.get(n) || ''
+            }
             if (!cid) continue
             if (!map.has(cid)) map.set(cid, [])
             map.get(cid).push(o)
         }
         return map
-    }, [orders])
+    }, [orders, customers])
 
     const customerStats = useMemo(() => {
         const map = new Map()
@@ -354,19 +394,20 @@ export default function Buyurtmalar2Page() {
         return ordersByCustomer.get(String(selectedId)) || []
     }, [ordersByCustomer, selectedId])
 
-    const selectedActiveOrders = useMemo(
-        () =>
-            selectedOrders.filter((o) => {
-                const s = normalizeStatusForSelect(o.status)
-                return s === 'new' || s === 'pending'
-            }),
-        [selectedOrders]
-    )
+    const selectedActiveOrders = useMemo(() => {
+        const list = selectedOrders.filter((o) => {
+            const s = normalizeStatusForSelect(o.status)
+            return s === 'new' || s === 'pending'
+        })
+        return sortOrdersByCompletionSequence(list)
+    }, [selectedOrders])
 
-    const selectedCompletedOrders = useMemo(
-        () => selectedOrders.filter((o) => normalizeStatusForSelect(o.status) === 'completed'),
-        [selectedOrders]
-    )
+    const selectedCompletedOrders = useMemo(() => {
+        const list = selectedOrders.filter(
+            (o) => normalizeStatusForSelect(o.status) === 'completed'
+        )
+        return sortOrdersByCompletionSequence(list)
+    }, [selectedOrders])
 
     const detailOrders = detailTab === 'completed' ? selectedCompletedOrders : selectedActiveOrders
 
@@ -393,7 +434,7 @@ export default function Buyurtmalar2Page() {
         e?.preventDefault?.()
         const name = customerForm.name.trim()
         const phone = customerForm.phone.trim()
-        if (!name || !phone) {
+        if (!name) {
             await showAlert(t('orders2.customerRequired'), { variant: 'warning' })
             return
         }
@@ -401,7 +442,7 @@ export default function Buyurtmalar2Page() {
         try {
             const payload = {
                 name,
-                phone,
+                phone: phone || '',
                 notes: customerForm.notes.trim() || null,
                 email: '',
                 country: '',
@@ -488,6 +529,31 @@ export default function Buyurtmalar2Page() {
         } catch (err) {
             console.error(err)
             await showAlert(err?.message || String(err), { variant: 'error' })
+        }
+    }
+
+    async function handleDeleteOrder(order) {
+        if (!order?.id) return
+        if (!(await showConfirm(t('orders.softDeleteConfirm'), { variant: 'warning' }))) return
+        try {
+            const { error } = await supabase
+                .from('orders')
+                .update({ deleted_at: new Date().toISOString() })
+                .eq('id', order.id)
+                .eq('workspace', WORKSPACE)
+
+            if (error) {
+                if (isDeletedAtMissingError(error)) {
+                    await showAlert(t('orders.deletedAtMigrationHint'), { variant: 'warning' })
+                    return
+                }
+                throw error
+            }
+            showToast(t('orders2.orderMovedToTrash'), { type: 'success' })
+            await loadAll()
+        } catch (err) {
+            console.error(err)
+            await showAlert(err?.message || t('common.deleteError'), { variant: 'error' })
         }
     }
 
@@ -1234,6 +1300,15 @@ export default function Buyurtmalar2Page() {
                                                                     <Pencil size={15} />
                                                                     {t('common.edit')}
                                                                 </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => void handleDeleteOrder(o)}
+                                                                    title={t('orders.moveToTrashTitle')}
+                                                                    className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200 text-red-700 bg-red-50 hover:bg-red-100"
+                                                                >
+                                                                    <Trash2 size={15} />
+                                                                    {t('common.delete')}
+                                                                </button>
                                                             </div>
                                                         </li>
                                                     )
@@ -1267,13 +1342,18 @@ export default function Buyurtmalar2Page() {
                             />
                         </label>
                         <label className="block text-sm">
-                            <span className="font-semibold text-gray-700">{t('orders2.customerPhone')}</span>
+                            <span className="font-semibold text-gray-700">
+                                {t('orders2.customerPhone')}{' '}
+                                <span className="font-normal text-gray-400">
+                                    ({t('common.optional')})
+                                </span>
+                            </span>
                             <input
-                                required
                                 value={customerForm.phone}
                                 onChange={(e) =>
                                     setCustomerForm((f) => ({ ...f, phone: e.target.value }))
                                 }
+                                placeholder={t('orders2.customerPhonePlaceholder')}
                                 className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm"
                             />
                         </label>

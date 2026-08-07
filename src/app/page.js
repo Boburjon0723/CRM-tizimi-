@@ -200,7 +200,7 @@ export default function Dashboard() {
               recentOrders.map(order => (
                 <Link
                   key={order.id}
-                  href={`/buyurtmalar?highlight=${encodeURIComponent(String(order.id))}`}
+                  href={order.href || `/buyurtmalar?highlight=${encodeURIComponent(String(order.id))}`}
                   className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-xl transition-colors border border-transparent hover:border-gray-100 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                 >
                   <div className="flex items-center gap-3">

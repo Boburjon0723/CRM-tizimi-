@@ -446,6 +446,56 @@ export default function MoliyaBoshqaruvPage() {
         })
     }, [selectedEntries])
 
+    /** Operatsiyalar turiga qarab (yig‘indi kartochkalari bilan bir xil tartib) */
+    const partnerEntryTypeSections = useMemo(
+        () => [
+            {
+                key: 'supply',
+                label: t('finances.partnerAddSupply'),
+                box: 'border-slate-200 bg-slate-50/80',
+                head: 'bg-slate-50 text-slate-800',
+                typeClass: 'text-emerald-700 font-medium',
+            },
+            {
+                key: 'sale_out',
+                label: t('finances.partnerAddSaleOut'),
+                box: 'border-amber-200 bg-amber-50/50',
+                head: 'bg-amber-50/80 text-amber-950',
+                typeClass: 'text-amber-800 font-medium',
+            },
+            {
+                key: 'payment_in',
+                label: t('finances.partnerAddPaymentIn'),
+                box: 'border-emerald-200 bg-emerald-50/50',
+                head: 'bg-emerald-50/80 text-emerald-950',
+                typeClass: 'text-emerald-700 font-medium',
+            },
+            {
+                key: 'payment',
+                label: t('finances.partnerAddPayment'),
+                box: 'border-blue-200 bg-blue-50/50',
+                head: 'bg-blue-50/80 text-blue-950',
+                typeClass: 'text-blue-700 font-medium',
+            },
+        ],
+        [t]
+    )
+
+    const entriesGroupedByType = useMemo(() => {
+        const groups = { supply: [], sale_out: [], payment_in: [], payment: [] }
+        for (const row of sortedSelectedEntries) {
+            const key =
+                row.entry_type === 'supply' ||
+                row.entry_type === 'sale_out' ||
+                row.entry_type === 'payment_in' ||
+                row.entry_type === 'payment'
+                    ? row.entry_type
+                    : 'payment'
+            groups[key].push(row)
+        }
+        return groups
+    }, [sortedSelectedEntries])
+
     const chartData = useMemo(() => {
         if (!selectedId) return []
         const cur = normalizeFinCurrency(chartCurrency)
@@ -1577,103 +1627,166 @@ export default function MoliyaBoshqaruvPage() {
                                     {t('finances.partnerLedgerPrint')}
                                 </button>
                             </div>
-                            <p className="text-xs text-gray-400 mb-3">{t('finances.trxClickRowHint')}</p>
-                            <div className="overflow-x-auto rounded-xl border border-gray-100">
-                                <table className="w-full text-left text-sm">
-                                    <thead>
-                                        <tr className="bg-gray-50 text-xs uppercase text-gray-500 font-bold border-b border-gray-100">
-                                            <th className="px-4 py-3">{t('finances.reportsDateCol')}</th>
-                                            <th className="px-4 py-3">{t('finances.reportsColType')}</th>
-                                            <th className="px-4 py-3 text-right whitespace-nowrap">
-                                                {t('finances.amountWithCurrency')}
-                                            </th>
-                                            <th className="px-4 py-3">{t('finances.costNote')}</th>
-                                            <th className="px-2 py-3 w-20 text-center" aria-label={t('common.actions')}>
-                                                <span className="sr-only">{t('common.actions')}</span>
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-50">
-                                        {sortedSelectedEntries.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">
-                                                    {t('finances.noEntriesYet')}
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            sortedSelectedEntries.map((row) => (
-                                                <tr
-                                                    key={row.id}
-                                                    role="button"
-                                                    tabIndex={0}
-                                                    onClick={() => setDetailModal({ entry: row, partner: selectedPartner })}
-                                                    onKeyDown={(ev) => {
-                                                        if (ev.key === 'Enter' || ev.key === ' ')
-                                                            setDetailModal({ entry: row, partner: selectedPartner })
-                                                    }}
-                                                    className="hover:bg-slate-50 cursor-pointer transition-colors"
+                            <p className="text-xs text-gray-400 mb-3">{t('finances.partnerHistoryByTypeHint')}</p>
+                            {sortedSelectedEntries.length === 0 ? (
+                                <div className="rounded-xl border border-gray-100 px-4 py-8 text-center text-gray-400 text-sm">
+                                    {t('finances.noEntriesYet')}
+                                </div>
+                            ) : (
+                                <div className="space-y-5">
+                                    {partnerEntryTypeSections.map(({ key, label, box, head, typeClass }) => {
+                                        const rows = entriesGroupedByType[key] || []
+                                        const tot = selectedTypeTotals[key] || { UZS: 0, USD: 0 }
+                                        const hasUzs = tot.UZS > 0.01
+                                        const hasUsd = tot.USD > 0.01
+                                        return (
+                                            <section
+                                                key={key}
+                                                className={`rounded-xl border overflow-hidden ${box}`}
+                                            >
+                                                <div
+                                                    className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-black/5 ${head}`}
                                                 >
-                                                    <td className="px-4 py-3 tabular-nums text-gray-700">
-                                                        {row.entry_date}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <span
-                                                            className={
-                                                                row.entry_type === 'supply' ||
-                                                                row.entry_type === 'payment_in'
-                                                                    ? 'text-emerald-700 font-medium'
-                                                                    : row.entry_type === 'sale_out'
-                                                                      ? 'text-amber-800 font-medium'
-                                                                      : 'text-blue-700 font-medium'
-                                                            }
-                                                        >
-                                                            {entryTypeLabel(row.entry_type, t)}
+                                                    <h4 className="text-sm font-bold">
+                                                        {label}
+                                                        <span className="ml-2 text-xs font-semibold opacity-70">
+                                                            ({rows.length})
                                                         </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold whitespace-nowrap">
-                                                        {formatFinAmount(row.amount_uzs, row.currency)}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-gray-600 text-xs max-w-[200px] truncate">
-                                                        {row.description || '—'}
-                                                    </td>
-                                                    <td className="px-1 py-2 text-center align-middle">
-                                                        <div className="inline-flex items-center gap-1">
-                                                            <button
-                                                                type="button"
-                                                                disabled={!MOLIYA_DELETE_PIN}
-                                                                title={
-                                                                    MOLIYA_DELETE_PIN
-                                                                        ? t('common.edit')
-                                                                        : t('finances.deletePinNotConfigured')
-                                                                }
-                                                                onClick={(ev) => openEditEntryGate(row, ev)}
-                                                                className="inline-flex p-2 rounded-lg text-blue-600 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                                aria-label={t('common.edit')}
-                                                            >
-                                                                <Pencil size={17} />
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                disabled={!MOLIYA_DELETE_PIN}
-                                                                title={
-                                                                    MOLIYA_DELETE_PIN
-                                                                        ? t('finances.deleteEntry')
-                                                                        : t('finances.deletePinNotConfigured')
-                                                                }
-                                                                onClick={(ev) => openDeleteEntryGate(row, ev)}
-                                                                className="inline-flex p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                                aria-label={t('finances.deleteEntry')}
-                                                            >
-                                                                <Trash2 size={18} />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                                                    </h4>
+                                                    <div className="text-xs font-bold tabular-nums opacity-90 space-x-2">
+                                                        {hasUzs ? (
+                                                            <span>{formatFinAmount(tot.UZS, 'UZS')}</span>
+                                                        ) : null}
+                                                        {hasUsd ? (
+                                                            <span>{formatFinAmount(tot.USD, 'USD')}</span>
+                                                        ) : null}
+                                                        {!hasUzs && !hasUsd ? (
+                                                            <span className="opacity-50">—</span>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+                                                {rows.length === 0 ? (
+                                                    <p className="px-4 py-5 text-center text-sm text-gray-400">
+                                                        {t('finances.noEntriesYet')}
+                                                    </p>
+                                                ) : (
+                                                    <div className="overflow-x-auto bg-white/70">
+                                                        <table className="w-full text-left text-sm">
+                                                            <thead>
+                                                                <tr className="bg-white/80 text-xs uppercase text-gray-500 font-bold border-b border-gray-100">
+                                                                    <th className="px-4 py-2.5">
+                                                                        {t('finances.reportsDateCol')}
+                                                                    </th>
+                                                                    <th className="px-4 py-2.5">
+                                                                        {t('finances.reportsColType')}
+                                                                    </th>
+                                                                    <th className="px-4 py-2.5 text-right whitespace-nowrap">
+                                                                        {t('finances.amountWithCurrency')}
+                                                                    </th>
+                                                                    <th className="px-4 py-2.5">
+                                                                        {t('finances.costNote')}
+                                                                    </th>
+                                                                    <th
+                                                                        className="px-2 py-2.5 w-20 text-center"
+                                                                        aria-label={t('common.actions')}
+                                                                    >
+                                                                        <span className="sr-only">
+                                                                            {t('common.actions')}
+                                                                        </span>
+                                                                    </th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-50">
+                                                                {rows.map((row) => (
+                                                                    <tr
+                                                                        key={row.id}
+                                                                        role="button"
+                                                                        tabIndex={0}
+                                                                        onClick={() =>
+                                                                            setDetailModal({
+                                                                                entry: row,
+                                                                                partner: selectedPartner,
+                                                                            })
+                                                                        }
+                                                                        onKeyDown={(ev) => {
+                                                                            if (ev.key === 'Enter' || ev.key === ' ')
+                                                                                setDetailModal({
+                                                                                    entry: row,
+                                                                                    partner: selectedPartner,
+                                                                                })
+                                                                        }}
+                                                                        className="hover:bg-slate-50 cursor-pointer transition-colors"
+                                                                    >
+                                                                        <td className="px-4 py-3 tabular-nums text-gray-700">
+                                                                            {row.entry_date}
+                                                                        </td>
+                                                                        <td className="px-4 py-3">
+                                                                            <span className={typeClass}>
+                                                                                {entryTypeLabel(row.entry_type, t)}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold whitespace-nowrap">
+                                                                            {formatFinAmount(
+                                                                                row.amount_uzs,
+                                                                                row.currency
+                                                                            )}
+                                                                        </td>
+                                                                        <td className="px-4 py-3 text-gray-600 text-xs max-w-[200px] truncate">
+                                                                            {row.description || '—'}
+                                                                        </td>
+                                                                        <td className="px-1 py-2 text-center align-middle">
+                                                                            <div className="inline-flex items-center gap-1">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    disabled={!MOLIYA_DELETE_PIN}
+                                                                                    title={
+                                                                                        MOLIYA_DELETE_PIN
+                                                                                            ? t('common.edit')
+                                                                                            : t(
+                                                                                                  'finances.deletePinNotConfigured'
+                                                                                              )
+                                                                                    }
+                                                                                    onClick={(ev) =>
+                                                                                        openEditEntryGate(row, ev)
+                                                                                    }
+                                                                                    className="inline-flex p-2 rounded-lg text-blue-600 hover:bg-blue-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                    aria-label={t('common.edit')}
+                                                                                >
+                                                                                    <Pencil size={17} />
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    disabled={!MOLIYA_DELETE_PIN}
+                                                                                    title={
+                                                                                        MOLIYA_DELETE_PIN
+                                                                                            ? t('finances.deleteEntry')
+                                                                                            : t(
+                                                                                                  'finances.deletePinNotConfigured'
+                                                                                              )
+                                                                                    }
+                                                                                    onClick={(ev) =>
+                                                                                        openDeleteEntryGate(row, ev)
+                                                                                    }
+                                                                                    className="inline-flex p-2 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                                    aria-label={t(
+                                                                                        'finances.deleteEntry'
+                                                                                    )}
+                                                                                >
+                                                                                    <Trash2 size={18} />
+                                                                                </button>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                )}
+                                            </section>
+                                        )
+                                    })}
+                                </div>
+                            )}
                         </>
                     )}
                 </main>

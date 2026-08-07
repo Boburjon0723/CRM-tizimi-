@@ -201,43 +201,90 @@ export default function PartnersFinanceSubView() {
                     </div>
                 </div>
 
-                {/* History */}
-                <div className="space-y-4">
+                {/* History — turiga qarab alohida */}
+                <div className="space-y-5">
                     <div className="flex items-center gap-2 text-slate-400">
                         <History size={16} />
                         <h4 className="text-xs font-bold uppercase tracking-widest">Amallar tarixi</h4>
                     </div>
-                    <div className="space-y-3">
-                        {partnerEntries.map(e => (
-                            <div key={e.id} className="p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-4">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                                    (e.entry_type === 'supply' || e.entry_type === 'payment_in') 
-                                        ? 'bg-emerald-500/10 text-emerald-400' 
-                                        : 'bg-rose-500/10 text-rose-400'
-                                }`}>
-                                    {(e.entry_type === 'supply' || e.entry_type === 'payment_in') ? <ArrowDownCircle size={20} /> : <ArrowUpCircle size={20} />}
+                    {[
+                        { key: 'supply', label: 'Xomashyo kirimi', tone: 'emerald' },
+                        { key: 'sale_out', label: 'Sotish / chiqim', tone: 'amber' },
+                        { key: 'payment_in', label: 'Hamkordan tushum', tone: 'emerald' },
+                        { key: 'payment', label: 'Hamkorga to\'lov', tone: 'rose' },
+                    ].map(({ key, label, tone }) => {
+                        const rows = partnerEntries
+                            .filter((e) => e.entry_type === key)
+                            .sort((a, b) => String(b.entry_date || '').localeCompare(String(a.entry_date || '')))
+                        const isIn = key === 'supply' || key === 'payment_in'
+                        const iconBox =
+                            tone === 'amber'
+                                ? 'bg-amber-500/10 text-amber-400'
+                                : tone === 'rose'
+                                  ? 'bg-rose-500/10 text-rose-400'
+                                  : 'bg-emerald-500/10 text-emerald-400'
+                        const amtClass =
+                            tone === 'amber'
+                                ? 'text-amber-400'
+                                : isIn
+                                  ? 'text-emerald-400'
+                                  : 'text-rose-400'
+                        return (
+                            <div key={key} className="space-y-2">
+                                <div className="flex items-center justify-between px-1">
+                                    <h5 className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+                                        {label}
+                                    </h5>
+                                    <span className="text-[10px] font-semibold text-slate-500">
+                                        {rows.length}
+                                    </span>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-bold text-white truncate">
-                                        {e.entry_type === 'supply' ? 'Xomashyo kirimi' : 
-                                         e.entry_type === 'payment_in' ? 'Hamkor tushumi' :
-                                         e.entry_type === 'sale_out' ? 'Sotish (chiqim)' : 'Hamkorga to\'lov'}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500">{e.entry_date}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className={`text-sm font-bold tabular-nums ${
-                                        (e.entry_type === 'supply' || e.entry_type === 'payment_in') ? 'text-emerald-400' : 'text-rose-400'
-                                    }`}>
-                                        {(e.entry_type === 'supply' || e.entry_type === 'payment_in') ? '+' : '-'}
-                                        {normalizeFinCurrency(e.currency) === 'USD' ? '$' : ''}
-                                        {Number(e.amount_uzs).toLocaleString()}
-                                    </p>
-                                    <p className="text-[10px] text-slate-700 font-mono tracking-tighter">{e.reference_code}</p>
-                                </div>
+                                {rows.length === 0 ? (
+                                    <p className="text-[11px] text-slate-600 px-1 py-2">Yozuvlar yo‘q</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {rows.map((e) => (
+                                            <div
+                                                key={e.id}
+                                                className="p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-4"
+                                            >
+                                                <div
+                                                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}
+                                                >
+                                                    {isIn ? (
+                                                        <ArrowDownCircle size={20} />
+                                                    ) : (
+                                                        <ArrowUpCircle size={20} />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-bold text-white truncate">
+                                                        {label}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-500">{e.entry_date}</p>
+                                                    {e.description ? (
+                                                        <p className="text-[10px] text-slate-600 truncate mt-0.5">
+                                                            {e.description}
+                                                        </p>
+                                                    ) : null}
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className={`text-sm font-bold tabular-nums ${amtClass}`}>
+                                                        {isIn ? '+' : '-'}
+                                                        {normalizeFinCurrency(e.currency) === 'USD' ? '$' : ''}
+                                                        {Number(e.amount_uzs).toLocaleString()}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-700 font-mono tracking-tighter">
+                                                        {e.reference_code}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                        ))}
-                    </div>
+                        )
+                    })}
                 </div>
 
                 {/* Modal Form */}
