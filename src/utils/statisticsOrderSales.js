@@ -73,11 +73,24 @@ export function sumEffectiveSalesRevenue(order, products = []) {
     for (const item of items) {
         const q = parseQty(item.quantity)
         const lineQty = q > 0 ? q : 1
+        const price = Number(item.price)
         const sub = Number(item.subtotal)
+        const ordered = parseQty(item._print_ordered_qty)
+        // Qisman chiqim: hech qachon to‘liq qator subtotalini olmang — faqat chiqqan dona
+        if (item._print_shipped_portion) {
+            if (Number.isFinite(price)) {
+                s += price * lineQty
+            } else if (Number.isFinite(sub) && sub > 0 && ordered > 0) {
+                s += sub * (lineQty / ordered)
+            } else if (Number.isFinite(sub) && sub > 0) {
+                s += sub
+            }
+            continue
+        }
         if (Number.isFinite(sub) && sub > 0) {
             s += sub
         } else {
-            s += (Number(item.price) || 0) * lineQty
+            s += (Number.isFinite(price) ? price : 0) * lineQty
         }
     }
     if (items.length === 0 && isCompletedOrderStatus(order?.status)) {

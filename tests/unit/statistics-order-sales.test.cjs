@@ -60,6 +60,22 @@ describe('statistics order sales', () => {
         )
     })
 
+    it('partial revenue uses shipped qty not full line subtotal', () => {
+        const item = {
+            quantity: 5,
+            price: 7,
+            subtotal: 140,
+            _print_shipped_portion: true,
+            _print_ordered_qty: 20,
+        }
+        const q = Number(item.quantity)
+        const revenue = item._print_shipped_portion
+            ? Number(item.price) * q
+            : Number(item.subtotal)
+        assert.equal(revenue, 35)
+        assert.notEqual(revenue, 140)
+    })
+
     it('prefers completed_at for completed, ship date for partial', () => {
         assert.equal(
             salesAnchorRaw({

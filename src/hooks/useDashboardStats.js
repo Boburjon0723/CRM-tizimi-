@@ -65,6 +65,7 @@ export function useRecentOrders() {
                 .from('orders')
                 .select('*, customers(name)')
                 .is('deleted_at', null)
+                .neq('workspace', 'buyurtmalar2')
                 .order('created_at', { ascending: false })
                 .limit(5)
 
@@ -73,6 +74,16 @@ export function useRecentOrders() {
                 res = await supabase
                     .from('orders')
                     .select('*, customers(name)')
+                    .neq('workspace', 'buyurtmalar2')
+                    .order('created_at', { ascending: false })
+                    .limit(5)
+            }
+
+            if (res.error && /workspace|column|does not exist|42703|schema cache/i.test(String(res.error.message || ''))) {
+                res = await supabase
+                    .from('orders')
+                    .select('*, customers(name)')
+                    .is('deleted_at', null)
                     .order('created_at', { ascending: false })
                     .limit(5)
             }

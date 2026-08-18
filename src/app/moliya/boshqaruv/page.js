@@ -212,6 +212,59 @@ function lastEntry(entries) {
     })[0]
 }
 
+/** YYYY-MM-DD → kk.oo.yyyy */
+function isoToDmy(iso) {
+    const s = String(iso || '').slice(0, 10)
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (!m) return ''
+    return `${m[3]}.${m[2]}.${m[1]}`
+}
+
+/** kk.oo.yyyy / kk/oo/yyyy → YYYY-MM-DD yoki null */
+function dmyToIso(raw) {
+    const t = String(raw || '').trim().replace(/[/\-]/g, '.')
+    const m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)
+    if (!m) return null
+    const d = Number(m[1])
+    const mo = Number(m[2])
+    const y = Number(m[3])
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
+    const dt = new Date(y, mo - 1, d)
+    if (dt.getFullYear() !== y || dt.getMonth() + 1 !== mo || dt.getDate() !== d) return null
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+function DateInputSanaOyYil({ value, onChange, className }) {
+    const [text, setText] = useState(() => isoToDmy(value))
+    useEffect(() => {
+        setText(isoToDmy(value))
+    }, [value])
+    return (
+        <input
+            type="text"
+            inputMode="numeric"
+            placeholder="kk.oo.yyyy"
+            className={className}
+            value={text}
+            onChange={(e) => {
+                const v = e.target.value
+                setText(v)
+                const iso = dmyToIso(v)
+                if (iso) onChange(iso)
+            }}
+            onBlur={() => {
+                const iso = dmyToIso(text)
+                if (iso) {
+                    onChange(iso)
+                    setText(isoToDmy(iso))
+                } else {
+                    setText(isoToDmy(value))
+                }
+            }}
+        />
+    )
+}
+
 function lastOpSummary(entry, t, language) {
     if (!entry) return '—'
     const typeLabel = entryTypeLabel(entry.entry_type, t)
@@ -1718,7 +1771,7 @@ export default function MoliyaBoshqaruvPage() {
                                                                         className="hover:bg-slate-50 cursor-pointer transition-colors"
                                                                     >
                                                                         <td className="px-4 py-3 tabular-nums text-gray-700">
-                                                                            {row.entry_date}
+                                                                            {isoToDmy(entryDateKey(row)) || row.entry_date}
                                                                         </td>
                                                                         <td className="px-4 py-3">
                                                                             <span className={typeClass}>
@@ -1953,11 +2006,10 @@ export default function MoliyaBoshqaruvPage() {
                                         value={entryForm.amount_uzs}
                                         onChange={(e) => setEntryForm((f) => ({ ...f, amount_uzs: e.target.value }))}
                                     />
-                                    <input
-                                        type="date"
+                                    <DateInputSanaOyYil
                                         className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
                                         value={entryForm.entry_date}
-                                        onChange={(e) => setEntryForm((f) => ({ ...f, entry_date: e.target.value }))}
+                                        onChange={(iso) => setEntryForm((f) => ({ ...f, entry_date: iso }))}
                                     />
                                     <textarea
                                         className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
@@ -1993,11 +2045,10 @@ export default function MoliyaBoshqaruvPage() {
                                             ))}
                                         </div>
                                     </div>
-                                    <input
-                                        type="date"
+                                    <DateInputSanaOyYil
                                         className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
                                         value={entryForm.entry_date}
-                                        onChange={(e) => setEntryForm((f) => ({ ...f, entry_date: e.target.value }))}
+                                        onChange={(iso) => setEntryForm((f) => ({ ...f, entry_date: iso }))}
                                     />
                                     <input
                                         className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
@@ -2634,22 +2685,20 @@ export default function MoliyaBoshqaruvPage() {
                                 <label className="block text-xs font-medium text-gray-600 mb-1">
                                     {t('finances.partnerReportDateFrom')}
                                 </label>
-                                <input
-                                    type="date"
+                                <DateInputSanaOyYil
                                     className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
                                     value={reportFilter.dateFrom}
-                                    onChange={(e) => setReportFilter((f) => ({ ...f, dateFrom: e.target.value }))}
+                                    onChange={(iso) => setReportFilter((f) => ({ ...f, dateFrom: iso }))}
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">
                                     {t('finances.partnerReportDateTo')}
                                 </label>
-                                <input
-                                    type="date"
+                                <DateInputSanaOyYil
                                     className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
                                     value={reportFilter.dateTo}
-                                    onChange={(e) => setReportFilter((f) => ({ ...f, dateTo: e.target.value }))}
+                                    onChange={(iso) => setReportFilter((f) => ({ ...f, dateTo: iso }))}
                                 />
                             </div>
                         </div>

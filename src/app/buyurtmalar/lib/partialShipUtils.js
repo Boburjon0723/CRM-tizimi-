@@ -392,9 +392,19 @@ export function buildShippedPortionOrderItems(order, products, shippedMap) {
         if (shipped <= 0) return
         shippedTotal += shipped
         const oi = r.source || {}
+        const unit = Number(oi.price)
+        const origSub = Number(oi.subtotal)
+        const ordered = Number(r.ordered_qty) || 0
+        let scaledSub = null
+        if (Number.isFinite(unit)) {
+            scaledSub = Math.round(unit * shipped * 100) / 100
+        } else if (Number.isFinite(origSub) && origSub > 0 && ordered > 0) {
+            scaledSub = Math.round(origSub * (shipped / ordered) * 100) / 100
+        }
         items.push({
             ...oi,
             quantity: shipped,
+            ...(scaledSub != null ? { subtotal: scaledSub } : {}),
             // Chop etishda «buyurtma» o‘rniga chiqqan miqdor ko‘rinsin
             _print_shipped_portion: true,
             _print_ordered_qty: r.ordered_qty,
