@@ -468,6 +468,52 @@ function canonicalizeColorToken(color) {
 }
 
 /**
+ * Chop etish / uyurma matritsasi: ranglar doim shu tartibda.
+ * (qaymoq → tilla → seriy → qora → mokriy → kofe → och kofe → novot → boshqalar)
+ */
+const STANDARD_COLOR_ORDER_GROUPS = [
+    ['qaymoq', 'qaymo'],
+    ['tilla'],
+    ['seriy', 'seri'],
+    ['qora', 'black'],
+    ['mokriy', 'mokry', 'mokriyasfalt'],
+    ['kofe'],
+    ['ochkofe'],
+    ['novot'],
+]
+
+/** Rangning standart tartibdagi indeksi (kichik = yuqoriroq). */
+export function colorStandardSortRank(color) {
+    const tok = canonicalizeColorToken(color)
+    if (!tok || tok === '—') return 9000
+    for (let i = 0; i < STANDARD_COLOR_ORDER_GROUPS.length; i++) {
+        for (const g of STANDARD_COLOR_ORDER_GROUPS[i]) {
+            if (tok === g || (g.length >= 4 && tok.startsWith(g))) return i
+        }
+    }
+    return 8000
+}
+
+export function compareColorsByStandardOrder(a, b) {
+    const ra = colorStandardSortRank(a)
+    const rb = colorStandardSortRank(b)
+    if (ra !== rb) return ra - rb
+    return String(a || '').localeCompare(String(b || ''), 'uz', {
+        sensitivity: 'base',
+        numeric: true,
+    })
+}
+
+export function sortColorsByStandardOrder(colors) {
+    return [...(colors || [])].sort(compareColorsByStandardOrder)
+}
+
+/** [[label, qty], ...] — chop etish uchun */
+export function sortColorPairsByStandardOrder(pairs) {
+    return [...(pairs || [])].sort((x, y) => compareColorsByStandardOrder(x?.[0], y?.[0]))
+}
+
+/**
  * Buyurtma qatori rangi uchun yagona kalit: null/bo‘sh va «—» bitta (`normalizeModelKey('')` ≠ `normalizeModelKey('—')` bo‘lmasin).
  * Aks holda dedupe turli kalit, `orderItemsToOrderLines` esa bitta SKUda miqdorni qo‘shib yuborardi — tahrirda 2x.
  */
@@ -523,12 +569,13 @@ export function normalizeColorsArray(p) {
         arr = [String(p.color).trim()]
     }
     const seen = new Set()
-    return arr.filter((c) => {
+    const unique = arr.filter((c) => {
         const k = normalizeModelKey(c)
         if (!k || seen.has(k)) return false
         seen.add(k)
         return true
     })
+    return sortColorsByStandardOrder(unique)
 }
 
 /**
@@ -1335,7 +1382,9 @@ export function groupOrderItemsForPrint(orderItems, productsList) {
             const pr = parseOrderItemPrice(oi.price)
             lineMonetary += pr * q
         }
-        const colorPairs = Array.from(colorMap.values()).map(({ label, qty }) => [label, parseOrderItemQty(qty)])
+        const colorPairs = sortColorPairsByStandardOrder(
+            Array.from(colorMap.values()).map(({ label, qty }) => [label, parseOrderItemQty(qty)])
+        )
         const totalPiecesFromColors = colorPairs.reduce((s, [, qq]) => s + qq, 0)
         const totalPieces = totalPiecesFromColors === sumQtyFromLines ? totalPiecesFromColors : sumQtyFromLines
         lineMonetary = Math.round(lineMonetary * 100) / 100
@@ -1406,7 +1455,9 @@ export function sortGroupedBucketsForPrint(grouped) {
 /** Rang va son — ikki ustunda vertikal ro‘yxat (har bir qatorda rang | soni) */
 export function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
     const label = typeof labelColorFn === 'function' ? labelColorFn : (c) => c
-    const pairs = Array.isArray(colorPairs) ? colorPairs.map(([c, q]) => [c, q]) : []
+    const pairs = sortColorPairsByStandardOrder(
+        Array.isArray(colorPairs) ? colorPairs.map(([c, q]) => [c, q]) : []
+    )
     const colorsHtml = pairs.map(([c]) => `<div class="stack-line">${escapeHtml(label(c))}</div>`).join('')
     const qtysHtml = pairs.map(([, q]) => `<div class="stack-line">${escapeHtml(String(q))}</div>`).join('')
     return { colorsHtml, qtysHtml }
@@ -2206,7 +2257,10 @@ export function orderItemsToOrderLines(orderItems, productsList) {
         const colorOpts = []
         const colorQtyByColor = {}
         let totalPiecesMerged = 0
-        for (const { label, qty } of byColorNorm.values()) {
+        const sortedColorEntries = [...byColorNorm.values()].sort((a, b) =>
+            compareColorsByStandardOrder(a.label, b.label)
+        )
+        for (const { label, qty } of sortedColorEntries) {
             colorOpts.push(label)
             colorQtyByColor[label] = String(qty)
             totalPiecesMerged += qty

@@ -12,11 +12,15 @@ import { useLanguage } from '@/context/LanguageContext'
 import { useDashboardStats, useRecentOrders } from '@/hooks/useDashboardStats'
 import { useQueryClient } from '@tanstack/react-query'
 
+import { formatUsd } from '@/utils/formatters'
+
 /**
- * Haftalik tranzaksiya ma'lumotlarini grafik uchun formatlash.
- * Bu funksiyani komponent tashqarisida saqlash — render bilan bog'liq emas.
+ * Haftalik grafik: kirim = so‘nggi 7 kundagi buyurtmalar summasi;
+ * chiqim = transactions jadvalidagi expense (shu kunlar).
  */
-function buildChartData(transactions, t, language) {
+function buildChartData(statsData, t) {
+  const orderIncomeByDay = statsData?.orderIncomeByDay || {}
+  const transactions = statsData?.transactions || []
   const daysUz = [
     t('dashboard.sun'), t('dashboard.mon'), t('dashboard.tue'),
     t('dashboard.wed'), t('dashboard.thu'), t('dashboard.fri'), t('dashboard.sat')
@@ -24,16 +28,23 @@ function buildChartData(transactions, t, language) {
   const weeklyData = {}
   for (let i = 6; i >= 0; i--) {
     const date = new Date()
+    date.setHours(12, 0, 0, 0)
     date.setDate(date.getDate() - i)
-    const dateStr = date.toISOString().split('T')[0]
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const dateStr = `${y}-${m}-${day}`
     const dayName = daysUz[date.getDay()]
-    weeklyData[dateStr] = { name: dayName, kirim: 0, chiqim: 0 }
+    weeklyData[dateStr] = {
+      name: dayName,
+      kirim: Number(orderIncomeByDay[dateStr]) || 0,
+      chiqim: 0,
+    }
   }
   transactions.forEach((tx) => {
-    if (weeklyData[tx.date]) {
-      if (tx.type === 'income') weeklyData[tx.date].kirim += (Number(tx.amount) || 0)
-      else weeklyData[tx.date].chiqim += (Number(tx.amount) || 0)
-    }
+    const day = String(tx.date || '').slice(0, 10)
+    if (!weeklyData[day]) return
+    if (tx.type === 'expense') weeklyData[day].chiqim += Number(tx.amount) || 0
   })
   return Object.values(weeklyData)
 }
@@ -58,8 +69,9 @@ export default function Dashboard() {
     foyda: statsData?.foyda ?? 0,
   }
 
-  // Grafik uchun haftalik ma'lumot
-  const chartData = buildChartData(statsData?.transactions || [], t, language)
+  // Grafik uchun haftalik ma'lumot (buyurtma kirimi)
+  const chartData = buildChartData(statsData, t)
+  const statsWarnings = statsData?.warnings || []
 
   // Supabase realtime — yangi buyurtmada keshni yangilash
   useEffect(() => {
@@ -126,6 +138,17 @@ export default function Dashboard() {
         </div>
       ) : null}
 
+      {!statsError && statsWarnings.length > 0 ? (
+        <div className="mx-4 md:mx-6 mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold mb-1">{t('dashboard.loadErrorTitle')}</p>
+          <ul className="list-disc pl-5 space-y-0.5 text-amber-900/90">
+            {statsWarnings.map((w) => (
+              <li key={w} className="break-words">{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8 px-4 md:px-6">
         <StatCard
           icon={Package}
@@ -151,7 +174,7 @@ export default function Dashboard() {
         <StatCard
           icon={DollarSign}
           title={t('dashboard.profit')}
-          value={`${(stats.foyda / 1000000).toFixed(1)}M`}
+          value={`$${formatUsd(stats.foyda)}`}
           color="bg-amber-500"
           href="/moliya"
         />

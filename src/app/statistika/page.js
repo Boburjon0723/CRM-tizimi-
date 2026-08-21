@@ -421,11 +421,12 @@ export default function StatistikaPage() {
             }
 
             const ordersSelect = `
-                id, status, created_at, updated_at, completed_at, total, customer_id, customer_name, customer_phone, order_number,
+                id, status, created_at, completed_at, total, customer_id, customer_name, customer_phone, order_number, workspace,
                 customers (id, name, phone),
                 order_items (
                     quantity,
                     price,
+                    subtotal,
                     product_id,
                     product_name,
                     size,
@@ -516,6 +517,9 @@ export default function StatistikaPage() {
             if (ordersRaw.length) {
                 ordersRaw = await enrichOrdersForStatistics(ordersRaw)
             }
+
+            // Buyurtmalar2 alohida — asosiy statistikada aralashtirmaymiz
+            ordersRaw = ordersRaw.filter((o) => o?.workspace !== 'buyurtmalar2')
 
             setData({
                 orders: ordersRaw,
