@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
-import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon, Megaphone, Sparkles } from 'lucide-react'
+import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon, Megaphone, Sparkles, ScrollText } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { EMPLOYEES_SECTION_UNLOCK_KEY } from '@/lib/employeesSectionPin'
 import { useLayout } from '@/context/LayoutContext'
@@ -60,6 +60,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
     { href: '/statistika', icon: BarChart3, label: t('common.statistics') },
     { href: '/meta-ads', icon: Megaphone, label: t('common.metaAds') },
     { href: '/vebsayt', icon: Globe, label: t('common.website') },
+    { href: '/loglar', icon: ScrollText, label: t('common.auditLog') },
   ]
   function isMenuActive(href) {
     if (href === '/') return pathname === '/'
