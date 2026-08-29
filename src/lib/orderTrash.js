@@ -1,12 +1,17 @@
+/** PostgREST: aynan shu ustun yo‘q / keshda yo‘q — boshqa column xatolari bilan chalkashmasin */
+function isMissingColumnError(err, columnName) {
+    const m = String(err?.message || err?.code || err || '')
+    if (!new RegExp(columnName, 'i').test(m)) return false
+    return /42703|PGRST204|schema cache|does not exist|could not find/i.test(m)
+}
+
 /** PostgREST: `deleted_at` ustuni yo‘q yoki kesh yangilanmagan */
 export function isDeletedAtMissingError(err) {
-    const m = String(err?.message || err?.code || err || '')
-    return /deleted_at|42703|PGRST204|schema cache|does not exist|column/i.test(m)
+    return isMissingColumnError(err, 'deleted_at')
 }
 
 export function isArchivedAtMissingError(err) {
-    const m = String(err?.message || err?.code || err || '')
-    return /archived_at|42703|PGRST204|schema cache|does not exist|column/i.test(m)
+    return isMissingColumnError(err, 'archived_at')
 }
 
 /** Tugallangan buyurtma shuncha kundan keyin alohida ARXIVga o‘tadi (korzinka emas) */
@@ -24,12 +29,20 @@ function normalizeCompletedStatus(status) {
 }
 
 /**
- * Chiqib ketgan / tugallangan sana — arxiv muddati shu sanadan.
- * Tartib: completed_at → updated_at (agar ustun bo‘lsa) → created_at (legacy fallback).
- * Bazada ko‘p buyurtmada completed_at bo‘sh; updated_at ustuni ham yo‘q — shuning uchun created_at.
+ * Chiqib ketgan / tugallangan sana — ko‘rsatish va tartiblash uchun.
+ * Tartib: completed_at → updated_at (agar ustun bo‘lsa) → created_at.
+ * DIQQAT: arxiv muddati uchun ishlatilmasin — u yerda faqat completed_at.
  */
 export function getCompletedOrderTimestamp(order) {
     const raw = order?.completed_at || order?.updated_at || order?.created_at || ''
+    if (!raw) return null
+    const t = new Date(raw).getTime()
+    return Number.isNaN(t) ? null : t
+}
+
+/** Arxiv muddati faqat tugallangan sanadan (`completed_at`). Yo‘q bo‘lsa — arxivlanmasin. */
+export function getArchiveEligibleTimestamp(order) {
+    const raw = order?.completed_at
     if (!raw) return null
     const t = new Date(raw).getTime()
     return Number.isNaN(t) ? null : t
@@ -70,7 +83,7 @@ export function isMergeRelatedOrder(order) {
 export function shouldAutoArchiveCompletedOrder(order, nowMs = Date.now()) {
     if (!order || order.deleted_at || order.archived_at) return false
     if (!normalizeCompletedStatus(order.status)) return false
-    const t = getCompletedOrderTimestamp(order)
+    const t = getArchiveEligibleTimestamp(order)
     if (t == null) return false
     const ageMs = nowMs - t
     return ageMs >= COMPLETED_ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000
@@ -82,7 +95,7 @@ export function shouldMigrateCompletedTrashToArchive(order, nowMs = Date.now()) 
     if (!normalizeCompletedStatus(order.status)) return false
     // Merge bilan bog‘liq karzinka buyurtmasi joyida qoladi — arxivga chiqsa daromad ikki marta sanaladi
     if (isMergeRelatedOrder(order)) return false
-    const t = getCompletedOrderTimestamp(order)
+    const t = getArchiveEligibleTimestamp(order)
     if (t == null) return false
     return nowMs - t >= COMPLETED_ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000
 }

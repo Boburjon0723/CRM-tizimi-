@@ -202,7 +202,7 @@ export default function OrdersFilter({
               </div>
             </details>
 
-            {ordersListView === 'active' && (
+            {ordersListView !== 'trash' && (
               <>
                 <details ref={selectedDetailsRef} className="relative">
                   <summary
@@ -277,27 +277,31 @@ export default function OrdersFilter({
                   </div>
                 </details>
 
-                <input
-                  ref={excelImportInputRef}
-                  type="file"
-                  accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                  className="hidden"
-                  onChange={handleExcelImportFileChange}
-                />
-                <button
-                  type="button"
-                  disabled={excelImportBusy}
-                  onClick={() => excelImportInputRef.current?.click()}
-                  className={`inline-flex items-center justify-center gap-1 border px-2 py-1 rounded-md transition-all font-semibold text-[11px] ${btnH} ${
-                    excelImportBusy
-                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                      : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-200'
-                  }`}
-                  title={t('orders.excelImportTitle')}
-                >
-                  <Upload size={14} />
-                  <span className="hidden sm:inline">{t('orders.excelImport')}</span>
-                </button>
+                {ordersListView === 'active' && (
+                  <>
+                    <input
+                      ref={excelImportInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      className="hidden"
+                      onChange={handleExcelImportFileChange}
+                    />
+                    <button
+                      type="button"
+                      disabled={excelImportBusy}
+                      onClick={() => excelImportInputRef.current?.click()}
+                      className={`inline-flex items-center justify-center gap-1 border px-2 py-1 rounded-md transition-all font-semibold text-[11px] ${btnH} ${
+                        excelImportBusy
+                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                          : 'bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-200'
+                      }`}
+                      title={t('orders.excelImportTitle')}
+                    >
+                      <Upload size={14} />
+                      <span className="hidden sm:inline">{t('orders.excelImport')}</span>
+                    </button>
+                  </>
+                )}
               </>
             )}
 

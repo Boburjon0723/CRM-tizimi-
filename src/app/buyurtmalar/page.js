@@ -459,14 +459,14 @@ function BuyurtmalarPageContent() {
     async function handleUnarchiveOrder(id) {
         try {
             const order = archiveOrders.find((o) => String(o.id) === String(id))
+            // `updated_at` ustuni orders jadvalida yo‘q — yozilmasin (noto‘g‘ri «archived_at yo‘q» ogohlantirishi chiqardi)
             const patch = { archived_at: null }
             if (order && shouldAutoArchiveCompletedOrder({ ...order, archived_at: null, deleted_at: null })) {
                 patch.status = 'pending'
                 patch.completed_at = null
-                patch.updated_at = new Date().toISOString()
             }
             let { error } = await supabase.from('orders').update(patch).eq('id', id)
-            if (error && /completed_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))) {
+            if (error && /completed_at/i.test(String(error.message || '')) && /does not exist|42703|schema cache|column/i.test(String(error.message || ''))) {
                 const { completed_at: _c, ...withoutCompleted } = patch
                 ;({ error } = await supabase.from('orders').update(withoutCompleted).eq('id', id))
             }

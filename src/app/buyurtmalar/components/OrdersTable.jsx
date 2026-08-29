@@ -59,7 +59,7 @@ function OrdersTable({
                 <table className="w-full min-w-[860px] text-left border-collapse table-auto">
                     <thead>
                         <tr className="bg-gray-50/50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                            {ordersListView === 'active' && (
+                            {(ordersListView === 'active' || ordersListView === 'archive') && (
                                 <th
                                     className="w-8 shrink-0 px-1.5 py-2.5 rounded-tl-2xl text-center"
                                     title={t('orders.mergeSelectColumn')}
@@ -78,7 +78,7 @@ function OrdersTable({
                             )}
                             <th
                                 className={`w-[11%] min-w-[6.5rem] px-2 py-2.5 ${
-                                    ordersListView !== 'active' ? 'rounded-tl-2xl' : ''
+                                    ordersListView === 'trash' ? 'rounded-tl-2xl' : ''
                                 }`}
                             >
                                 {t('orders.idDate')}

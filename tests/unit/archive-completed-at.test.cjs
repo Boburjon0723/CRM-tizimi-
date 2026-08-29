@@ -1,5 +1,5 @@
 /**
- * Arxiv muddati: completed_at → updated_at → created_at (legacy fallback).
+ * Arxiv muddati FAQAT completed_at dan — created_at fallback yo‘q.
  * Run: node --test tests/unit/archive-completed-at.test.cjs
  */
 const { describe, it } = require('node:test')
@@ -15,11 +15,18 @@ function getCompletedOrderTimestamp(order) {
     return Number.isNaN(t) ? null : t
 }
 
+function getArchiveEligibleTimestamp(order) {
+    const raw = order?.completed_at
+    if (!raw) return null
+    const t = new Date(raw).getTime()
+    return Number.isNaN(t) ? null : t
+}
+
 function shouldAutoArchiveCompletedOrder(order, nowMs = Date.now()) {
     if (!order || order.deleted_at || order.archived_at) return false
     const s = String(order.status || '').toLowerCase()
     if (!(s === 'completed' || s.includes('tugallan'))) return false
-    const t = getCompletedOrderTimestamp(order)
+    const t = getArchiveEligibleTimestamp(order)
     if (t == null) return false
     return nowMs - t >= COMPLETED_ARCHIVE_AFTER_DAYS * DAY
 }
@@ -50,12 +57,12 @@ function shouldMigrateCompletedTrashToArchive(order, nowMs = Date.now()) {
     const s = String(order.status || '').toLowerCase()
     if (!(s === 'completed' || s.includes('tugallan'))) return false
     if (isMergeRelatedOrder(order)) return false
-    const t = getCompletedOrderTimestamp(order)
+    const t = getArchiveEligibleTimestamp(order)
     if (t == null) return false
     return nowMs - t >= COMPLETED_ARCHIVE_AFTER_DAYS * DAY
 }
 
-describe('archive timestamp priority', () => {
+describe('archive timestamp — faqat completed_at', () => {
     const now = Date.parse('2026-07-29T12:00:00.000Z')
 
     it('created_at eski bo‘lsa ham completed_at yangi bo‘lsa arxivlamaydi', () => {
@@ -63,7 +70,6 @@ describe('archive timestamp priority', () => {
             status: 'completed',
             created_at: '2025-01-01T00:00:00.000Z',
             completed_at: '2026-07-20T00:00:00.000Z',
-            updated_at: '2026-07-20T00:00:00.000Z',
         }
         assert.equal(shouldAutoArchiveCompletedOrder(order, now), false)
     })
@@ -73,23 +79,23 @@ describe('archive timestamp priority', () => {
             status: 'completed',
             created_at: '2026-07-01T00:00:00.000Z',
             completed_at: '2026-06-01T00:00:00.000Z',
-            updated_at: '2026-06-01T00:00:00.000Z',
         }
         assert.equal(shouldAutoArchiveCompletedOrder(order, now), true)
     })
 
-    it('faqat created_at bor va 30+ kun — arxivlaydi (legacy fallback)', () => {
+    it('completed_at yo‘q — created_at eski bo‘lsa ham arxivlamaydi', () => {
         const order = {
             status: 'completed',
             created_at: '2025-01-01T00:00:00.000Z',
         }
-        assert.equal(shouldAutoArchiveCompletedOrder(order, now), true)
+        assert.equal(shouldAutoArchiveCompletedOrder(order, now), false)
     })
 
-    it('faqat created_at bor lekin yosh — arxivlamaydi', () => {
+    it('bugun tugallangan (eski yaratilgan) — arxivlamaydi', () => {
         const order = {
             status: 'completed',
-            created_at: '2026-07-20T00:00:00.000Z',
+            created_at: '2026-03-27T00:00:00.000Z',
+            completed_at: '2026-07-29T10:00:00.000Z',
         }
         assert.equal(shouldAutoArchiveCompletedOrder(order, now), false)
     })
@@ -102,19 +108,40 @@ describe('archive timestamp priority', () => {
         assert.equal(t, Date.parse('2026-07-01T00:00:00.000Z'))
     })
 
-    it('korzinkadagi eski tugallangan — migrate', () => {
+    it('getArchiveEligibleTimestamp created_at ga tushmaydi', () => {
+        assert.equal(
+            getArchiveEligibleTimestamp({
+                status: 'completed',
+                created_at: '2025-01-01T00:00:00.000Z',
+            }),
+            null
+        )
+    })
+
+    it('korzinkadagi eski tugallangan (completed_at bor) — migrate', () => {
+        const order = {
+            status: 'completed',
+            deleted_at: '2026-07-01T00:00:00.000Z',
+            completed_at: '2025-01-01T00:00:00.000Z',
+            created_at: '2025-01-01T00:00:00.000Z',
+        }
+        assert.equal(shouldMigrateCompletedTrashToArchive(order, now), true)
+    })
+
+    it('korzinkada completed_at yo‘q — migrate qilmaydi', () => {
         const order = {
             status: 'completed',
             deleted_at: '2026-07-01T00:00:00.000Z',
             created_at: '2025-01-01T00:00:00.000Z',
         }
-        assert.equal(shouldMigrateCompletedTrashToArchive(order, now), true)
+        assert.equal(shouldMigrateCompletedTrashToArchive(order, now), false)
     })
 
     it('korzinkadagi new — migrate qilmaydi', () => {
         const order = {
             status: 'new',
             deleted_at: '2026-07-01T00:00:00.000Z',
+            completed_at: '2025-01-01T00:00:00.000Z',
             created_at: '2025-01-01T00:00:00.000Z',
         }
         assert.equal(shouldMigrateCompletedTrashToArchive(order, now), false)
@@ -129,6 +156,7 @@ describe('merge bilan bog‘liq karzinka buyurtmalari arxivga chiqmaydi', () => 
             status: 'completed',
             note: 'Birlashtirilgan buyurtmalar: № ORD-1; № ORD-2',
             deleted_at: '2026-07-17T00:00:00.000Z',
+            completed_at: '2026-07-17T00:00:00.000Z',
             created_at: '2026-07-17T00:00:00.000Z',
         }
         assert.equal(shouldMigrateCompletedTrashToArchive(order, now), false)
@@ -139,6 +167,7 @@ describe('merge bilan bog‘liq karzinka buyurtmalari arxivga chiqmaydi', () => 
             status: 'completed',
             note: 'Manba buyurtma: ORD-0\nBirlashtirildi → № ORD-9',
             deleted_at: '2026-04-01T00:00:00.000Z',
+            completed_at: '2026-04-01T00:00:00.000Z',
             created_at: '2026-04-01T00:00:00.000Z',
         }
         assert.equal(shouldMigrateCompletedTrashToArchive(order, now), false)
@@ -149,6 +178,7 @@ describe('merge bilan bog‘liq karzinka buyurtmalari arxivga chiqmaydi', () => 
             status: 'completed',
             note: 'Oddiy izoh',
             deleted_at: '2026-04-01T00:00:00.000Z',
+            completed_at: '2026-04-01T00:00:00.000Z',
             created_at: '2026-04-01T00:00:00.000Z',
         }
         assert.equal(shouldMigrateCompletedTrashToArchive(order, now), true)

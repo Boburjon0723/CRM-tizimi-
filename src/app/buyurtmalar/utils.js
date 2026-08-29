@@ -1907,7 +1907,9 @@ export function sortOrdersByCompletionSequence(list) {
 
 /** Status o‘zgarishida completed_at (chiqib ketgan sana) ni to‘ldirish / tozalash */
 export function withCompletedAtOnStatusChange(payload, newStatus, oldStatus, stamp = new Date().toISOString()) {
-    const next = { ...(payload || {}), updated_at: stamp }
+    // `updated_at` orders jadvalida yo‘q — qo‘shilmasin (aks holda completed_at ham yozilmay qoladi)
+    const next = { ...(payload || {}) }
+    delete next.updated_at
     const toCompleted = normalizeStatusForSelect(newStatus) === 'completed'
     const wasCompleted = normalizeStatusForSelect(oldStatus) === 'completed'
     if (toCompleted && !wasCompleted) {
@@ -1926,24 +1928,21 @@ export async function updateOrderStatusWithCompletedAt(supabaseClient, orderId, 
     const stamp = new Date().toISOString()
     const full = withCompletedAtOnStatusChange({ status: newStatus }, newStatus, oldStatus, stamp)
     let { error } = await supabaseClient.from('orders').update(full).eq('id', orderId)
-    if (error && /completed_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))) {
-        const { completed_at: _drop, ...withoutCompleted } = full
-        ;({ error } = await supabaseClient.from('orders').update(withoutCompleted).eq('id', orderId))
-        if (
-            error &&
-            /updated_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))
-        ) {
-            ;({ error } = await supabaseClient
-                .from('orders')
-                .update({ status: newStatus })
-                .eq('id', orderId))
-        }
-    } else if (
+    if (
         error &&
-        /updated_at|column|does not exist|42703|schema cache/i.test(String(error.message || ''))
+        /updated_at/i.test(String(error.message || '')) &&
+        /does not exist|42703|schema cache|column|PGRST204/i.test(String(error.message || ''))
     ) {
         const { updated_at: _u, ...rest } = full
         ;({ error } = await supabaseClient.from('orders').update(rest).eq('id', orderId))
+    }
+    if (
+        error &&
+        /completed_at/i.test(String(error.message || '')) &&
+        /does not exist|42703|schema cache|column|PGRST204/i.test(String(error.message || ''))
+    ) {
+        ;({ error } = await supabaseClient.from('orders').update({ status: newStatus }).eq('id', orderId))
+        return { error, stamp, completed_at: null }
     }
     return { error, stamp, completed_at: full.completed_at ?? null }
 }

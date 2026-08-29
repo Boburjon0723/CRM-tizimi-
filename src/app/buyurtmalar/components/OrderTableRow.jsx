@@ -85,7 +85,7 @@ function OrderTableRow({
             id={`order-row-${item.id}`}
             className="hover:bg-blue-50/30 transition-colors scroll-mt-24"
         >
-            {ordersListView === 'active' && (
+            {(ordersListView === 'active' || ordersListView === 'archive') && (
                 <td className="px-1.5 py-2.5 sm:px-2 sm:py-3 align-top text-center">
                     <input
                         type="checkbox"
@@ -428,10 +428,19 @@ function OrderTableRow({
                             <button
                                 type="button"
                                 onClick={() => handlePrintOrder(item, true)}
-                                className="shrink-0 p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-emerald-600 px-1.5 py-1 text-[10px] font-bold text-white shadow-sm transition-colors hover:bg-emerald-700"
                                 title={t('orders.printWithPrices')}
                             >
-                                <Receipt size={15} />
+                                <Receipt size={13} className="shrink-0" />
+                                <span className="hidden sm:inline">{t('orders.printWithPricesShort')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handlePrintOrder(item, false)}
+                                className="shrink-0 p-1 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                                title={t('orders.printNoPrices')}
+                            >
+                                <List size={15} />
                             </button>
                             <button
                                 type="button"
