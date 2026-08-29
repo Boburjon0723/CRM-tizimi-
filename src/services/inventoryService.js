@@ -205,13 +205,58 @@ export async function deductStockForCompletedOrder(orderId, orderNumber, items) 
 }
 
 /**
+ * Shu buyurtma bo‘yicha zaxiradan HAQIQATAN ayrilgan miqdor (mahsulot kesimida).
+ *
+ * `change_amount` emas: zaxira 0 bo‘lganda chiqim `-250` deb yozilsa ham
+ * `previous_stock → new_stock` 0 → 0 bo‘lib qoladi, ya'ni hech narsa ayrilmaydi.
+ * Qaytarishda shu farqdan ko‘p qo‘shilsa — yo‘qdan zaxira paydo bo‘ladi.
+ *
+ * @returns {Promise<Map<string, number>>}
+ */
+async function loadRealDeductedByProduct(orderId) {
+    const { data, error } = await supabase
+        .from('stock_movements')
+        .select('product_id, previous_stock, new_stock, type')
+        .eq('order_id', orderId)
+        .in('type', ['sale', 'reversal'])
+    if (error) throw error
+
+    const out = new Map()
+    for (const row of data || []) {
+        const pid = String(row.product_id || '')
+        if (!pid) continue
+        const prev = Number(row.previous_stock) || 0
+        const next = Number(row.new_stock) || 0
+        const acc = Number(out.get(pid)) || 0
+        if (String(row.type) === 'reversal') {
+            out.set(pid, acc - Math.max(0, next - prev))
+        } else {
+            out.set(pid, acc + Math.max(0, prev - next))
+        }
+    }
+    return out
+}
+
+/**
  * Buyurtma holati 'completed' dan boshqasiga o‘zgarganda qoldiqni qaytarish.
+ * Qaytarilgan miqdor shu buyurtma bo‘yicha haqiqatan ayrilganidan oshmaydi.
  */
 export async function reverseStockForOrder(orderId, orderNumber, items) {
     if (!items || items.length === 0) return { success: true }
 
     const results = []
     const errors = []
+
+    /** null = ma’lumot olinmadi, eski xatti-harakat (cheklovsiz) qoladi */
+    let budgetByProduct = null
+    if (orderId) {
+        try {
+            budgetByProduct = await loadRealDeductedByProduct(orderId)
+        } catch (e) {
+            console.warn('loadRealDeductedByProduct:', e?.message || e)
+            budgetByProduct = null
+        }
+    }
 
     for (const item of items) {
         if (!item.product_id) continue
@@ -227,9 +272,21 @@ export async function reverseStockForOrder(orderId, orderNumber, items) {
 
             const product = mergeProductInventoryRow(raw)
 
-            const returnQty = Number(item.quantity) || 0
+            const requestedQty = Number(item.quantity) || 0
+            let returnQty = requestedQty
+            if (budgetByProduct) {
+                const pid = String(item.product_id)
+                const budget = Math.max(0, Number(budgetByProduct.get(pid)) || 0)
+                returnQty = Math.min(requestedQty, budget)
+                budgetByProduct.set(pid, budget - returnQty)
+            }
             if (returnQty <= 0) {
-                results.push({ product_id: item.product_id, success: true, skipped: true })
+                results.push({
+                    product_id: item.product_id,
+                    success: true,
+                    skipped: true,
+                    ...(requestedQty > 0 ? { reason: 'nothing_was_deducted' } : {}),
+                })
                 continue
             }
 

@@ -23,25 +23,68 @@ function normalizeCompletedStatus(status) {
     )
 }
 
-/** Chiqib ketgan / tugallangan sana — arxiv muddati SHU sanadan hisoblanadi (created_at emas). */
+/**
+ * Chiqib ketgan / tugallangan sana — arxiv muddati shu sanadan.
+ * Tartib: completed_at → updated_at (agar ustun bo‘lsa) → created_at (legacy fallback).
+ * Bazada ko‘p buyurtmada completed_at bo‘sh; updated_at ustuni ham yo‘q — shuning uchun created_at.
+ */
 export function getCompletedOrderTimestamp(order) {
-    // Avvalo completed_at; yo‘q bo‘lsa legacy: updated_at (status o‘zgargan paytga yaqin).
-    // created_at — buyurtma tushgan sana — arxiv uchun ISHLATILMAYDI.
-    const raw = order?.completed_at || order?.updated_at || ''
+    const raw = order?.completed_at || order?.updated_at || order?.created_at || ''
     if (!raw) return null
     const t = new Date(raw).getTime()
     return Number.isNaN(t) ? null : t
 }
 
+/**
+ * Merge natijasi manba buyurtmasining izohiga qo‘yiladigan belgi.
+ * Manba karzinkada qolishi shart — aks holda «Jami daromad» merge natijasi
+ * bilan birga ikki marta sanaladi.
+ */
+export const MERGE_SOURCE_NOTE_PREFIX = 'Birlashtirildi →'
+
+export function buildMergeSourceNote(existingNote, resultOrderLabel) {
+    const base = String(existingNote || '').trim()
+    const mark = `${MERGE_SOURCE_NOTE_PREFIX} ${resultOrderLabel}`
+    if (isMergeSourceOrder({ note: base })) return base
+    return base ? `${base}\n${mark}` : mark
+}
+
+export function isMergeSourceOrder(order) {
+    return /Birlashtirildi\s*(→|->)/i.test(String(order?.note || ''))
+}
+
+/** Merge natijasi (izohida birlashtirilgan buyurtmalar ro‘yxati bor) */
+export function isMergeResultOrder(order) {
+    return /Birlashtirilgan buyurtmalar/i.test(String(order?.note || ''))
+}
+
+/**
+ * Merge bilan bog‘liq (natija yoki manba) buyurtma karzinkaga tushgan bo‘lsa —
+ * bu ataylab qilingan: bir xil summa ikki marta sanalmasligi uchun. Avtomatik
+ * «karzinka → arxiv» ko‘chirishi bunday buyurtmani qaytarib chiqarmasligi kerak.
+ */
+export function isMergeRelatedOrder(order) {
+    return isMergeSourceOrder(order) || isMergeResultOrder(order)
+}
+
 export function shouldAutoArchiveCompletedOrder(order, nowMs = Date.now()) {
     if (!order || order.deleted_at || order.archived_at) return false
     if (!normalizeCompletedStatus(order.status)) return false
-    // completed_at yo‘q + updated_at ham yo‘q — arxivlamaymiz (created_at ga tayanmaymiz)
-    if (!order.completed_at && !order.updated_at) return false
     const t = getCompletedOrderTimestamp(order)
     if (t == null) return false
     const ageMs = nowMs - t
     return ageMs >= COMPLETED_ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000
+}
+
+/** Korzinkadagi eski tugallangan — arxivga ko‘chirish sharti */
+export function shouldMigrateCompletedTrashToArchive(order, nowMs = Date.now()) {
+    if (!order?.deleted_at || order.archived_at) return false
+    if (!normalizeCompletedStatus(order.status)) return false
+    // Merge bilan bog‘liq karzinka buyurtmasi joyida qoladi — arxivga chiqsa daromad ikki marta sanaladi
+    if (isMergeRelatedOrder(order)) return false
+    const t = getCompletedOrderTimestamp(order)
+    if (t == null) return false
+    return nowMs - t >= COMPLETED_ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000
 }
 
 /**
@@ -79,12 +122,15 @@ export async function archiveStaleCompletedOrders(supabaseClient, ordersList) {
  * ularni arxivga ko‘chirish (`archived_at`, `deleted_at` = null).
  */
 export async function migrateCompletedFromTrashToArchive(supabaseClient) {
-    const { data, error } = await supabaseClient
+    let data = null
+    let error = null
+    // updated_at ba’zi bazalarda yo‘q — avval to‘liq select, xato bo‘lsa soddalashtirilgan
+    ;({ data, error } = await supabaseClient
         .from('orders')
-        .select('id, status, completed_at, updated_at, created_at, deleted_at, archived_at')
+        .select('id, status, note, completed_at, created_at, deleted_at, archived_at')
         .not('deleted_at', 'is', null)
         .is('archived_at', null)
-        .limit(500)
+        .limit(1000))
 
     if (error) {
         if (isDeletedAtMissingError(error) || isArchivedAtMissingError(error)) {
@@ -94,15 +140,7 @@ export async function migrateCompletedFromTrashToArchive(supabaseClient) {
         return { migrated: 0 }
     }
 
-    const toMove = (data || []).filter((o) => {
-        if (!normalizeCompletedStatus(o.status)) return false
-        // Faqat tugallangan sana (completed_at); yo‘q bo‘lsa updated_at. created_at emas.
-        const raw = o.completed_at || o.updated_at
-        if (!raw) return false
-        const t = new Date(raw).getTime()
-        if (Number.isNaN(t)) return false
-        return Date.now() - t >= COMPLETED_ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000
-    })
+    const toMove = (data || []).filter((o) => shouldMigrateCompletedTrashToArchive(o))
     if (!toMove.length) return { migrated: 0 }
 
     const ids = toMove.map((o) => o.id)

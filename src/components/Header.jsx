@@ -77,7 +77,7 @@ export default function Header({ title, toggleSidebar: propToggleSidebar }) {
     }
 
     return (
-        <header className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100 px-4 md:px-6 py-3 md:py-4 mb-6 md:mb-8 transition-all duration-300">
+        <header className="bg-white/80 backdrop-blur-md sticky top-0 z-30 border-b border-gray-100 px-3 md:px-4 py-2 md:py-2.5 mb-3 md:mb-4 transition-all duration-300">
             <div className="flex justify-between items-center max-w-7xl mx-auto w-full">
                 <div className="flex items-center gap-4">
                     <button

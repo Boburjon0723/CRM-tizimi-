@@ -10,32 +10,32 @@ export default function OrdersViewTabs({
     onSwitchView,
 }) {
     return (
-        <div className="flex flex-wrap gap-1.5 mb-4">
+        <div className="flex flex-wrap gap-1 mb-2">
             <button
                 type="button"
                 onClick={() => onSwitchView('active')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-bold transition-all ${
                     ordersListView === 'active'
-                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/25'
+                        ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/25'
                         : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                 }`}
             >
-                <ShoppingCart size={16} />
+                <ShoppingCart size={14} />
                 {t('orders.activeList')}
             </button>
             <button
                 type="button"
                 onClick={() => onSwitchView('archive')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-bold transition-all ${
                     ordersListView === 'archive'
-                        ? 'bg-slate-700 text-white shadow-md shadow-slate-700/25'
+                        ? 'bg-slate-700 text-white shadow-sm shadow-slate-700/25'
                         : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                 }`}
             >
-                <Archive size={16} />
+                <Archive size={14} />
                 {t('orders.archiveBin')}
                 {archiveOrderCount > 0 ? (
-                    <span className="min-w-[1.5rem] rounded-full bg-white/20 px-1.5 text-center text-xs tabular-nums">
+                    <span className="min-w-[1.25rem] rounded-full bg-white/20 px-1 text-center text-[10px] tabular-nums">
                         {archiveOrderCount}
                     </span>
                 ) : null}
@@ -43,16 +43,16 @@ export default function OrdersViewTabs({
             <button
                 type="button"
                 onClick={() => onSwitchView('trash')}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all ${
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-bold transition-all ${
                     ordersListView === 'trash'
-                        ? 'bg-amber-600 text-white shadow-md shadow-amber-600/25'
+                        ? 'bg-amber-600 text-white shadow-sm shadow-amber-600/25'
                         : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                 }`}
             >
-                <Trash2 size={16} />
+                <Trash2 size={14} />
                 {t('orders.trashBin')}
                 {trashOrderCount > 0 ? (
-                    <span className="min-w-[1.5rem] rounded-full bg-white/20 px-1.5 text-center text-xs tabular-nums">
+                    <span className="min-w-[1.25rem] rounded-full bg-white/20 px-1 text-center text-[10px] tabular-nums">
                         {trashOrderCount}
                     </span>
                 ) : null}

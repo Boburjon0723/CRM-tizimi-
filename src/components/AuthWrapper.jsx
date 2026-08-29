@@ -131,8 +131,9 @@ export default function AuthWrapper({ children }) {
                 />
             )}
 
-            <main className="flex-1 transition-all duration-300 lg:ml-64 md:ml-0 overflow-x-hidden">
-                <div className="p-4 md:p-6 lg:p-8">
+            {/* ml-72 = Sidebar w-72 — mos bo‘lmasa yon panel kontentni bosib qoladi */}
+            <main className="min-w-0 flex-1 transition-all duration-300 lg:ml-72 md:ml-0 overflow-x-hidden">
+                <div className="p-3 md:p-4 lg:p-5">
                     {children}
                 </div>
             </main>

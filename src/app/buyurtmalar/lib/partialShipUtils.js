@@ -412,3 +412,52 @@ export function buildShippedPortionOrderItems(order, products, shippedMap) {
     })
     return { items, shippedTotal, orderedTotal }
 }
+
+/**
+ * Chop etish uchun faqat chiqmagan (qolgan) miqdorlar (order_items formatida).
+ * @returns {{ items: object[], remainingTotal: number, orderedTotal: number }}
+ */
+export function buildRemainingPortionOrderItems(order, products, shippedMap) {
+    const rawItems = dedupeOrderItemsKeepNewest(order?.order_items || [], products || [])
+    const rowDefs = rawItems
+        .map((oi) => {
+            const ordered = parseOrderItemQty(oi.quantity || 0)
+            if (ordered <= 0) return null
+            return {
+                shipKey: orderItemShipKey(oi.product_id, oi.color || '—'),
+                ordered_qty: ordered,
+                source: oi,
+            }
+        })
+        .filter(Boolean)
+
+    const allocated = allocateShippedAcrossRows(rowDefs, shippedMap)
+    const items = []
+    let remainingTotal = 0
+    let orderedTotal = 0
+    allocated.forEach((r) => {
+        orderedTotal += Number(r.ordered_qty) || 0
+        const remaining = Number(r.remaining_qty) || 0
+        if (remaining <= 0) return
+        remainingTotal += remaining
+        const oi = r.source || {}
+        const unit = Number(oi.price)
+        const origSub = Number(oi.subtotal)
+        const ordered = Number(r.ordered_qty) || 0
+        let scaledSub = null
+        if (Number.isFinite(unit)) {
+            scaledSub = Math.round(unit * remaining * 100) / 100
+        } else if (Number.isFinite(origSub) && origSub > 0 && ordered > 0) {
+            scaledSub = Math.round(origSub * (remaining / ordered) * 100) / 100
+        }
+        items.push({
+            ...oi,
+            quantity: remaining,
+            ...(scaledSub != null ? { subtotal: scaledSub } : {}),
+            _print_remaining_portion: true,
+            _print_ordered_qty: r.ordered_qty,
+            _print_shipped_qty: r.shipped_qty,
+        })
+    })
+    return { items, remainingTotal, orderedTotal }
+}

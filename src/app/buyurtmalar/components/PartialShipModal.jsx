@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { X, CheckCircle2, Printer } from 'lucide-react'
+import { X, CheckCircle2, Printer, PackageOpen } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { deductStockForCompletedOrder, reverseStockForOrder } from '@/services/inventoryService'
 import { useLanguage } from '@/context/LanguageContext'
@@ -12,7 +12,7 @@ import {
     buildPartialShipRows,
 } from '../lib/partialShipUtils'
 
-export default function PartialShipModal({ order, products, onClose, onSuccess, onPrintShipped }) {
+export default function PartialShipModal({ order, products, onClose, onSuccess, onPrintShipped, onPrintRemaining }) {
     const { t } = useLanguage()
     const { showAlert, showConfirm, showToast } = useDialog()
     const [rows, setRows] = useState([])
@@ -395,6 +395,36 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
                                         >
                                             <Printer size={14} />
                                             {t('orders.partialPrintWithoutPrice') || 'Chiqqan · narxsiz'}
+                                        </button>
+                                    </>
+                                ) : null}
+                                {summary.remaining > 0 ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => onPrintRemaining?.(order, true)}
+                                            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-50 inline-flex items-center gap-1.5"
+                                            title={
+                                                t('orders.remainingPrintWithPrice') ||
+                                                'Chiqmagan qismni narxli chop etish'
+                                            }
+                                        >
+                                            <PackageOpen size={14} />
+                                            {t('orders.remainingPrintWithPrice') || 'Chiqmagan · narxli'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => onPrintRemaining?.(order, false)}
+                                            className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-50 disabled:opacity-50 inline-flex items-center gap-1.5"
+                                            title={
+                                                t('orders.remainingPrintWithoutPrice') ||
+                                                'Chiqmagan qismni narxsiz chop etish'
+                                            }
+                                        >
+                                            <PackageOpen size={14} />
+                                            {t('orders.remainingPrintWithoutPrice') || 'Chiqmagan · narxsiz'}
                                         </button>
                                     </>
                                 ) : null}

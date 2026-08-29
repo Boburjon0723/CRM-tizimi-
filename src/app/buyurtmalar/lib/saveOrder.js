@@ -1,8 +1,12 @@
 import { supabase } from '@/lib/supabase'
 import { sendTelegramNotification } from '@/utils/telegram'
 import { deductStockForCompletedOrder, reverseStockForOrder } from '@/services/inventoryService'
-import { isDeletedAtMissingError } from '@/lib/orderTrash'
-import { getOutstandingItemsForDeduction } from './partialShipUtils'
+import { isDeletedAtMissingError, buildMergeSourceNote } from '@/lib/orderTrash'
+import {
+    getOutstandingItemsForDeduction,
+    loadOrdersShippedMaps,
+    orderItemShipKey,
+} from './partialShipUtils'
 import {
     parseOrderItemQty,
     expandOrderLineForSubmit,
@@ -16,6 +20,45 @@ import {
     withCompletedAtOnStatusChange,
     normalizeStatusForSelect,
 } from '../utils'
+
+/**
+ * Merge natijasi ombordan qayta ayirmasligi uchun: manba buyurtmalarda allaqachon
+ * chiqim qilingan miqdorni yangi buyurtma qatorlaridan olib tashlaydi.
+ * Manbalar to‘liq chiqib ketgan bo‘lsa — bo‘sh ro‘yxat qaytadi (ayirish yo‘q).
+ */
+async function subtractMergeSourceShipments(itemPayloads, mergeSourceOrderIds) {
+    const srcIds = [...new Set((mergeSourceOrderIds || []).filter(Boolean))]
+    if (srcIds.length < 2) return itemPayloads
+    let shippedByKey
+    try {
+        const maps = await loadOrdersShippedMaps(srcIds)
+        shippedByKey = new Map()
+        for (const map of maps.values()) {
+            for (const [key, qty] of map.entries()) {
+                shippedByKey.set(key, (Number(shippedByKey.get(key)) || 0) + (Number(qty) || 0))
+            }
+        }
+    } catch (e) {
+        console.warn('subtractMergeSourceShipments:', e?.message || e)
+        return itemPayloads
+    }
+    if (!shippedByKey.size) return itemPayloads
+
+    const out = []
+    for (const item of itemPayloads) {
+        const key = orderItemShipKey(item.product_id, item.color || '—')
+        const already = Number(shippedByKey.get(key)) || 0
+        const qty = parseOrderItemQty(item.quantity || 0)
+        if (already <= 0) {
+            out.push(item)
+            continue
+        }
+        shippedByKey.set(key, Math.max(0, already - qty))
+        const left = Math.max(0, qty - already)
+        if (left > 0) out.push({ ...item, quantity: left })
+    }
+    return out
+}
 
 export async function saveOrder({
     form,
@@ -331,18 +374,44 @@ export async function saveOrder({
     }
 
     if (baseOrderPayload.status === 'completed' && orderWorkspace !== 'buyurtmalar2') {
-        await deductStockForCompletedOrder(orderId, displayOrderNo, itemPayloads)
-        showToast(t('orders.stockDeductedOk') || "Ombor qoldig'i yangilandi", { type: 'success' })
+        const toDeduct = await subtractMergeSourceShipments(itemPayloads, mergeSourceOrderIds)
+        if (toDeduct.length) {
+            await deductStockForCompletedOrder(orderId, displayOrderNo, toDeduct)
+            showToast(t('orders.stockDeductedOk') || "Ombor qoldig'i yangilandi", { type: 'success' })
+        } else {
+            showToast(
+                t('orders.stockAlreadyDeducted') || 'Bu buyurtma bo‘yicha chiqim avval yozilgan',
+                { type: 'info' }
+            )
+        }
     }
 
     const sourceIdsToArchive = mergeSourceOrderIds
     const shouldArchive = mergeArchiveSources ? sourceIdsToArchive : null
     if (shouldArchive?.length >= 2) {
         const ts = new Date().toISOString()
-        const { error: archErr } = await supabase
+        const resultLabel = `№ ${newOrder?.order_number || displayOrderNo}`
+        const { data: srcRows } = await supabase
             .from('orders')
-            .update({ deleted_at: ts })
+            .select('id, note')
             .in('id', shouldArchive)
+        const noteById = new Map((srcRows || []).map((r) => [String(r.id), r.note]))
+
+        // Izohdagi belgi manbani karzinkada saqlaydi (arxivga chiqsa daromad ikki marta sanaladi)
+        let archErr = null
+        for (const srcId of shouldArchive) {
+            const { error } = await supabase
+                .from('orders')
+                .update({
+                    deleted_at: ts,
+                    note: buildMergeSourceNote(noteById.get(String(srcId)), resultLabel),
+                })
+                .eq('id', srcId)
+            if (error) {
+                archErr = error
+                break
+            }
+        }
         if (archErr) {
             if (isDeletedAtMissingError(archErr)) {
                 await showAlert(t('orders.deletedAtMigrationHint'), { variant: 'warning' })

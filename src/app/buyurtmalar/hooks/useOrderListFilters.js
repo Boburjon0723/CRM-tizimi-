@@ -156,9 +156,10 @@ export function useOrderListFilters({
             Boolean(dateFrom) ||
             Boolean(dateTo) ||
             (filterCategory && filterCategory !== 'all') ||
+            (filterStatus && filterStatus !== 'all' && filterStatus !== 'Hammasi') ||
             Boolean(searchTerm.trim())
         )
-    }, [filterSource, dateFrom, dateTo, filterCategory, searchTerm])
+    }, [filterSource, dateFrom, dateTo, filterCategory, filterStatus, searchTerm])
 
     return { filteredOrders, totalSumma, statusStats, orderCategoryOptions, hasExtraFilters }
 }

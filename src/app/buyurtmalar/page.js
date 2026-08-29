@@ -80,10 +80,8 @@ import {
     DEFAULT_TABLE_CONFIG,
     imagePxBySize,
     dedupeOrderItemsById,
-    normalizeOrderItemsForList,
     orderItemToFormLine,
     orderItemsToOrderLines,
-    aggregateMergedOrdersTotals,
     filterOrderItemsByCategoryLabel,
     buildConsolidatedPrintHtml,
     updateOrderStatusWithCompletedAt,
@@ -106,6 +104,7 @@ import {
     computeOrderFulfillment,
     loadOrderShippedMap,
     buildShippedPortionOrderItems,
+    buildRemainingPortionOrderItems,
 } from './lib/partialShipUtils'
 import PartialShipModal from './components/PartialShipModal'
 
@@ -817,85 +816,6 @@ function BuyurtmalarPageContent() {
         setMergeSelection({})
     }
 
-    async function handleMergeSelectedOrders() {
-        if (ordersListView !== 'active') return
-        const ids = Object.keys(mergeSelection).filter((id) => mergeSelection[id])
-        if (ids.length < 2) {
-            await showAlert(t('orders.mergeNeedTwo'), { variant: 'warning' })
-            return
-        }
-        const idSet = new Set(ids)
-        const ordersToMerge = filteredOrders
-            .filter((o) => idSet.has(o.id))
-            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-        if (ordersToMerge.length < 2) {
-            await showAlert(t('orders.mergeNeedTwo'), { variant: 'warning' })
-            return
-        }
-        try {
-            const { data: allRows, error } = await fetchOrderItemsForOrderIds(ordersToMerge.map((o) => o.id))
-            if (error) throw error
-            const cleanedRows = normalizeOrderItemsForList(allRows || [])
-            if (!cleanedRows.length) {
-                await showAlert(t('orders.mergeEmptyLines'), { variant: 'warning' })
-                return
-            }
-            const byOrderId = new Map()
-            for (const oi of cleanedRows) {
-                const oid = oi?.order_id
-                if (oid == null || oid === '') continue
-                const k = String(oid)
-                if (!byOrderId.has(k)) byOrderId.set(k, [])
-                byOrderId.get(k).push(oi)
-            }
-            const mergeRowsDeduped = []
-            for (const o of ordersToMerge) {
-                mergeRowsDeduped.push(...dedupeOrderItemsKeepNewest(byOrderId.get(String(o.id)) || [], products))
-            }
-            const orderRank = new Map(ordersToMerge.map((o, i) => [String(o.id), i]))
-            const sortedForForm = [...mergeRowsDeduped].sort((a, b) => {
-                const ra = orderRank.get(String(a.order_id)) ?? 999
-                const rb = orderRank.get(String(b.order_id)) ?? 999
-                if (ra !== rb) return ra - rb
-                const la = Number(a.line_index ?? 0)
-                const lb = Number(b.line_index ?? 0)
-                if (la !== lb) return la - lb
-                return String(a.id || '').localeCompare(String(b.id || ''))
-            })
-            const mergeAgg = aggregateMergedOrdersTotals(ordersToMerge, mergeRowsDeduped)
-            const linesRaw = orderItemsToOrderLines(sortedForForm, products)
-            const lines = enrichOrderLinesFromDb(linesRaw, products, t)
-            const labels = ordersToMerge.map((o) =>
-                o.order_number ? `№ ${o.order_number}` : `#${String(o.id).slice(0, 8)}`
-            )
-            const mergeNote = `${t('orders.mergeNotePrefix')}: ${labels.join('; ')}`
-            const primary = ordersToMerge[0]
-            clearNewOrderDraft()
-            setDraftBanner(false)
-            setMergeSelection({})
-            openOrderForm({
-                editId: null,
-                initialForm: {
-                    customer_id: primary.customer_id || '',
-                    customer_name: primary.customer_name || primary.customers?.name || '',
-                    customer_phone: primary.customer_phone || primary.customers?.phone || '',
-                    total: '',
-                    status: 'new',
-                    note: mergeNote,
-                    source: normalizeSourceForForm(primary.source),
-                },
-                initialOrderLines: lines.length ? lines : [createEmptyOrderLine()],
-                mergeSourceAgg: mergeAgg,
-                mergeSourceOrderIds: ordersToMerge.map((o) => o.id),
-                mergeArchiveSources: true,
-            })
-            showToast(t('orders.mergeOpenedForm'), { type: 'success' })
-        } catch (e) {
-            console.error('handleMergeSelectedOrders:', e)
-            await showAlert(t('orders.mergeFetchError'), { variant: 'error' })
-        }
-    }
-
     async function handlePrintOrder(item, showPrices) {
         const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
         const categoryActive = filterCategory && filterCategory !== 'all'
@@ -1028,6 +948,87 @@ function BuyurtmalarPageContent() {
             }
         } catch (e) {
             console.error('handlePrintShippedPortion:', e)
+            await showAlert(e?.message || String(e), { variant: 'error' })
+        }
+    }
+
+    /** Faqat hali chiqmagan qismni chop etish (qisman tugallash) */
+    async function handlePrintRemainingPortion(item, showPrices = false) {
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        let orderForPrint = item
+        try {
+            const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(item.id)
+            if (oiErr) throw oiErr
+            const { data: orderRow, error: ordErr } = await supabase
+                .from('orders')
+                .select(`*, customers (id, name, phone)`)
+                .eq('id', item.id)
+                .single()
+            if (ordErr) throw ordErr
+            orderForPrint = {
+                ...item,
+                ...orderRow,
+                order_items: dedupeOrderItemsKeepNewest(rows || [], products),
+            }
+        } catch (e) {
+            console.error('handlePrintRemainingPortion refetch:', e)
+            orderForPrint = {
+                ...item,
+                order_items: dedupeOrderItemsKeepNewest(item.order_items || [], products),
+            }
+        }
+
+        try {
+            const shippedMap = await loadOrderShippedMap(orderForPrint.id)
+            const { items, remainingTotal, orderedTotal } = buildRemainingPortionOrderItems(
+                orderForPrint,
+                products,
+                shippedMap
+            )
+            if (!items.length) {
+                await showAlert(
+                    t('orders.remainingPrintEmpty') ||
+                        'Chop etish uchun chiqmagan mahsulot yo‘q.',
+                    { variant: 'info' }
+                )
+                return
+            }
+
+            const portionTotal = items.reduce((s, oi) => {
+                const q = Number(oi.quantity) || 0
+                const p = Number(oi.price) || 0
+                return s + q * p
+            }, 0)
+
+            const html = buildPrintDocumentHtml({
+                documentTitle: `Chiqmagan-${String(item.order_number || item.id).slice(0, 24)}`,
+                listTitle:
+                    t('orders.remainingPrintListTitle') ||
+                    `Chiqmagan qism: ${remainingTotal}/${orderedTotal} dona`,
+                orders: [
+                    {
+                        ...orderForPrint,
+                        order_items: items,
+                        total: showPrices ? portionTotal : null,
+                        _print_note:
+                            t('orders.remainingPrintNote') ||
+                            'Diqqat: bu hujjatda faqat hali chiqmagan mahsulotlar.',
+                    },
+                ],
+                showPrices,
+                labelColorFn,
+                productsList: products,
+                tableConfig,
+            })
+            if (!openPrintTab(html)) {
+                showToast(
+                    t('orders.printPopupBlocked') ||
+                        'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.',
+                    { type: 'info' }
+                )
+            }
+        } catch (e) {
+            console.error('handlePrintRemainingPortion:', e)
             await showAlert(e?.message || String(e), { variant: 'error' })
         }
     }
@@ -1202,11 +1203,17 @@ function BuyurtmalarPageContent() {
               ? archiveOrders
               : trashOrders
     const unknownLabel = t('common.unknown')
+    /**
+     * Status filtri (`StatusTabs`) faqat «Buyurtmalar» ko‘rinishida chiziladi —
+     * shuning uchun arxiv/korzinkada qo‘llanmaydi. Aks holda ko‘rinmas filtr
+     * ro‘yxatni qirqib, sanoq bilan mos kelmay qoladi.
+     */
+    const statusFilterForList = ordersListView === 'active' ? filterStatus : 'all'
     const { filteredOrders, totalSumma, statusStats, orderCategoryOptions, hasExtraFilters } =
         useOrderListFilters({
             ordersForList,
             searchTerm,
-            filterStatus,
+            filterStatus: statusFilterForList,
             filterCategory,
             filterSource,
             dateFrom,
@@ -1221,6 +1228,7 @@ function BuyurtmalarPageContent() {
         setFilterSource('all')
         setDateFrom('')
         setDateTo('')
+        setFilterStatus('all')
     }
 
     const highlightOrderId = searchParams.get('highlight')
@@ -1561,12 +1569,12 @@ function BuyurtmalarPageContent() {
             <Header title={t('common.orders')} toggleSidebar={toggleSidebar} />
 
             {ordersListView === 'trash' ? (
-                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-950">
+                <div className="mb-2 rounded-md border border-amber-200 bg-amber-50/90 px-2.5 py-1.5 text-[11px] text-amber-950">
                     <p className="font-medium leading-snug">{t('orders.trashHint')}</p>
                 </div>
             ) : null}
             {ordersListView === 'archive' ? (
-                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800">
+                <div className="mb-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-800">
                     <p className="font-medium leading-snug">{t('orders.archiveHint')}</p>
                 </div>
             ) : null}
@@ -1609,7 +1617,6 @@ function BuyurtmalarPageContent() {
                 setSearchTerm={setSearchTerm}
                 repeatLastOrder={repeatLastOrder}
                 ordersListView={ordersListView}
-                handleMergeSelectedOrders={handleMergeSelectedOrders}
                 selectedMergeCount={selectedMergeCount}
                 clearMergeSelection={clearMergeSelection}
                 filterCategory={filterCategory}
@@ -1682,6 +1689,7 @@ function BuyurtmalarPageContent() {
                 handleStatusChange={handleStatusChange}
                 handlePrintOrder={handlePrintOrder}
                 handlePrintShippedPortion={handlePrintShippedPortion}
+                handlePrintRemainingPortion={handlePrintRemainingPortion}
                 handleDuplicateOrder={handleDuplicateOrder}
                 handleEdit={handleEdit}
                 handleDelete={handleDelete}
@@ -1699,6 +1707,7 @@ function BuyurtmalarPageContent() {
                     products={products}
                     onClose={() => setPartialShipOrder(null)}
                     onPrintShipped={handlePrintShippedPortion}
+                    onPrintRemaining={handlePrintRemainingPortion}
                     onSuccess={async (info) => {
                         const oid = info?.orderId
                         if (!oid) {

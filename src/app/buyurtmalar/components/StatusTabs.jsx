@@ -46,7 +46,7 @@ export default function StatusTabs({ t, filterStatus, setFilterStatus, statusSta
     ];
 
     return (
-        <div className="flex flex-wrap gap-2 mb-6 p-1 bg-white/50 backdrop-blur-sm rounded-2xl border border-gray-100 shadow-sm w-fit">
+        <div className="flex flex-wrap gap-1 mb-2 p-0.5 bg-white/50 backdrop-blur-sm rounded-lg border border-gray-100 shadow-sm w-fit">
             {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = filterStatus === tab.id;
@@ -57,18 +57,18 @@ export default function StatusTabs({ t, filterStatus, setFilterStatus, statusSta
                         type="button"
                         onClick={() => setFilterStatus(tab.id)}
                         className={`
-                            relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200
+                            relative flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-all duration-200
                             ${isActive 
-                                ? `${tab.activeColor} shadow-lg scale-[1.02] z-10` 
+                                ? `${tab.activeColor} shadow-sm z-10` 
                                 : `text-gray-500 hover:bg-white hover:text-gray-700`
                             }
                         `}
                     >
-                        <Icon size={18} className={isActive ? 'text-white' : ''} />
+                        <Icon size={14} className={isActive ? 'text-white' : ''} />
                         <span>{tab.label}</span>
                         {(tab.count !== undefined) && (
                             <span className={`
-                                ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-black tabular-nums
+                                ml-0.5 px-1 py-0.5 rounded-full text-[9px] font-black tabular-nums
                                 ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}
                             `}>
                                 {tab.count}

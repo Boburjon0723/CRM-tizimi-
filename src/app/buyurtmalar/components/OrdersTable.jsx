@@ -19,6 +19,7 @@ function OrdersTable({
     handleStatusChange,
     handlePrintOrder,
     handlePrintShippedPortion,
+    handlePrintRemainingPortion,
     handleDuplicateOrder,
     handleEdit,
     handleDelete,
@@ -57,15 +58,15 @@ function OrdersTable({
             <div className="overflow-x-auto -mx-1 px-1 sm:mx-0 sm:px-0">
                 <table className="w-full min-w-[860px] text-left border-collapse table-auto">
                     <thead>
-                        <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
+                        <tr className="bg-gray-50/50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
                             {ordersListView === 'active' && (
                                 <th
-                                    className="w-10 shrink-0 px-2 py-3 sm:px-3 rounded-tl-2xl text-center"
+                                    className="w-8 shrink-0 px-1.5 py-2.5 rounded-tl-2xl text-center"
                                     title={t('orders.mergeSelectColumn')}
                                 >
                                     <input
                                         type="checkbox"
-                                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                        className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                         checked={
                                             filteredOrders.length > 0 &&
                                             filteredOrders.every((o) => mergeSelection[o.id])
@@ -76,21 +77,21 @@ function OrdersTable({
                                 </th>
                             )}
                             <th
-                                className={`w-[11%] min-w-[7.5rem] px-3 py-3 sm:px-4 ${
+                                className={`w-[11%] min-w-[6.5rem] px-2 py-2.5 ${
                                     ordersListView !== 'active' ? 'rounded-tl-2xl' : ''
                                 }`}
                             >
                                 {t('orders.idDate')}
                             </th>
-                            <th className="w-[14%] min-w-[9rem] px-3 py-3 sm:px-4">{t('orders.customer')}</th>
-                            <th className="min-w-[12rem] px-3 py-3 sm:px-4 xl:min-w-[16rem]">{t('orders.products')}</th>
-                            <th className="w-[7%] min-w-[4.5rem] whitespace-nowrap px-2 py-3 sm:px-3">
+                            <th className="w-[14%] min-w-[8rem] px-2 py-2.5">{t('orders.customer')}</th>
+                            <th className="min-w-[11rem] px-2 py-2.5 xl:min-w-[14rem]">{t('orders.products')}</th>
+                            <th className="w-[7%] min-w-[4rem] whitespace-nowrap px-1.5 py-2.5">
                                 {t('orders.total')}
                             </th>
-                            <th className="w-[9%] min-w-[5.5rem] px-2 py-3 sm:px-3">{t('orders.payment')}</th>
-                            <th className="w-[10%] min-w-[6.5rem] px-2 py-3 sm:px-3">{t('orders.status')}</th>
-                            <th className="w-[7%] min-w-[4rem] px-2 py-3 sm:px-3">{t('orders.source')}</th>
-                            <th className="min-w-[11rem] px-2 py-3 sm:px-3 rounded-tr-2xl text-right xl:min-w-[12.5rem]">
+                            <th className="w-[8%] min-w-[4.5rem] px-1.5 py-2.5">{t('orders.payment')}</th>
+                            <th className="w-[9%] min-w-[5.5rem] px-1.5 py-2.5">{t('orders.status')}</th>
+                            <th className="w-[6%] min-w-[3.5rem] px-1.5 py-2.5">{t('orders.source')}</th>
+                            <th className="min-w-[9rem] px-1.5 py-2.5 rounded-tr-2xl text-right xl:min-w-[11rem]">
                                 {t('customers.actions')}
                             </th>
                         </tr>
@@ -117,6 +118,7 @@ function OrdersTable({
                                     handleStatusChange={handleStatusChange}
                                     handlePrintOrder={handlePrintOrder}
                                     handlePrintShippedPortion={handlePrintShippedPortion}
+                                    handlePrintRemainingPortion={handlePrintRemainingPortion}
                                     handleDuplicateOrder={handleDuplicateOrder}
                                     handleEdit={handleEdit}
                                     handleDelete={handleDelete}
