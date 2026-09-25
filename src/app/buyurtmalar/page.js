@@ -86,6 +86,7 @@ import {
     buildConsolidatedPrintHtml,
     updateOrderStatusWithCompletedAt,
     sortOrdersByCompletionSequence,
+    localDateInputToIso,
 } from './utils'
 
 import StatsCards from './components/StatsCards'
@@ -107,6 +108,8 @@ import {
     buildRemainingPortionOrderItems,
 } from './lib/partialShipUtils'
 import PartialShipModal from './components/PartialShipModal'
+import CompletedAtDateModal from './components/CompletedAtDateModal'
+import { recordPartnerSaleForOrder, removePartnerSaleForOrder } from './lib/partnerSaleFromOrder'
 
 
 
@@ -172,6 +175,8 @@ function BuyurtmalarPageContent() {
     const [draftBanner, setDraftBanner] = useState(false)
     const [linkCustomerOrder, setLinkCustomerOrder] = useState(null)
     const [partialShipOrder, setPartialShipOrder] = useState(null)
+    /** Status → Tugallangan: chiqish sanasi so‘rash */
+    const [completedAtPrompt, setCompletedAtPrompt] = useState(null)
     const isAddingRef = useRef(isAdding)
 
     useEffect(() => {
@@ -606,6 +611,80 @@ function BuyurtmalarPageContent() {
         if (normalizeStatusForSelect(oldStatus) === normalizeStatusForSelect(newStatus)) return
 
         const nextNorm = normalizeStatusForSelect(newStatus)
+        // Tugallangan qilishda chiqish sanasini qo‘lda so‘raymiz
+        if (nextNorm === 'completed' && normalizeStatusForSelect(oldStatus) !== 'completed') {
+            setCompletedAtPrompt({
+                id,
+                newStatus,
+                oldStatus,
+                orderLabel: order.order_number
+                    ? `№${order.order_number}`
+                    : `#${String(order.id).slice(0, 8)}`,
+            })
+            return
+        }
+
+        await applyStatusChange(id, newStatus, oldStatus, null)
+    }
+
+    async function syncPartnerSale(order, nextNorm, oldStatus, { partnerId, entryDate }) {
+        try {
+            if (nextNorm === 'completed' && partnerId) {
+                let items = order.order_items || []
+                const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(order.id)
+                if (!oiErr && rows?.length) items = rows
+                const res = await recordPartnerSaleForOrder(supabase, {
+                    partnerId,
+                    order,
+                    orderItems: items,
+                    productsList: products,
+                    entryDate,
+                })
+                if (res.status === 'created') {
+                    showToast(
+                        (t('orders.partnerSaleRecorded') || 'Hamkor moliyasiga sotuv yozildi: ${amount}').replace(
+                            '{amount}',
+                            formatUsd(res.amount)
+                        ),
+                        { type: 'success' }
+                    )
+                } else if (res.status === 'exists') {
+                    showToast(
+                        t('orders.partnerSaleExists') || 'Bu buyurtma hamkor moliyasida avval yozilgan',
+                        { type: 'info' }
+                    )
+                } else if (res.status === 'empty') {
+                    showToast(
+                        t('orders.partnerSaleEmpty') || 'Buyurtma summasi 0 — hamkor moliyasiga yozilmadi',
+                        { type: 'info' }
+                    )
+                }
+            } else if (nextNorm !== 'completed' && normalizeStatusForSelect(oldStatus) === 'completed') {
+                const removed = await removePartnerSaleForOrder(supabase, order)
+                if (removed > 0) {
+                    showToast(
+                        t('orders.partnerSaleRemoved') || 'Hamkor moliyasidagi sotuv yozuvi o‘chirildi',
+                        { type: 'info' }
+                    )
+                }
+            }
+        } catch (e) {
+            console.error('syncPartnerSale:', e)
+            await showAlert(
+                `${t('orders.partnerSaleError') || 'Hamkor moliyasiga yozishda xato'}: ${e?.message || e}`,
+                { variant: 'error' }
+            )
+        }
+    }
+
+    async function applyStatusChange(id, newStatus, oldStatus, completedAtStamp, partnerOpts = {}) {
+        const order =
+            orders.find((o) => String(o.id) === String(id)) ||
+            archiveOrders.find((o) => String(o.id) === String(id)) ||
+            trashOrders.find((o) => String(o.id) === String(id))
+        if (!order) return
+
+        const nextNorm = normalizeStatusForSelect(newStatus)
         // Arxivdan Yangi / Jarayonda ga o‘tkazilsa — asosiy ro‘yxatga qaytadi
         const leaveArchive =
             Boolean(order.archived_at) && (nextNorm === 'new' || nextNorm === 'pending')
@@ -615,7 +694,8 @@ function BuyurtmalarPageContent() {
                 supabase,
                 id,
                 newStatus,
-                oldStatus
+                oldStatus,
+                completedAtStamp
             )
 
             if (error) throw error
@@ -648,6 +728,8 @@ function BuyurtmalarPageContent() {
                 await reverseStockForOrder(id, orderNum, orderItems)
                 showToast(t('orders.stockReversedOk') || 'Ombor qoldig\'i qaytarildi', { type: 'info' })
             }
+
+            await syncPartnerSale(order, nextNorm, oldStatus, partnerOpts)
 
             if (leaveArchive || ordersListViewRef.current === 'archive') {
                 if (leaveArchive) {
@@ -1209,7 +1291,7 @@ function BuyurtmalarPageContent() {
      * ro‘yxatni qirqib, sanoq bilan mos kelmay qoladi.
      */
     const statusFilterForList = ordersListView === 'active' ? filterStatus : 'all'
-    const { filteredOrders, totalSumma, statusStats, orderCategoryOptions, hasExtraFilters } =
+    const { filteredOrders, totalSumma, totalQty, statusStats, orderCategoryOptions, hasExtraFilters } =
         useOrderListFilters({
             ordersForList,
             searchTerm,
@@ -1632,6 +1714,8 @@ function BuyurtmalarPageContent() {
                 orderCategoryOptions={orderCategoryOptions}
                 handlePrintOrderList={handlePrintOrderList}
                 filteredOrders={filteredOrders}
+                listTotalSumma={totalSumma}
+                listTotalQty={totalQty}
                 handlePrintSelectedByCategory={handlePrintSelectedByCategory}
                 handlePrintSelectedSpecial={handlePrintSelectedSpecial}
                 selectedOrders={selectedOrders}
@@ -1677,6 +1761,8 @@ function BuyurtmalarPageContent() {
             <OrdersTable
                 t={t}
                 filteredOrders={filteredOrders}
+                listTotalSumma={totalSumma}
+                listTotalQty={totalQty}
                 ordersListView={ordersListView}
                 mergeSelection={mergeSelection}
                 toggleMergeSelectAllFiltered={toggleMergeSelectAllFiltered}
@@ -1724,7 +1810,9 @@ function BuyurtmalarPageContent() {
                                               status: info.status || o.status,
                                               completed_at:
                                                   info.status === 'completed'
-                                                      ? o.completed_at || new Date().toISOString()
+                                                      ? info.completed_at ||
+                                                        o.completed_at ||
+                                                        new Date().toISOString()
                                                       : o.completed_at,
                                           }
                                         : o
@@ -1764,6 +1852,22 @@ function BuyurtmalarPageContent() {
                     }}
                 />
             ) : null}
+
+            <CompletedAtDateModal
+                open={Boolean(completedAtPrompt)}
+                orderLabel={completedAtPrompt?.orderLabel || ''}
+                onCancel={() => setCompletedAtPrompt(null)}
+                onConfirm={async (dateYmd, partnerId) => {
+                    const pending = completedAtPrompt
+                    setCompletedAtPrompt(null)
+                    if (!pending) return
+                    const stamp = localDateInputToIso(dateYmd)
+                    await applyStatusChange(pending.id, pending.newStatus, pending.oldStatus, stamp, {
+                        partnerId,
+                        entryDate: dateYmd,
+                    })
+                }}
+            />
 
             {linkCustomerOrder ? (
                 <LinkCustomerModal

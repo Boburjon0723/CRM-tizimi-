@@ -1,5 +1,12 @@
 import { useMemo } from 'react'
-import { orderCategoryLabels, normalizeSourceForForm } from '../utils'
+import {
+    orderCategoryLabels,
+    normalizeSourceForForm,
+    normalizeOrderItemsForList,
+    dedupeOrderItemsKeepNewest,
+    filterOrderItemsByCategoryLabel,
+    sumOrderItemsQty,
+} from '../utils'
 
 function orderDayKey(iso) {
     if (!iso) return ''
@@ -115,6 +122,19 @@ export function useOrderListFilters({
         [filteredOrders]
     )
 
+    /** Ro‘yxatdagi barcha buyurtmalar miqdori (kategoriya filtri bo‘lsa — faqat shu kategoriya qatorlari) */
+    const totalQty = useMemo(() => {
+        const categoryActive = filterCategory && filterCategory !== 'all'
+        let s = 0
+        for (const o of filteredOrders) {
+            const items = normalizeOrderItemsForList(dedupeOrderItemsKeepNewest(o.order_items || [], productsList))
+            s += sumOrderItemsQty(
+                categoryActive ? filterOrderItemsByCategoryLabel(items, filterCategory, '—', productsList) : items
+            )
+        }
+        return Math.round(s * 1000) / 1000
+    }, [filteredOrders, filterCategory, productsList])
+
     const statusStats = useMemo(() => {
         const statusPick = (pred) => {
             const list = filteredOrders.filter(pred)
@@ -161,5 +181,5 @@ export function useOrderListFilters({
         )
     }, [filterSource, dateFrom, dateTo, filterCategory, filterStatus, searchTerm])
 
-    return { filteredOrders, totalSumma, statusStats, orderCategoryOptions, hasExtraFilters }
+    return { filteredOrders, totalSumma, totalQty, statusStats, orderCategoryOptions, hasExtraFilters }
 }

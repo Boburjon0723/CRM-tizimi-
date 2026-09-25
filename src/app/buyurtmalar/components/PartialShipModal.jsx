@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { deductStockForCompletedOrder, reverseStockForOrder } from '@/services/inventoryService'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
-import { parseOrderItemQty, updateOrderStatusWithCompletedAt } from '../utils'
+import { parseOrderItemQty, updateOrderStatusWithCompletedAt, localDateInputToIso, todayDateInputValue } from '../utils'
 import {
     loadOrderShippedMap,
     buildPartialShipRows,
@@ -18,6 +18,7 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
     const [rows, setRows] = useState([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
+    const [completedDate, setCompletedDate] = useState(todayDateInputValue())
 
     useEffect(() => {
         if (!order?.id) return
@@ -218,11 +219,13 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
 
             const willComplete = remainingAfter <= 0
             const newStatus = willComplete ? 'completed' : 'pending'
-            const { error: stErr } = await updateOrderStatusWithCompletedAt(
+            const completedStamp = willComplete ? localDateInputToIso(completedDate) : null
+            const { error: stErr, completed_at } = await updateOrderStatusWithCompletedAt(
                 supabase,
                 order.id,
                 newStatus,
-                order.status
+                order.status,
+                completedStamp
             )
             if (stErr) throw stErr
 
@@ -236,6 +239,7 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
                 orderId: order.id,
                 status: newStatus,
                 willComplete,
+                completed_at: willComplete ? completed_at || completedStamp : null,
                 orderSnapshot: order,
             }
             onClose()
@@ -574,14 +578,29 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
                                 </tbody>
                             </table>
                         </div>
-                        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 bg-slate-50">
-                            <p className="text-xs text-slate-500">
-                                {t('orders.partialSelectedCount') || 'Tanlangan'}:{' '}
-                                <span className="font-black text-emerald-700">{summary.selectedCount}</span>
-                                {' · '}
-                                {t('orders.partialShipQtyLabel')}:{' '}
-                                <span className="font-black text-emerald-700">{summary.now}</span>
-                            </p>
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 bg-slate-50">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <p className="text-xs text-slate-500">
+                                    {t('orders.partialSelectedCount') || 'Tanlangan'}:{' '}
+                                    <span className="font-black text-emerald-700">{summary.selectedCount}</span>
+                                    {' · '}
+                                    {t('orders.partialShipQtyLabel')}:{' '}
+                                    <span className="font-black text-emerald-700">{summary.now}</span>
+                                </p>
+                                {summary.remainingAfter <= 0 && summary.now > 0 ? (
+                                    <label className="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
+                                        <span>{t('orders.completedAtPromptLabel') || 'Chiqish sanasi'}:</span>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={completedDate}
+                                            onChange={(e) => setCompletedDate(e.target.value)}
+                                            disabled={saving}
+                                            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-semibold text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                                        />
+                                    </label>
+                                ) : null}
+                            </div>
                             <div className="flex items-center gap-2">
                                 <button
                                     type="button"
@@ -594,7 +613,11 @@ export default function PartialShipModal({ order, products, onClose, onSuccess, 
                                 <button
                                     type="button"
                                     onClick={() => void submitPartialShipment()}
-                                    disabled={saving || summary.now <= 0}
+                                    disabled={
+                                        saving ||
+                                        summary.now <= 0 ||
+                                        (summary.remainingAfter <= 0 && !completedDate)
+                                    }
                                     className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
                                 >
                                     <CheckCircle2 size={16} />

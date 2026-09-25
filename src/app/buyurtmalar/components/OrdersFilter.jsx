@@ -20,6 +20,7 @@ import {
   Calendar,
   Store,
 } from 'lucide-react'
+import { formatUsd, formatOrderQtyPlain } from '../utils'
 
 const SOURCE_OPTIONS = [
   { value: 'all', labelKey: 'filterAllSources' },
@@ -51,6 +52,8 @@ export default function OrdersFilter({
   orderCategoryOptions,
   handlePrintOrderList,
   filteredOrders,
+  listTotalSumma = 0,
+  listTotalQty = 0,
   handlePrintSelectedByCategory,
   handlePrintSelectedSpecial,
   selectedOrders,
@@ -399,8 +402,14 @@ export default function OrdersFilter({
             </button>
           )}
 
-          <span className="ml-auto text-[10px] font-semibold text-gray-400 tabular-nums">
-            {t('orders.filteredCountHint').replace('{n}', String(filteredOrders.length))}
+          <span className="ml-auto inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-gray-400 tabular-nums">
+            <span>{t('orders.filteredCountHint').replace('{n}', String(filteredOrders.length))}</span>
+            <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-black text-emerald-700">
+              {t('orders.listTotalSum') || 'Jami'}: ${formatUsd(listTotalSumma)}
+            </span>
+            <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-black text-indigo-700">
+              {t('orders.listTotalQty') || 'Miqdor'}: {formatOrderQtyPlain(listTotalQty)}
+            </span>
           </span>
         </div>
       </div>

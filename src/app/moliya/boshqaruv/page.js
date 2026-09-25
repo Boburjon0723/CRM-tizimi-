@@ -49,6 +49,7 @@ import {
     openPartnerReportPrintWindow,
     sumPartnerEntriesByType,
 } from '@/utils/partnerFinanceReportExport'
+import { printOrderByNumber } from '@/app/buyurtmalar/lib/printOrderStandalone'
 
 const MOLIYA_DELETE_PIN = String(process.env.NEXT_PUBLIC_MOLIYA_DELETE_PIN ?? '').trim()
 
@@ -75,6 +76,13 @@ const EMPTY_SUPPLY_LINE = {
 
 function entryUsesLineItems(entryType) {
     return entryType === 'supply' || entryType === 'sale_out'
+}
+
+/** Buyurtma tugallanganda avtomatik yozilgan sotuv (reference_code = buyurtma raqami) */
+function entryLinkedOrderNumber(entry) {
+    if (entry?.entry_type !== 'sale_out') return null
+    const ref = String(entry?.reference_code || '').trim()
+    return /^ORD-/i.test(ref) ? ref : null
 }
 
 function entryIsSingleAmount(entryType) {
@@ -283,7 +291,7 @@ function lastOpSummary(entry, t, language) {
 export default function MoliyaBoshqaruvPage() {
     const { toggleSidebar } = useLayout()
     const { t, language } = useLanguage()
-    const { showAlert } = useDialog()
+    const { showAlert, showConfirm } = useDialog()
 
     const [partners, setPartners] = useState([])
     const [entries, setEntries] = useState([])
@@ -1098,6 +1106,53 @@ export default function MoliyaBoshqaruvPage() {
         ]
     }
 
+    /** Qatorlar miqdori yig‘indisi; miqdor yozilmagan bo‘lsa — null */
+    function entryTotalQty(entry) {
+        if (!entryUsesLineItems(entry?.entry_type)) return null
+        const raw = linesByEntryId[entry.id] || []
+        let sum = 0
+        let any = false
+        for (const ln of raw) {
+            const q = parseMoney(ln.quantity_display)
+            if (Number.isFinite(q)) {
+                sum += q
+                any = true
+            }
+        }
+        return any ? Math.round(sum * 1000) / 1000 : null
+    }
+
+    async function printDetailEntry(entry) {
+        const orderNumber = entryLinkedOrderNumber(entry)
+        if (!orderNumber) {
+            window.print()
+            return
+        }
+        const withPrice = await showConfirm(t('finances.trxPrintPriceQuestion') || 'Qanday chop etilsin?', {
+            title: `${t('finances.trxPrint')} · ${orderNumber}`,
+            variant: 'info',
+            confirmLabel: t('finances.trxPrintWithPrice') || 'Narxli',
+            cancelLabel: t('finances.trxPrintWithoutPrice') || 'Narxsiz',
+        })
+        try {
+            const res = await printOrderByNumber(orderNumber, { showPrices: Boolean(withPrice), language })
+            if (res.reason === 'not_found') {
+                await showAlert(
+                    (t('finances.trxOrderNotFound') || 'Buyurtma topilmadi: {n}').replace('{n}', orderNumber),
+                    { variant: 'warning' }
+                )
+            } else if (res.reason === 'popup_blocked') {
+                await showAlert(
+                    t('orders.printPopupBlocked') || 'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.',
+                    { variant: 'info' }
+                )
+            }
+        } catch (err) {
+            console.error('printOrderByNumber:', err)
+            await showAlert(err?.message || String(err), { variant: 'error' })
+        }
+    }
+
     function formatDetailDate(iso) {
         const d = new Date(String(iso || '') + 'T12:00:00')
         if (Number.isNaN(d.getTime())) return '—'
@@ -1783,6 +1838,12 @@ export default function MoliyaBoshqaruvPage() {
                                                                                 row.amount_uzs,
                                                                                 row.currency
                                                                             )}
+                                                                            {entryTotalQty(row) != null ? (
+                                                                                <div className="mt-0.5 font-sans text-[10px] font-bold text-indigo-700">
+                                                                                    {t('finances.trxTotalQty') || 'Jami miqdor'}:{' '}
+                                                                                    {entryTotalQty(row)}
+                                                                                </div>
+                                                                            ) : null}
                                                                         </td>
                                                                         <td className="px-4 py-3 text-gray-600 text-xs max-w-[200px] truncate">
                                                                             {row.description || '—'}
@@ -2588,6 +2649,16 @@ export default function MoliyaBoshqaruvPage() {
                                             {detailModal.entry.responsible_name?.trim() || '—'}
                                         </span>
                                     </div>
+                                    {entryTotalQty(detailModal.entry) != null ? (
+                                        <div className="flex flex-wrap gap-2 justify-between items-baseline pt-2">
+                                            <span className="text-gray-600 font-bold">
+                                                {t('finances.trxTotalQty') || 'Jami miqdor'}
+                                            </span>
+                                            <span className="text-lg font-bold text-indigo-700 tabular-nums">
+                                                {entryTotalQty(detailModal.entry)}
+                                            </span>
+                                        </div>
+                                    ) : null}
                                     <div className="flex flex-wrap gap-2 justify-between items-baseline pt-2">
                                         <span className="text-gray-600 font-bold">{t('finances.trxGrandTotal')}</span>
                                         <span className="text-xl font-bold text-blue-700 tabular-nums">
@@ -2630,7 +2701,7 @@ export default function MoliyaBoshqaruvPage() {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => window.print()}
+                                        onClick={() => void printDetailEntry(detailModal.entry)}
                                         className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-800 hover:bg-gray-50"
                                     >
                                         <Printer size={18} />

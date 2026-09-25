@@ -239,7 +239,11 @@ async function loadRealDeductedByProduct(orderId) {
 
 /**
  * Buyurtma holati 'completed' dan boshqasiga o‘zgarganda qoldiqni qaytarish.
- * Qaytarilgan miqdor shu buyurtma bo‘yicha haqiqatan ayrilganidan oshmaydi.
+ *
+ * Ikki narsa alohida hisoblanadi:
+ * - chiqim hisobi (`change_amount`): shu buyurtma bo‘yicha «chiqdi» deb yozilgan miqdor to‘liq bekor qilinadi,
+ *   aks holda buyurtma «To‘liq chiqqan» bo‘lib qoladi;
+ * - ombor qoldig‘i: faqat haqiqatan ayrilgan miqdor qaytadi (yo‘qdan zaxira paydo bo‘lmasin).
  */
 export async function reverseStockForOrder(orderId, orderNumber, items) {
     if (!items || items.length === 0) return { success: true }
@@ -249,12 +253,25 @@ export async function reverseStockForOrder(orderId, orderNumber, items) {
 
     /** null = ma’lumot olinmadi, eski xatti-harakat (cheklovsiz) qoladi */
     let budgetByProduct = null
+    /** Map<shipKey, qty> — chiqim hisobida qolgan miqdor; null = cheklovsiz */
+    let shippedByKey = null
+    let shipKeyFn = null
     if (orderId) {
         try {
             budgetByProduct = await loadRealDeductedByProduct(orderId)
         } catch (e) {
             console.warn('loadRealDeductedByProduct:', e?.message || e)
             budgetByProduct = null
+        }
+        try {
+            const { loadOrderShippedMap, orderItemShipKey } = await import(
+                '@/app/buyurtmalar/lib/partialShipUtils'
+            )
+            shippedByKey = await loadOrderShippedMap(orderId)
+            shipKeyFn = orderItemShipKey
+        } catch (e) {
+            console.warn('loadOrderShippedMap:', e?.message || e)
+            shippedByKey = null
         }
     }
 
@@ -271,49 +288,45 @@ export async function reverseStockForOrder(orderId, orderNumber, items) {
             if (fetchError) throw fetchError
 
             const product = mergeProductInventoryRow(raw)
+            const hasVariants = productHasColorVariants(product)
+            const bucketKey = hasVariants ? resolveColorBucketKey(product, item.color) : null
+            const movementColorKey = resolveMovementColorKey(bucketKey, item.color)
 
             const requestedQty = Number(item.quantity) || 0
-            let returnQty = requestedQty
-            if (budgetByProduct) {
-                const pid = String(item.product_id)
-                const budget = Math.max(0, Number(budgetByProduct.get(pid)) || 0)
-                returnQty = Math.min(requestedQty, budget)
-                budgetByProduct.set(pid, budget - returnQty)
+            let cancelQty = requestedQty
+            let shipKey = null
+            if (shippedByKey && shipKeyFn) {
+                shipKey = shipKeyFn(item.product_id, movementColorKey)
+                const shippedLeft = Math.max(0, Number(shippedByKey.get(shipKey)) || 0)
+                cancelQty = Math.min(requestedQty, shippedLeft)
             }
-            if (returnQty <= 0) {
-                results.push({
-                    product_id: item.product_id,
-                    success: true,
-                    skipped: true,
-                    ...(requestedQty > 0 ? { reason: 'nothing_was_deducted' } : {}),
-                })
+            if (cancelQty <= 0) {
+                results.push({ product_id: item.product_id, success: true, skipped: true, reason: 'not_shipped' })
                 continue
             }
 
+            let returnQty = cancelQty
+            if (budgetByProduct) {
+                const pid = String(item.product_id)
+                const budget = Math.max(0, Number(budgetByProduct.get(pid)) || 0)
+                returnQty = Math.min(cancelQty, budget)
+                budgetByProduct.set(pid, budget - returnQty)
+            }
+
             const currentStock = numStock(product.stock)
-            let newStock
-            /** @type {Record<string, number>|undefined} */
-            let newStockByColor
-            let colorKeyResolved = null
+            let newStock = currentStock
             let reasonExtra = ''
 
-            if (!productHasColorVariants(product)) {
-                newStock = currentStock + returnQty
-                const err = await upsertProductInventory(item.product_id, newStock, null)
-                if (err) throw err
-            } else {
-                const bucketKey = resolveColorBucketKey(product, item.color)
-                if (bucketKey) {
+            if (returnQty > 0) {
+                if (!hasVariants) {
+                    newStock = currentStock + returnQty
+                    const err = await upsertProductInventory(item.product_id, newStock, null)
+                    if (err) throw err
+                } else if (bucketKey) {
                     const map = { ...buildStockByColorMap(product) }
                     map[bucketKey] = (Number(map[bucketKey]) || 0) + returnQty
                     newStock = sumStockByColor(map)
-                    newStockByColor = map
-                    colorKeyResolved = bucketKey
-                    const err = await upsertProductInventory(
-                        item.product_id,
-                        newStock,
-                        newStockByColor
-                    )
+                    const err = await upsertProductInventory(item.product_id, newStock, map)
                     if (err) throw err
                 } else {
                     newStock = currentStock + returnQty
@@ -327,11 +340,13 @@ export async function reverseStockForOrder(orderId, orderNumber, items) {
                     if (err) throw err
                 }
             }
+            if (returnQty < cancelQty) {
+                reasonExtra += ` [Omborga ${returnQty} qaytdi — chiqim paytida zaxira yetmagan edi]`
+            }
 
-            const movementColorKey = resolveMovementColorKey(colorKeyResolved, item.color)
             const logError = await insertStockMovementRow({
                 product_id: item.product_id,
-                change_amount: returnQty,
+                change_amount: cancelQty,
                 previous_stock: currentStock,
                 new_stock: newStock,
                 reason: `Qaytarish: Buyurtma №${orderNumber || orderId} (Holat o'zgardi)${reasonExtra}`,
@@ -345,12 +360,16 @@ export async function reverseStockForOrder(orderId, orderNumber, items) {
                         `stock_movements yozilmadi (product ${item.product_id})`
                 )
             }
+            if (shippedByKey && shipKey) {
+                shippedByKey.set(shipKey, Math.max(0, (Number(shippedByKey.get(shipKey)) || 0) - cancelQty))
+            }
 
             results.push({
                 product_id: item.product_id,
                 success: true,
                 color_key: movementColorKey,
-                change_amount: returnQty,
+                change_amount: cancelQty,
+                stock_returned: returnQty,
             })
         } catch (err) {
             errors.push({ product_id: item.product_id, error: err.message })

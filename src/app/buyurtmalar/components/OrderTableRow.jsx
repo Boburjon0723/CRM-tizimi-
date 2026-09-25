@@ -27,6 +27,8 @@ import {
     orderItemQtyDisplay,
     orderSourceDisplay,
     filterOrderItemsByCategoryLabel,
+    sumOrderItemsQty,
+    formatOrderQtyPlain,
 } from '../utils'
 
 const formImageCellClass = 'w-8 h-8 sm:w-9 sm:h-9'
@@ -238,6 +240,12 @@ function OrderTableRow({
             </td>
             <td className="px-1.5 py-2.5 sm:px-2 sm:py-3 font-bold text-gray-900 font-mono align-top whitespace-nowrap tabular-nums text-sm">
                 ${formatUsd(item.total)}
+                <div
+                    className="mt-0.5 text-[10px] font-bold text-indigo-700 font-sans"
+                    title={t('orders.orderTotalQtyTitle') || 'Buyurtmadagi jami miqdor'}
+                >
+                    {t('orders.listTotalQty') || 'Miqdor'}: {formatOrderQtyPlain(sumOrderItemsQty(listItems))}
+                </div>
             </td>
             <td className="px-1.5 py-2.5 sm:px-2 sm:py-3 align-top">
                 <div className="flex flex-col gap-0.5 text-[10px]">

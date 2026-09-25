@@ -7,6 +7,7 @@ import {
     loadOrdersShippedMaps,
     orderItemShipKey,
 } from './partialShipUtils'
+import { removePartnerSaleForOrder } from './partnerSaleFromOrder'
 import {
     parseOrderItemQty,
     expandOrderLineForSubmit,
@@ -262,6 +263,19 @@ export async function saveOrder({
             } else if (oldStatus === 'completed') {
                 await reverseStockForOrder(orderIdStr, num, items)
                 showToast(t('orders.stockReversedOk') || "Ombor qoldig'i qaytarildi", { type: 'info' })
+                try {
+                    const removed = await removePartnerSaleForOrder(supabase, {
+                        id: orderIdStr,
+                        order_number: oldOrder?.order_number,
+                    })
+                    if (removed > 0) {
+                        showToast(t('orders.partnerSaleRemoved') || 'Hamkor moliyasidagi sotuv yozuvi o‘chirildi', {
+                            type: 'info',
+                        })
+                    }
+                } catch (e) {
+                    console.warn('removePartnerSaleForOrder:', e?.message || e)
+                }
             }
         }
 

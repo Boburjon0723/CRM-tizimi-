@@ -3,10 +3,13 @@
 import React, { memo } from 'react'
 import { Archive, ShoppingCart, Trash2 } from 'lucide-react'
 import OrderTableRow from './OrderTableRow'
+import { formatUsd, formatOrderQtyPlain } from '../utils'
 
 function OrdersTable({
     t,
     filteredOrders,
+    listTotalSumma = 0,
+    listTotalQty = 0,
     ordersListView,
     mergeSelection,
     toggleMergeSelectAllFiltered,
@@ -131,6 +134,25 @@ function OrdersTable({
                                 />
                         ))}
                     </tbody>
+                    <tfoot>
+                        <tr className="border-t-2 border-gray-200 bg-gray-50/80">
+                            <td
+                                colSpan={ordersListView === 'active' || ordersListView === 'archive' ? 4 : 3}
+                                className="px-2 py-2.5 text-right text-[11px] font-black uppercase tracking-wide text-gray-600"
+                            >
+                                {t('orders.listTotalRow') || 'Ro‘yxat jami'} ({filteredOrders.length})
+                            </td>
+                            <td className="px-1.5 py-2.5 align-top whitespace-nowrap">
+                                <div className="font-mono text-sm font-black text-emerald-700 tabular-nums">
+                                    ${formatUsd(listTotalSumma)}
+                                </div>
+                                <div className="text-[10px] font-bold text-indigo-700 tabular-nums">
+                                    {t('orders.listTotalQty') || 'Miqdor'}: {formatOrderQtyPlain(listTotalQty)}
+                                </div>
+                            </td>
+                            <td colSpan={4} />
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>

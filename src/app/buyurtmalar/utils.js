@@ -62,6 +62,12 @@ export function formatOrderQtyPlain(q) {
     return Number.isInteger(r) ? String(r) : String(r)
 }
 
+/** Qatorlar miqdori yig‘indisi (ro‘yxat va jami ko‘rsatkichlar uchun) */
+export function sumOrderItemsQty(items) {
+    const s = (items || []).reduce((acc, oi) => acc + parseOrderItemQty(oi?.quantity), 0)
+    return Math.round(s * 1000) / 1000
+}
+
 /** Buyurtma qatori: mahsulot kg bo'yicha sotilsa "2.5 kg", aks holda "3×" */
 export function orderItemQtyDisplay(oi, productsList) {
     const prod =
@@ -1463,14 +1469,99 @@ export function buildColorQtyStacksHtml(colorPairs, labelColorFn) {
     return { colorsHtml, qtysHtml }
 }
 
+/**
+ * Buyurtma bo‘yicha rang → jami miqdor (chop blankasi uchun).
+ * Standart rang tartibida.
+ */
+export function aggregateOrderColorTotals(groupedBuckets) {
+    const map = new Map()
+    for (const g of groupedBuckets || []) {
+        for (const [raw, qty] of g.colorPairs || []) {
+            const colorLabel = String(raw || '—').trim() || '—'
+            const nk = normalizeOrderItemColorKey(colorLabel)
+            const prev = map.get(nk)
+            const nextQty = (prev ? prev.qty : 0) + (parseOrderItemQty(qty) || 0)
+            map.set(nk, { label: prev?.label ?? colorLabel, qty: nextQty })
+        }
+    }
+    return sortColorPairsByStandardOrder(
+        Array.from(map.values()).map(({ label: lab, qty }) => [lab, qty])
+    )
+}
+
+const PACKING_CHECK_ITEMS = [
+    'Umumiy soni buyurtmaga mos',
+    'Har bir rang miqdori mos',
+    'Model / o‘lcham mos',
+    'Kamomad / ortiqcha yo‘q',
+    'Vint / gayka',
+    'Noshka',
+    'Mahsulot sifati',
+    'Qadoqlashdan oldin qayta sanaldi',
+]
+
+/**
+ * Qadoqlashdan oldingi yakuniy tekshiruv blankasi — chop oxiriga.
+ * Bitta A4 sahifani to‘liqroq egallaydi.
+ */
+export function buildPackingChecklistHtml(item) {
+    const customerName = escapeHtml(item.customer_name || item.customers?.name || '—')
+    const orderNo = escapeHtml(item.order_number || String(item.id || '').slice(0, 8) || '—')
+    const checkRows = PACKING_CHECK_ITEMS.map(
+        (text, i) =>
+            `<tr><td class="pk-num">${i + 1}</td><td>${escapeHtml(text)}</td><td class="pk-check">☐</td></tr>`
+    ).join('')
+
+    return `
+<div class="packing-check page-break-before">
+  <div class="pk-top">
+    <h2 class="pk-title">QADOQLASHDAN OLDINGI YAKUNIY TEKSHIRUV</h2>
+    <div class="pk-meta">
+      <span><strong>Buyurtma №:</strong> ${orderNo}</span>
+      <span><strong>Mijoz:</strong> ${customerName}</span>
+      <span><strong>Sana:</strong> ____________________</span>
+      <span><strong>Bo‘lim:</strong> ____________________</span>
+    </div>
+
+    <table class="pk-table pk-checks-table">
+      <thead><tr><th class="pk-num">№</th><th>Tekshiruv</th><th>✓</th></tr></thead>
+      <tbody>${checkRows}</tbody>
+    </table>
+  </div>
+
+  <div class="pk-foot">
+    <div class="pk-confirm">
+      ☐ Ranglar alohida tekshirildi &nbsp;&nbsp;
+      ☐ Almashtirish yo‘q &nbsp;&nbsp;
+      ☐ Buyurtma bilan mos
+    </div>
+    <div class="pk-sign">
+      <span><strong>Xodim:</strong> ________________________</span>
+      <span><strong>Imzo:</strong> ________________________</span>
+      <span><strong>Vaqt:</strong> ____________________</span>
+    </div>
+    <div class="pk-issue">
+      <div class="pk-issue-title">Nomuvofiqlik (agar bo‘lsa)</div>
+      <div class="pk-issue-line"><strong>Muammo / rang:</strong> ________________________________________________________________</div>
+      <div class="pk-issue-line"><strong>Buyurtma:</strong> ________ dona &nbsp;&nbsp; <strong>Amalda:</strong> ________ dona &nbsp;&nbsp; <strong>Mas'ul:</strong> ____________________</div>
+    </div>
+  </div>
+</div>`
+}
+
 export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, tableConfig) {
     const customerName = escapeHtml(item.customer_name || item.customers?.name || 'Noma\'lum')
     const phone = escapeHtml(item.customer_phone || item.customers?.phone || '-')
-    const dateRaw = item._print_date || item.created_at
+    const isCompleted = isOrderCompletedStatus(item.status)
+    const dateRaw =
+        item._print_date ||
+        (isCompleted ? item.completed_at : null) ||
+        item.created_at
     const date = dateRaw
         ? escapeHtml(new Date(dateRaw).toLocaleDateString())
         : '—'
-    const dateLabel = escapeHtml(String(item._print_date_label || 'Sana').trim() || 'Sana')
+    const defaultDateLabel = isCompleted && (item._print_date || item.completed_at) ? 'Chiqqan' : 'Sana'
+    const dateLabel = escapeHtml(String(item._print_date_label || defaultDateLabel).trim() || defaultDateLabel)
     const shortId = escapeHtml(String(item.id).slice(0, 8))
     const orderNumHtml = item.order_number ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>` : ''
     const portionNoteHtml = item._print_note
@@ -1542,8 +1633,9 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const thPrice = showPrices ? '<th class="th-narrow">1 par</th><th class="th-narrow">Qator</th>' : ''
     const thNote = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
     const thExtra = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
-    
-    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>${dateLabel}:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}</div>`
+    const packingHtml = buildPackingChecklistHtml(item)
+
+    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>${dateLabel}:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}${packingHtml}</div>`
 }
 
 export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {
@@ -1552,7 +1644,7 @@ export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showP
     const imagePx = imagePxBySize(tableConfig?.imageSize)
     const imageWrapPx = imagePx + 10
     const imageCellPx = imagePx + 14
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>body{font-family:sans-serif;padding:40px;color:#333}.header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}.header h1{margin:0;color:#1a1a1a;font-size:1.25rem}.list-banner{color:#555;font-size:0.95rem;margin-bottom:16px}.order-block{margin-bottom:24px}.info{display:flex;justify-content:space-between;margin-bottom:20px}table.items-table{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #8c8c8c;box-shadow:0 1px 2px rgba(0,0,0,.06)}.order-block table.items-table:not(.order-totals-table){margin-bottom:0}table.items-table thead{display:table-header-group}table.items-table th{background:#ffeb9c;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #c9a227;font-size:0.82rem;font-weight:700}table.items-table th.th-narrow{white-space:nowrap}table.items-table th.th-rang{background:#fff2cc}table.items-table th.th-miqdor{background:#e2efda}table.items-table td{padding:8px 6px;border:1px solid #b4b4b4;vertical-align:top}table.items-table tbody tr{page-break-inside:avoid}table.items-table tbody tr:nth-child(odd) td{background:#fffef7}table.items-table tbody tr:nth-child(even) td{background:#e7f3ff}table.items-table tbody tr:nth-child(even) td.colors-stack{background:#f5fbff}table.items-table tbody tr:nth-child(even) td.qty-stack{background:#eef7f0}table.items-table tbody tr:nth-child(odd) td.colors-stack{background:#fffdf0}table.items-table tbody tr:nth-child(odd) td.qty-stack{background:#f7fdf5}table.order-totals-table{width:100%;margin-top:-1px;margin-bottom:16px;page-break-inside:avoid}table.order-totals-table .totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}table.order-totals-table .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}table.order-totals-table .totals-td{text-align:right;vertical-align:middle}table.order-totals-table .totals-empty{color:#999;font-weight:400}tr.cat-header-row td{background:#e2efda!important;border:1px solid #92c47c!important}tr.cat-subtotal-row td{background:#eef2ff!important;border:1px solid #9ca3af!important}.mono{font-variant-numeric:tabular-nums}.colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.88rem;line-height:1.35}.qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.88rem;line-height:1.35}.colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.35;min-height:1.25em;font-size:0.85rem}.qty-stack .stack-line{font-weight:600}.prod-img-cell{width:${imageCellPx}px;max-width:${imageCellPx}px;min-width:${imageCellPx}px;text-align:center;vertical-align:middle;padding:6px!important;overflow:hidden;background:#fff!important}.prod-thumb-wrap{max-width:100%;max-height:${imageWrapPx}px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.prod-thumb{max-width:${imagePx}px;max-height:${imagePx}px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}.prod-no-img{color:#999;font-size:0.85rem}table.items-table th.th-izoh{background:#ede9fe;color:#1a1a1a;min-width:5rem}.print-note-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #c4b5fd!important}table.items-table th.th-extra{background:#dbeafe;color:#1a1a1a;min-width:5rem}.print-extra-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #93c5fd!important}.page-break{page-break-after:always;border:none;margin:24px 0;padding:0;height:0;overflow:hidden}.footer{margin-top:32px;text-align:center;color:#666;font-size:0.8em;border-top:1px solid #eee;padding-top:16px}@media print{body{padding:16px 24px}.footer{page-break-inside:avoid}table.items-table th,table.items-table td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>NUUR_HOME_COLLECTION</h1></div>${listBanner}${blocks}<div class="footer">Nuur_Home_Collection<br>Xaridingiz uchun rahmat!</div><script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script></body></html>`
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>body{font-family:sans-serif;padding:40px;color:#333}.header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}.header h1{margin:0;color:#1a1a1a;font-size:1.25rem}.list-banner{color:#555;font-size:0.95rem;margin-bottom:16px}.order-block{margin-bottom:24px}.info{display:flex;justify-content:space-between;margin-bottom:20px}table.items-table{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #8c8c8c;box-shadow:0 1px 2px rgba(0,0,0,.06)}.order-block table.items-table:not(.order-totals-table){margin-bottom:0}table.items-table thead{display:table-header-group}table.items-table th{background:#ffeb9c;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #c9a227;font-size:0.82rem;font-weight:700}table.items-table th.th-narrow{white-space:nowrap}table.items-table th.th-rang{background:#fff2cc}table.items-table th.th-miqdor{background:#e2efda}table.items-table td{padding:8px 6px;border:1px solid #b4b4b4;vertical-align:top}table.items-table tbody tr{page-break-inside:avoid}table.items-table tbody tr:nth-child(odd) td{background:#fffef7}table.items-table tbody tr:nth-child(even) td{background:#e7f3ff}table.items-table tbody tr:nth-child(even) td.colors-stack{background:#f5fbff}table.items-table tbody tr:nth-child(even) td.qty-stack{background:#eef7f0}table.items-table tbody tr:nth-child(odd) td.colors-stack{background:#fffdf0}table.items-table tbody tr:nth-child(odd) td.qty-stack{background:#f7fdf5}table.order-totals-table{width:100%;margin-top:-1px;margin-bottom:16px;page-break-inside:avoid}table.order-totals-table .totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}table.order-totals-table .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}table.order-totals-table .totals-td{text-align:right;vertical-align:middle}table.order-totals-table .totals-empty{color:#999;font-weight:400}tr.cat-header-row td{background:#e2efda!important;border:1px solid #92c47c!important}tr.cat-subtotal-row td{background:#eef2ff!important;border:1px solid #9ca3af!important}.mono{font-variant-numeric:tabular-nums}.colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.88rem;line-height:1.35}.qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.88rem;line-height:1.35}.colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.35;min-height:1.25em;font-size:0.85rem}.qty-stack .stack-line{font-weight:600}.prod-img-cell{width:${imageCellPx}px;max-width:${imageCellPx}px;min-width:${imageCellPx}px;text-align:center;vertical-align:middle;padding:6px!important;overflow:hidden;background:#fff!important}.prod-thumb-wrap{max-width:100%;max-height:${imageWrapPx}px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.prod-thumb{max-width:${imagePx}px;max-height:${imagePx}px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}.prod-no-img{color:#999;font-size:0.85rem}table.items-table th.th-izoh{background:#ede9fe;color:#1a1a1a;min-width:5rem}.print-note-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #c4b5fd!important}table.items-table th.th-extra{background:#dbeafe;color:#1a1a1a;min-width:5rem}.print-extra-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #93c5fd!important}.page-break{page-break-after:always;border:none;margin:24px 0;padding:0;height:0;overflow:hidden}.footer{margin-top:32px;text-align:center;color:#666;font-size:0.8em;border-top:1px solid #eee;padding-top:16px}.packing-check{margin-top:0;padding:10px 0 0;border-top:2px solid #1a1a1a;font-size:0.88rem;min-height:255mm;box-sizing:border-box;display:flex;flex-direction:column}.page-break-before{page-break-before:always}.pk-top{flex:0 0 auto}.pk-title{margin:0 0 10px;font-size:1.15rem;letter-spacing:.02em;text-align:center}.pk-subtitle{margin:14px 0 8px;font-size:0.95rem}.pk-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:12px;font-size:0.88rem}.pk-grow{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}.pk-grow .pk-colors{flex:1 1 auto}.pk-table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:0.86rem}.pk-table th,.pk-table td{border:1px solid #8c8c8c;padding:7px 8px;vertical-align:middle;line-height:1.3}.pk-table th{background:#f3f4f6;font-weight:700}.pk-checks-table th:last-child,.pk-checks-table td:last-child{width:3.2rem;text-align:center}.pk-colors th:nth-child(3),.pk-colors th:nth-child(4),.pk-colors th:nth-child(5),.pk-colors th:nth-child(6),.pk-colors td:nth-child(3),.pk-colors td:nth-child(4),.pk-colors td:nth-child(5),.pk-colors td:nth-child(6){width:5.5rem;text-align:center}.pk-colors tbody tr{height:2.1em}.pk-num{width:2rem;text-align:center}.pk-check{text-align:center;font-size:1.15rem}.pk-center{text-align:center}.pk-blank{min-height:1.6em;height:1.6em;background:#fffef7}.pk-total-row td{background:#eef2ff;font-weight:700}.pk-foot{flex:0 0 auto;margin-top:auto;padding-top:12px;font-size:0.86rem}.pk-confirm{margin:0 0 10px;padding:10px 12px;border:1px solid #c9a227;background:#fffbeb;font-size:0.88rem}.pk-sign{display:flex;flex-wrap:wrap;gap:10px 22px;margin:10px 0 12px;font-size:0.88rem}.pk-issue{margin-top:4px;padding:10px 12px;border:1px dashed #9ca3af}.pk-issue-title{font-weight:700;margin-bottom:8px}.pk-issue-line{margin:8px 0}@media print{body{padding:12px 18px}.footer{page-break-inside:avoid;margin-top:8px;padding-top:6px;font-size:0.7em}.order-block:has(.packing-check)~.footer{display:none}.packing-check{min-height:255mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}table.items-table th,table.items-table td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>NUUR_HOME_COLLECTION</h1></div>${listBanner}${blocks}<div class="footer">Nuur_Home_Collection<br>Xaridingiz uchun rahmat!</div><script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script></body></html>`
 }
 
 /**
@@ -1923,9 +2015,43 @@ export function withCompletedAtOnStatusChange(payload, newStatus, oldStatus, sta
     return next
 }
 
-/** completed_at ustuni bo‘lmasa fallback bilan yangilash */
-export async function updateOrderStatusWithCompletedAt(supabaseClient, orderId, newStatus, oldStatus) {
-    const stamp = new Date().toISOString()
+/** input[type=date] qiymati (YYYY-MM-DD) — bugungi kun (lokal) */
+export function todayDateInputValue() {
+    const n = new Date()
+    const y = n.getFullYear()
+    const m = String(n.getMonth() + 1).padStart(2, '0')
+    const d = String(n.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+}
+
+/**
+ * Lokal sana (YYYY-MM-DD) → ISO stamp (tush vaqti, timezone siljishini kamaytirish uchun).
+ * Noto‘g‘ri formatda — hozirgi vaqt.
+ */
+export function localDateInputToIso(dateYmd) {
+    const s = String(dateYmd || '').trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date().toISOString()
+    const [y, m, d] = s.split('-').map((x) => Number(x))
+    if (!y || !m || !d) return new Date().toISOString()
+    return new Date(y, m - 1, d, 12, 0, 0, 0).toISOString()
+}
+
+/** completed_at ustuni bo‘lmasa fallback bilan yangilash. completedAtStamp — qo‘lda tanlangan chiqish sanasi. */
+export async function updateOrderStatusWithCompletedAt(
+    supabaseClient,
+    orderId,
+    newStatus,
+    oldStatus,
+    completedAtStamp = null
+) {
+    const toCompleted = normalizeStatusForSelect(newStatus) === 'completed'
+    const wasCompleted = normalizeStatusForSelect(oldStatus) === 'completed'
+    const stamp =
+        toCompleted && !wasCompleted && completedAtStamp
+            ? completedAtStamp
+            : toCompleted && completedAtStamp
+              ? completedAtStamp
+              : new Date().toISOString()
     const full = withCompletedAtOnStatusChange({ status: newStatus }, newStatus, oldStatus, stamp)
     let { error } = await supabaseClient.from('orders').update(full).eq('id', orderId)
     if (
