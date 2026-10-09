@@ -34,6 +34,8 @@ import {
     salesAnchorDayKey,
     isCompletedOrderStatus,
 } from '@/utils/statisticsOrderSales'
+import { loadPartnerOrderLinkIndex, partnerIdForOrder } from '@/app/buyurtmalar/lib/partnerSaleFromOrder'
+import { pickLocalizedName } from '@/utils/localizedName'
 
 const StatsCharts = dynamic(() => import('./StatsCharts'), {
     ssr: false,
@@ -379,6 +381,8 @@ export default function StatistikaPage() {
     const [rangeFrom, setRangeFrom] = useState(defaultRangeStrs().from)
     const [rangeTo, setRangeTo] = useState(defaultRangeStrs().to)
     const [orderStatusFilter, setOrderStatusFilter] = useState('completed')
+    const [partnerNames, setPartnerNames] = useState(() => new Map())
+    const [saleOutRefs, setSaleOutRefs] = useState(() => new Map())
 
     useEffect(() => {
         const mode = readLs(LS_MODE, 'preset')
@@ -421,7 +425,7 @@ export default function StatistikaPage() {
             }
 
             const ordersSelect = `
-                id, status, created_at, completed_at, total, customer_id, customer_name, customer_phone, order_number, workspace,
+                id, status, created_at, completed_at, total, customer_id, customer_name, customer_phone, order_number, workspace, partner_id,
                 customers (id, name, phone),
                 order_items (
                     quantity,
@@ -511,6 +515,10 @@ export default function StatistikaPage() {
                 if (productsRes.error) parts.push(t('statistics.loadPartialProducts'))
                 setPartialWarning(parts.join(' '))
             }
+
+            const partnerLink = await loadPartnerOrderLinkIndex(supabase)
+            setPartnerNames(partnerLink.names)
+            setSaleOutRefs(partnerLink.refs)
 
             let ordersRaw = ordersRes.error ? [] : ordersRes.data || []
             // Enrich: qisman chiqim (stock_movements) + oxirgi chiqim sanasi
@@ -948,14 +956,43 @@ export default function StatistikaPage() {
         [productAnalyticsRows]
     )
 
+    /**
+     * Grafik hamkorlar bo‘limidan: orders.partner_id, bo‘lmasa tugallanganda yozilgan sale_out.
+     * Summa yashil «Kirim» kartasi bilan bir xil (tugallangan + qisman).
+     * Bog‘lanmagan buyurtmalar alohida ustunda — jami yashil kartaga teng.
+     */
+    const partnerAnalyticsRows = useMemo(() => {
+        const map = new Map()
+        const unlinkedKey = '__unlinked__'
+        const unlinkedName = t('statistics.partnerUnlinked')
+        for (const o of completedOrdersInPeriod) {
+            const pid = partnerIdForOrder(o, saleOutRefs)
+            const partner = pid ? partnerNames.get(String(pid)) : null
+            const key = partner ? String(pid) : unlinkedKey
+            if (!map.has(key)) {
+                const name = partner ? pickLocalizedName(partner, language).trim() || unlinkedName : unlinkedName
+                map.set(key, { key, name, orders: 0, total: 0 })
+            }
+            const row = map.get(key)
+            row.orders += 1
+            row.total += sumOrderLineRevenue(o, data.products)
+        }
+        const list = Array.from(map.values())
+        list.sort((a, b) => {
+            if (b.total !== a.total) return b.total - a.total
+            return b.orders - a.orders
+        })
+        return list
+    }, [completedOrdersInPeriod, data.products, partnerNames, saleOutRefs, language, t])
+
     const topCustomersBarData = useMemo(
         () =>
-            customerAnalyticsRows.slice(0, TOP_N_BAR).map((r) => ({
+            partnerAnalyticsRows.map((r) => ({
                 label: r.name.length > 22 ? `${r.name.slice(0, 20)}…` : r.name,
                 total: Math.round(Number(r.total) * 100) / 100,
                 full: r.name,
             })),
-        [customerAnalyticsRows]
+        [partnerAnalyticsRows]
     )
 
     const importCustomerOptions = useMemo(() => {

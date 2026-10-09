@@ -63,7 +63,8 @@ export default function StatsCharts({
                     </div>
                 </div>
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold mb-4 text-gray-800">{t('statistics.topCustomersBar')}</h3>
+                    <h3 className="text-lg font-bold mb-1 text-gray-800">{t('statistics.topPartnersBar')}</h3>
+                    <p className="text-xs text-gray-500 mb-3">{t('statistics.topPartnersBarHint')}</p>
                     <div className="h-[320px]">
                         {topCustomersBarData.length === 0 ? (
                             <p className="text-sm text-gray-400 py-12 text-center">{noData}</p>
@@ -76,7 +77,7 @@ export default function StatsCharts({
                                 >
                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                                     <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} />
-                                    <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 9 }} />
+                                    <YAxis type="category" dataKey="label" width={118} tick={{ fontSize: 10 }} />
                                     <Tooltip
                                         formatter={(v) => [`$${formatUsd(v)}`, t('statistics.colTotalSpent')]}
                                         labelFormatter={(_, p) => (p?.[0]?.payload?.full ? String(p[0].payload.full) : '')}

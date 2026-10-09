@@ -1559,6 +1559,10 @@ export const translations = {
             exportCustomerModelsXlsx: 'Mijoz × model Excel',
             topProductsBar: 'Top mahsulotlar (dona)',
             topCustomersBar: 'Top mijozlar (summa)',
+            topPartnersBar: 'Top hamkorlar (summa)',
+            topPartnersBarHint:
+                'Yashil «Kirim» kartasi bilan bir xil hisob. Bog‘lanmagan — buyurtmachisi tanlanmagan buyurtmalar.',
+            partnerUnlinked: 'Bog‘lanmagan',
             chartQtyShort: 'Dona',
             chartRevenueShort: '$',
             loadErrorOrders:
@@ -3237,6 +3241,10 @@ export const translations = {
             exportCustomerModelsXlsx: 'Клиент × модель Excel',
             topProductsBar: 'Топ товаров (шт.)',
             topCustomersBar: 'Топ клиентов (сумма)',
+            topPartnersBar: 'Топ партнёров (сумма)',
+            topPartnersBarHint:
+                'Тот же расчёт, что у зелёной карточки «Доход». «Без партнёра» — заказы без выбранного заказчика.',
+            partnerUnlinked: 'Без партнёра',
             chartQtyShort: 'Шт.',
             chartRevenueShort: '$',
             loadErrorOrders:
@@ -4929,6 +4937,10 @@ export const translations = {
             exportCustomerModelsXlsx: 'Customer × model Excel',
             topProductsBar: 'Top products (units)',
             topCustomersBar: 'Top customers (amount)',
+            topPartnersBar: 'Top partners (amount)',
+            topPartnersBarHint:
+                'Same total as the green income card. Unlinked means the order has no partner selected.',
+            partnerUnlinked: 'Unlinked',
             chartQtyShort: 'Units',
             chartRevenueShort: '$',
             loadErrorOrders:
