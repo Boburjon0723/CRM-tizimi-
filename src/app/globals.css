@@ -14,6 +14,13 @@ body {
   /* Lighter slate background */
 }
 
+/* Telefonida «kompyuter versiyasi»: keng layout + gorizontal scroll */
+html.crm-desktop-forced,
+html.crm-desktop-forced body {
+  min-width: 1280px;
+  overflow-x: auto;
+}
+
 html[data-theme='dark'] body {
   background-color: #0b1220;
   color: #e5e7eb;

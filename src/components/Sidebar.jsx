@@ -3,9 +3,10 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
-import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon, Megaphone, Sparkles, ScrollText } from 'lucide-react'
+import { Package, Users, ShoppingCart, UserCircle, DollarSign, Home, LogOut, Settings, Globe, X, BarChart3, Warehouse, MessageSquare, ChevronDown, Image as ImageIcon, Megaphone, Sparkles, ScrollText, Smartphone } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { EMPLOYEES_SECTION_UNLOCK_KEY } from '@/lib/employeesSectionPin'
+import { goToMobileSite } from '@/lib/viewPreference'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
@@ -143,6 +144,14 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
         </nav>
 
         <div className="pt-6 border-t border-white/5 flex-shrink-0 space-y-2">
+          <button
+            type="button"
+            onClick={() => goToMobileSite()}
+            className="flex w-full items-center gap-3 px-4 py-3.5 rounded-xl text-emerald-200 hover:bg-emerald-500/10 hover:text-emerald-100 transition-all border border-emerald-500/20"
+          >
+            <Smartphone size={20} />
+            <span className="font-medium">Mobil versiya</span>
+          </button>
           {/* Til tanlash - dropdown */}
           <div className="relative" ref={langDropdownRef}>
             <button

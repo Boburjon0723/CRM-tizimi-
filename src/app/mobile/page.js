@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import BottomNav from './components/BottomNav'
 import DashboardView from './views/DashboardView'
 import OrdersView from './views/OrdersView'
 import StatsView from './views/StatsView'
 import EmployeesView from './views/EmployeesView'
 import FinanceView from './views/FinanceView'
-import { Settings } from 'lucide-react'
+import { Settings, Monitor } from 'lucide-react'
+import { goToDesktopSite } from '@/lib/viewPreference'
 
 export default function MobilePage() {
     const [activeTab, setActiveTab] = useState('dashboard')
@@ -66,20 +67,33 @@ export default function MobilePage() {
     return (
         <div className="flex flex-col min-h-screen pb-20">
             {/* Header / Top Bar */}
-            <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-4 bg-slate-900/50 backdrop-blur-md border-b border-white/5">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+            <header className="sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 py-4 bg-slate-900/50 backdrop-blur-md border-b border-white/5 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20 flex-shrink-0">
                         N
                     </div>
-                    <span className="font-bold tracking-tight text-white/90">Nuur Home</span>
+                    <span className="font-bold tracking-tight text-white/90 truncate">Nuur Home</span>
                 </div>
-                
-                <button 
-                    onClick={() => setShowRoleSwitcher(!showRoleSwitcher)}
-                    className="p-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10 transition-colors"
-                >
-                    <Settings size={20} />
-                </button>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                        type="button"
+                        onClick={() => goToDesktopSite()}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-500 active:scale-95 transition-all"
+                        title="Kompyuter versiyasi"
+                    >
+                        <Monitor size={16} />
+                        <span>Desktop</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setShowRoleSwitcher(!showRoleSwitcher)}
+                        className="p-2 rounded-xl bg-white/5 text-slate-400 hover:bg-white/10 transition-colors"
+                        aria-label="Sozlamalar"
+                    >
+                        <Settings size={20} />
+                    </button>
+                </div>
             </header>
 
             {/* Role Switcher Overlay (Dev Tool) */}
@@ -106,9 +120,18 @@ export default function MobilePage() {
                                 </button>
                             ))}
                         </div>
-                        <button 
+                        <button
+                            type="button"
+                            onClick={() => goToDesktopSite()}
+                            className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-500 transition-colors"
+                        >
+                            <Monitor size={18} />
+                            Kompyuter versiyasiga o&apos;tish
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setShowRoleSwitcher(false)}
-                            className="mt-6 w-full py-2 text-sm text-slate-500 font-medium hover:text-slate-300 transition-colors"
+                            className="mt-3 w-full py-2 text-sm text-slate-500 font-medium hover:text-slate-300 transition-colors"
                         >
                             Yopish
                         </button>

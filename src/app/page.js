@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
@@ -11,6 +11,7 @@ import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDashboardStats, useRecentOrders } from '@/hooks/useDashboardStats'
 import { useQueryClient } from '@tanstack/react-query'
+import { goToMobileSite, prefersDesktopView } from '@/lib/viewPreference'
 
 import { formatUsd } from '@/utils/formatters'
 
@@ -54,12 +55,17 @@ export default function Dashboard() {
   const { toggleSidebar } = useLayout()
   const { t, language } = useLanguage()
   const queryClient = useQueryClient()
+  const [desktopForced, setDesktopForced] = useState(false)
 
   // React Query: keshdan tezkor ko'rsatish + orqafon yangilanish
   const { data: statsData, isLoading: statsLoading, error: statsError } = useDashboardStats()
   const { data: recentOrders = [], isLoading: ordersLoading } = useRecentOrders()
 
   const loading = statsLoading || ordersLoading
+
+  useEffect(() => {
+    setDesktopForced(prefersDesktopView())
+  }, [])
 
   // Statistika ma'lumotlari
   const stats = {
@@ -107,15 +113,18 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Banner to force PWA/Mobile view without back history */}
-      <div className="block md:hidden p-4 mb-2">
-        <button
-          onClick={() => window.location.replace('/mobile')}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all outline-none"
-        >
-          📱 Mobil versiyaga o'tish (PWA shaklida)
-        </button>
-      </div>
+      {/* Tor ekranda: mobil UI ga o‘tish (desktop majburiy bo‘lmasa) */}
+      {!desktopForced ? (
+        <div className="block md:hidden p-4 mb-2">
+          <button
+            type="button"
+            onClick={() => goToMobileSite()}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all outline-none"
+          >
+            Mobil versiyaga o&apos;tish
+          </button>
+        </div>
+      ) : null}
 
       <Header title={t('common.dashboard')} toggleSidebar={toggleSidebar} />
 

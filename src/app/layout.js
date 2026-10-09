@@ -9,6 +9,7 @@ import AIAgent from '@/components/AIAgent'
 import ReactQueryProvider from '@/components/ReactQueryProvider'
 import ChunkErrorRecovery from '@/components/ChunkErrorRecovery'
 import DisableNumberInputScroll from '@/components/DisableNumberInputScroll'
+import DesktopViewBootstrap from '@/components/DesktopViewBootstrap'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -45,6 +46,7 @@ export default function RootLayout({ children }) {
                                     <DialogProvider>
                                         <ChunkErrorRecovery />
                                         <DisableNumberInputScroll />
+                                        <DesktopViewBootstrap />
                                         <AuthWrapper>{children}</AuthWrapper>
                                         <AIAgent />
                                     </DialogProvider>
