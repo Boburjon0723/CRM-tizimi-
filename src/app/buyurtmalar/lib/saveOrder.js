@@ -77,6 +77,10 @@ export async function saveOrder({
     onMergeArchived,
     loadTrashOrders,
 }) {
+    const isPartnerIdColumnMissing = (err) =>
+        /partner_id/i.test(String(err?.message || '')) &&
+        /column|does not exist|42703|schema cache/i.test(String(err?.message || ''))
+
     const nameTrim = (form.customer_name || '').trim()
     if (!nameTrim) {
         await showAlert(t('orders.customerNameRequired'), { variant: 'warning' })
@@ -143,6 +147,7 @@ export async function saveOrder({
         source: normalizeSourceForDb(form.source),
         updated_at: stamp,
         workspace: orderWorkspace,
+        partner_id: form.partner_id || null,
     }
     baseOrderPayload = withCompletedAtOnStatusChange(
         baseOrderPayload,
@@ -221,7 +226,18 @@ export async function saveOrder({
         const { error: itemErrorEdit } = await supabase.from('order_items').insert(itemPayloadsEdit)
         if (itemErrorEdit) throw itemErrorEdit
 
-        let { error: updErr } = await supabase.from('orders').update(baseOrderPayload).eq('id', orderIdStr)
+        let updatePayload = { ...baseOrderPayload }
+        let { error: updErr } = await supabase.from('orders').update(updatePayload).eq('id', orderIdStr)
+        if (updErr && isPartnerIdColumnMissing(updErr)) {
+            const { partner_id: _pid, ...noPartner } = updatePayload
+            updatePayload = noPartner
+            showToast(
+                t('orders.partnerColumnMissing') ||
+                    'Buyurtmachi bog‘lanmadi: orders.partner_id ustuni yo‘q. add_orders_partner_id.sql ni ishga tushiring.',
+                { type: 'info' }
+            )
+            ;({ error: updErr } = await supabase.from('orders').update(updatePayload).eq('id', orderIdStr))
+        }
         if (updErr && isWorkspaceMissingError(updErr)) {
             if (orderWorkspace === 'buyurtmalar2') {
                 await showAlert(
@@ -231,15 +247,15 @@ export async function saveOrder({
                 )
                 return { ok: false }
             }
-            const { workspace: _w, ...noWs } = baseOrderPayload
+            const { workspace: _w, ...noWs } = updatePayload
             ;({ error: updErr } = await supabase.from('orders').update(noWs).eq('id', orderIdStr))
         }
         if (updErr && /completed_at|updated_at|column|does not exist|42703|schema cache/i.test(String(updErr.message || ''))) {
             // workspace ni olib tashlamang — faqat completed_at / updated_at
-            const { completed_at: _c, updated_at: _u, ...rest } = baseOrderPayload
+            const { completed_at: _c, updated_at: _u, ...rest } = updatePayload
             ;({ error: updErr } = await supabase.from('orders').update(rest).eq('id', orderIdStr))
             if (updErr && isWorkspaceMissingError(updErr) && orderWorkspace === 'legacy') {
-                const { workspace: _w2, completed_at: _c2, updated_at: _u2, ...rest2 } = baseOrderPayload
+                const { workspace: _w2, completed_at: _c2, updated_at: _u2, ...rest2 } = updatePayload
                 ;({ error: updErr } = await supabase.from('orders').update(rest2).eq('id', orderIdStr))
             }
         }
@@ -284,10 +300,12 @@ export async function saveOrder({
 
     let newOrder = null
     let includeWorkspace = true
+    let includePartner = true
 
     const buildInsertRow = (stripKeys = []) => {
         const row = { ...baseOrderPayload, order_number: displayOrderNo }
         if (!includeWorkspace) delete row.workspace
+        if (!includePartner) delete row.partner_id
         for (const k of stripKeys) delete row[k]
         return row
     }
@@ -332,6 +350,16 @@ export async function saveOrder({
             .insert([buildInsertRow(['completed_at', 'updated_at'])])
             .select()
             .single()
+    }
+
+    if (ins.error && isPartnerIdColumnMissing(ins.error)) {
+        includePartner = false
+        showToast(
+            t('orders.partnerColumnMissing') ||
+                'Buyurtmachi bog‘lanmadi: orders.partner_id ustuni yo‘q. add_orders_partner_id.sql ni ishga tushiring.',
+            { type: 'info' }
+        )
+        ins = await supabase.from('orders').insert([buildInsertRow()]).select().single()
     }
 
     const errMsg2 = ins.error ? String(ins.error.message || '') : ''

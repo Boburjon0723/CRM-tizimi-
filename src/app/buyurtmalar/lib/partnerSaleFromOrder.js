@@ -26,6 +26,38 @@ export async function loadActiveFinancePartners(supabase) {
     return { partners: data || [], missing: false }
 }
 
+/** Hamkor nomi (filtrlash) va tugallanganda yozilgan sotuvlar (reference → partner). */
+export async function loadPartnerOrderLinkIndex(supabase) {
+    const names = new Map()
+    const refs = new Map()
+    const [pRes, eRes] = await Promise.all([
+        supabase.from('finance_partners').select('id, name_uz, name_ru, name_en'),
+        supabase
+            .from('partner_finance_entries')
+            .select('partner_id, reference_code')
+            .eq('entry_type', 'sale_out'),
+    ])
+    if (!pRes.error) {
+        for (const p of pRes.data || []) names.set(String(p.id), p)
+    }
+    if (!eRes.error) {
+        for (const e of eRes.data || []) {
+            const ref = String(e.reference_code || '').trim()
+            if (ref && e.partner_id && !refs.has(ref)) refs.set(ref, String(e.partner_id))
+        }
+    }
+    return { names, refs }
+}
+
+/** Buyurtma hamkorga bog‘langanmi: `orders.partner_id` yoki moliya sotuvining reference kodi. */
+export function partnerIdForOrder(order, saleOutRefs) {
+    const direct = order?.partner_id ? String(order.partner_id) : ''
+    if (direct) return direct
+    if (!saleOutRefs || typeof saleOutRefs.get !== 'function') return ''
+    const ref = partnerSaleReferenceForOrder(order)
+    return saleOutRefs.get(ref) || ''
+}
+
 function round2(n) {
     return Math.round((Number(n) || 0) * 100) / 100
 }

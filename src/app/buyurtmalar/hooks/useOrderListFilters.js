@@ -7,6 +7,19 @@ import {
     filterOrderItemsByCategoryLabel,
     sumOrderItemsQty,
 } from '../utils'
+import { partnerIdForOrder } from '../lib/partnerSaleFromOrder'
+
+function isNewOrderStatus(st) {
+    return st === 'new' || st === 'Yangi'
+}
+
+function isProgressOrderStatus(st) {
+    return st === 'pending' || st === 'Jarayonda'
+}
+
+function isCompletedOrderStatus(st) {
+    return st === 'completed' || st === 'Tugallandi' || st === 'Tugallangan'
+}
 
 function orderDayKey(iso) {
     if (!iso) return ''
@@ -90,8 +103,11 @@ export function useOrderListFilters({
     dateTo = '',
     unknownLabel,
     productsList = null,
+    filterPartnerId = '',
+    partnerStatus = 'all',
+    saleOutRefs = null,
 }) {
-    const filteredOrders = useMemo(() => {
+    const matchedOrders = useMemo(() => {
         const q = searchTerm.trim().toLowerCase()
         return ordersForList.filter((b) =>
             orderMatchesListFilters(b, {
@@ -116,6 +132,31 @@ export function useOrderListFilters({
         unknownLabel,
         productsList,
     ])
+
+    const partnerScoped = useMemo(() => {
+        if (!filterPartnerId) return matchedOrders
+        const want = String(filterPartnerId)
+        return matchedOrders.filter((b) => partnerIdForOrder(b, saleOutRefs) === want)
+    }, [matchedOrders, filterPartnerId, saleOutRefs])
+
+    const partnerStatusStats = useMemo(() => {
+        const fresh = partnerScoped.filter((b) => isNewOrderStatus(b.status))
+        const progress = partnerScoped.filter((b) => isProgressOrderStatus(b.status))
+        const completed = partnerScoped.filter((b) => isCompletedOrderStatus(b.status))
+        return {
+            fresh: { count: fresh.length, sum: sumOrderListTotals(fresh) },
+            progress: { count: progress.length, sum: sumOrderListTotals(progress) },
+            completed: { count: completed.length, sum: sumOrderListTotals(completed) },
+        }
+    }, [partnerScoped])
+
+    const filteredOrders = useMemo(() => {
+        if (!filterPartnerId || !partnerStatus || partnerStatus === 'all') return partnerScoped
+        if (partnerStatus === 'new') return partnerScoped.filter((b) => isNewOrderStatus(b.status))
+        if (partnerStatus === 'progress') return partnerScoped.filter((b) => isProgressOrderStatus(b.status))
+        if (partnerStatus === 'completed') return partnerScoped.filter((b) => isCompletedOrderStatus(b.status))
+        return partnerScoped
+    }, [partnerScoped, filterPartnerId, partnerStatus])
 
     const totalSumma = useMemo(
         () => filteredOrders.reduce((sum, b) => sum + (Number(b.total) || 0), 0),
@@ -177,9 +218,10 @@ export function useOrderListFilters({
             Boolean(dateTo) ||
             (filterCategory && filterCategory !== 'all') ||
             (filterStatus && filterStatus !== 'all' && filterStatus !== 'Hammasi') ||
-            Boolean(searchTerm.trim())
+            Boolean(searchTerm.trim()) ||
+            Boolean(filterPartnerId)
         )
-    }, [filterSource, dateFrom, dateTo, filterCategory, filterStatus, searchTerm])
+    }, [filterSource, dateFrom, dateTo, filterCategory, filterStatus, searchTerm, filterPartnerId])
 
-    return { filteredOrders, totalSumma, totalQty, statusStats, orderCategoryOptions, hasExtraFilters }
+    return { filteredOrders, totalSumma, totalQty, statusStats, orderCategoryOptions, hasExtraFilters, partnerStatusStats }
 }

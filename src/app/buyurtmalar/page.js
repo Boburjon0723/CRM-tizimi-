@@ -109,7 +109,13 @@ import {
 } from './lib/partialShipUtils'
 import PartialShipModal from './components/PartialShipModal'
 import CompletedAtDateModal from './components/CompletedAtDateModal'
-import { recordPartnerSaleForOrder, removePartnerSaleForOrder } from './lib/partnerSaleFromOrder'
+import {
+    recordPartnerSaleForOrder,
+    removePartnerSaleForOrder,
+    loadPartnerOrderLinkIndex,
+    partnerIdForOrder,
+} from './lib/partnerSaleFromOrder'
+import { pickLocalizedName } from '@/utils/localizedName'
 
 
 
@@ -138,6 +144,12 @@ function BuyurtmalarPageContent() {
     const [filterCategory, setFilterCategory] = useState('all')
     /** Manba: dokon / telefon / website… */
     const [filterSource, setFilterSource] = useState('all')
+    /** Tanlangan hamkor id — bo‘sh bo‘lsa filtr yo‘q */
+    const [filterPartnerId, setFilterPartnerId] = useState('')
+    /** linked ichida: all | progress | completed */
+    const [partnerStatus, setPartnerStatus] = useState('all')
+    const [partnerNames, setPartnerNames] = useState(() => new Map())
+    const [saleOutRefs, setSaleOutRefs] = useState(() => new Map())
     /** Sana oralig‘i (YYYY-MM-DD) */
     const [dateFrom, setDateFrom] = useState('')
     const [dateTo, setDateTo] = useState('')
@@ -156,6 +168,18 @@ function BuyurtmalarPageContent() {
     /** Buyurtmalar jadvalidagi mahsulotlar ro‘yxatini yoyish/yig‘ish */
     const [orderListExpandedById, setOrderListExpandedById] = useState({})
     const [tableConfig, setTableConfig] = useState(DEFAULT_TABLE_CONFIG)
+
+    useEffect(() => {
+        let cancelled = false
+        loadPartnerOrderLinkIndex(supabase).then(({ names, refs }) => {
+            if (cancelled) return
+            setPartnerNames(names)
+            setSaleOutRefs(refs)
+        })
+        return () => {
+            cancelled = true
+        }
+    }, [orders])
 
     const selectedOrders = useMemo(() => {
         const list =
@@ -548,6 +572,7 @@ function BuyurtmalarPageContent() {
                 status: normalizeStatusForSelect(item.status),
                 note: item.note || '',
                 source: normalizeSourceForForm(item.source),
+                partner_id: item.partner_id || partnerIdForOrder(item, saleOutRefs) || '',
             },
             initialOrderLines: lines,
         })
@@ -593,6 +618,7 @@ function BuyurtmalarPageContent() {
                 status: 'new',
                 note: noteCombined,
                 source: normalizeSourceForForm(item.source),
+                partner_id: item.partner_id || partnerIdForOrder(item, saleOutRefs) || '',
             },
             initialOrderLines: lines.length ? lines : [createEmptyOrderLine()],
         })
@@ -620,6 +646,7 @@ function BuyurtmalarPageContent() {
                 orderLabel: order.order_number
                     ? `№${order.order_number}`
                     : `#${String(order.id).slice(0, 8)}`,
+                partnerId: order.partner_id || partnerIdForOrder(order, saleOutRefs) || '',
             })
             return
         }
@@ -629,6 +656,15 @@ function BuyurtmalarPageContent() {
 
     async function syncPartnerSale(order, nextNorm, oldStatus, { partnerId, entryDate }) {
         try {
+            if (partnerId) {
+                const { error: partnerColErr } = await supabase
+                    .from('orders')
+                    .update({ partner_id: partnerId })
+                    .eq('id', order.id)
+                if (partnerColErr && !/partner_id|column|schema cache|42703/i.test(String(partnerColErr.message || ''))) {
+                    console.warn('orders.partner_id:', partnerColErr.message)
+                }
+            }
             if (nextNorm === 'completed' && partnerId) {
                 let items = order.order_items || []
                 const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(order.id)
@@ -757,6 +793,7 @@ function BuyurtmalarPageContent() {
                                           ? completed_at || o.completed_at || stamp
                                           : null,
                                   archived_at: leaveArchive ? null : o.archived_at,
+                                  partner_id: partnerOpts.partnerId || o.partner_id || null,
                               }
                             : o
                     )
@@ -1291,7 +1328,7 @@ function BuyurtmalarPageContent() {
      * ro‘yxatni qirqib, sanoq bilan mos kelmay qoladi.
      */
     const statusFilterForList = ordersListView === 'active' ? filterStatus : 'all'
-    const { filteredOrders, totalSumma, totalQty, statusStats, orderCategoryOptions, hasExtraFilters } =
+    const { filteredOrders, totalSumma, totalQty, statusStats, orderCategoryOptions, hasExtraFilters, partnerStatusStats } =
         useOrderListFilters({
             ordersForList,
             searchTerm,
@@ -1302,7 +1339,47 @@ function BuyurtmalarPageContent() {
             dateTo,
             unknownLabel,
             productsList: products,
+            filterPartnerId,
+            partnerStatus,
+            saleOutRefs,
         })
+
+    const partnerLabelByOrderId = useMemo(() => {
+        const map = new Map()
+        for (const o of [...orders, ...archiveOrders, ...trashOrders]) {
+            const pid = partnerIdForOrder(o, saleOutRefs)
+            if (!pid) continue
+            const partner = partnerNames.get(pid)
+            const name = partner ? pickLocalizedName(partner, language) : ''
+            if (name) map.set(String(o.id), name)
+        }
+        return map
+    }, [orders, archiveOrders, trashOrders, saleOutRefs, partnerNames, language])
+
+    const partnerFilterOptions = useMemo(() => {
+        const counts = new Map()
+        for (const o of ordersForList) {
+            const pid = partnerIdForOrder(o, saleOutRefs)
+            if (!pid) continue
+            counts.set(pid, (counts.get(pid) || 0) + 1)
+        }
+        const opts = []
+        const seen = new Set()
+        for (const [id, partner] of partnerNames) {
+            seen.add(id)
+            opts.push({
+                id,
+                name: pickLocalizedName(partner, language) || '—',
+                count: counts.get(id) || 0,
+            })
+        }
+        for (const [id, count] of counts) {
+            if (seen.has(id)) continue
+            opts.push({ id, name: `#${String(id).slice(0, 8)}`, count })
+        }
+        opts.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'uz'))
+        return opts
+    }, [ordersForList, saleOutRefs, partnerNames, language])
 
     const clearOrderFilters = () => {
         setSearchTerm('')
@@ -1311,6 +1388,8 @@ function BuyurtmalarPageContent() {
         setDateFrom('')
         setDateTo('')
         setFilterStatus('all')
+        setFilterPartnerId('')
+        setPartnerStatus('all')
     }
 
     const highlightOrderId = searchParams.get('highlight')
@@ -1734,6 +1813,12 @@ function BuyurtmalarPageContent() {
                 excelImportInputRef={excelImportInputRef}
                 handleExcelImportFileChange={handleExcelImportFileChange}
                 excelImportBusy={excelImportBusy}
+                filterPartnerId={filterPartnerId}
+                setFilterPartnerId={setFilterPartnerId}
+                partnerFilterOptions={partnerFilterOptions}
+                partnerStatus={partnerStatus}
+                setPartnerStatus={setPartnerStatus}
+                partnerStatusStats={partnerStatusStats}
             />
 
             {isAdding && formSession ? (
@@ -1785,6 +1870,7 @@ function BuyurtmalarPageContent() {
                 handleLinkCustomer={handleLinkCustomer}
                 handleOpenPartialShip={setPartialShipOrder}
                 filterCategory={filterCategory}
+                partnerLabelByOrderId={partnerLabelByOrderId}
             />
 
             {partialShipOrder ? (
@@ -1856,6 +1942,7 @@ function BuyurtmalarPageContent() {
             <CompletedAtDateModal
                 open={Boolean(completedAtPrompt)}
                 orderLabel={completedAtPrompt?.orderLabel || ''}
+                initialPartnerId={completedAtPrompt?.partnerId || ''}
                 onCancel={() => setCompletedAtPrompt(null)}
                 onConfirm={async (dateYmd, partnerId) => {
                     const pending = completedAtPrompt

@@ -32,6 +32,7 @@ function OrdersTable({
     handleLinkCustomer,
     handleOpenPartialShip,
     filterCategory = 'all',
+    partnerLabelByOrderId = null,
 }) {
     if (filteredOrders.length === 0) {
         return (
@@ -131,6 +132,7 @@ function OrdersTable({
                                     handleLinkCustomer={handleLinkCustomer}
                                     handleOpenPartialShip={handleOpenPartialShip}
                                     filterCategory={filterCategory}
+                                    partnerName={partnerLabelByOrderId?.get(String(item.id)) || ''}
                                 />
                         ))}
                     </tbody>

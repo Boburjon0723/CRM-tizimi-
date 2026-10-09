@@ -57,6 +57,7 @@ function OrderTableRow({
     handleLinkCustomer,
     handleOpenPartialShip,
     filterCategory = 'all',
+    partnerName = '',
 }) {
     const itemStatus = normalizeStatusForSelect(item.status)
     const fulfillment = item.fulfillment
@@ -142,6 +143,11 @@ function OrderTableRow({
                 <div className="text-[11px] text-gray-500 font-mono mt-0.5">
                     {item.customer_phone || item.customers?.phone}
                 </div>
+                {partnerName ? (
+                    <div className="mt-0.5 inline-flex max-w-[14rem] items-center rounded border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800">
+                        {partnerName}
+                    </div>
+                ) : null}
                 {item.note && (
                     <div className="text-[10px] text-amber-600 italic mt-0.5 bg-amber-50 px-1.5 py-0.5 rounded inline-block line-clamp-2 max-w-[14rem]">
                         {item.note}
@@ -504,6 +510,7 @@ function rowPropsAreEqual(prev, next) {
     if (prev.ordersListView !== next.ordersListView) return false
     if (prev.language !== next.language) return false
     if (prev.filterCategory !== next.filterCategory) return false
+    if (prev.partnerName !== next.partnerName) return false
     return true
 }
 

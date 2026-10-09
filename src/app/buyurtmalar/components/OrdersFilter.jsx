@@ -1,5 +1,5 @@
 'use client'
-import React, { useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   Search,
   Repeat,
@@ -19,6 +19,7 @@ import {
   Filter,
   Calendar,
   Store,
+  Briefcase,
 } from 'lucide-react'
 import { formatUsd, formatOrderQtyPlain } from '../utils'
 
@@ -67,8 +68,31 @@ export default function OrdersFilter({
   excelImportInputRef,
   handleExcelImportFileChange,
   excelImportBusy,
+  filterPartnerId = '',
+  setFilterPartnerId,
+  partnerFilterOptions = [],
+  partnerStatus = 'all',
+  setPartnerStatus,
+  partnerStatusStats = {
+    fresh: { count: 0, sum: 0 },
+    progress: { count: 0, sum: 0 },
+    completed: { count: 0, sum: 0 },
+  },
 }) {
   const printDetailsRef = useRef(null)
+  const partnerMenuRef = useRef(null)
+  const [partnerMenuOpen, setPartnerMenuOpen] = useState(false)
+
+  useEffect(() => {
+    if (!partnerMenuOpen) return
+    function onDoc(e) {
+      if (partnerMenuRef.current && !partnerMenuRef.current.contains(e.target)) setPartnerMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [partnerMenuOpen])
+
+  const selectedPartner = partnerFilterOptions.find((p) => String(p.id) === String(filterPartnerId))
   const excelDetailsRef = useRef(null)
   const selectedDetailsRef = useRef(null)
 
@@ -94,7 +118,7 @@ export default function OrdersFilter({
       <div className="sticky top-0 z-20 rounded-lg border border-gray-100 bg-gray-50/95 px-2.5 py-2 shadow-sm backdrop-blur-md space-y-2">
         {/* Qidiruv + asosiy amallar */}
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2">
-          <div className="relative flex-1 min-w-0">
+          <div className="relative w-full sm:w-52 lg:w-56 shrink-0">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
             <input
               type="search"
@@ -105,6 +129,67 @@ export default function OrdersFilter({
               onChange={(e) => setSearchTerm(e.target.value)}
               aria-label={t('orders.searchPlaceholder')}
             />
+          </div>
+
+          <div className="relative shrink-0" ref={partnerMenuRef}>
+            <button
+              type="button"
+              onClick={() => setPartnerMenuOpen((v) => !v)}
+              className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-md font-semibold text-[11px] border max-w-[14rem] ${btnH} ${
+                filterPartnerId
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-50'
+              }`}
+              title={t('orders.partnerOrdersFilterTitle')}
+              aria-expanded={partnerMenuOpen}
+            >
+              <Briefcase size={14} className="shrink-0" />
+              <span className="truncate">
+                {selectedPartner ? selectedPartner.name : t('orders.partnerOrdersFilter')}
+              </span>
+              <ChevronDown size={12} className="shrink-0 opacity-80" />
+            </button>
+            {partnerMenuOpen ? (
+              <div className="absolute left-0 top-full z-40 mt-1 w-[min(100vw-2rem,18rem)] max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold text-gray-500 hover:bg-gray-50"
+                  onClick={() => {
+                    setFilterPartnerId?.('')
+                    setPartnerStatus?.('all')
+                    setPartnerMenuOpen(false)
+                  }}
+                >
+                  <span>{t('orders.partnerOrdersAll')}</span>
+                </button>
+                {partnerFilterOptions.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-gray-400">{t('orders.partnerOrdersEmpty')}</p>
+                ) : (
+                  partnerFilterOptions.map((p) => {
+                    const on = String(p.id) === String(filterPartnerId)
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold ${
+                          on ? 'bg-indigo-50 text-indigo-800' : 'text-gray-800 hover:bg-indigo-50'
+                        }`}
+                        onClick={() => {
+                          setFilterPartnerId?.(on ? '' : p.id)
+                          setPartnerStatus?.('all')
+                          setPartnerMenuOpen(false)
+                        }}
+                      >
+                        <span className="min-w-0 truncate">{p.name}</span>
+                        <span className="shrink-0 rounded-full bg-gray-100 px-1.5 text-[10px] font-black tabular-nums text-gray-600">
+                          {p.count}
+                        </span>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-1 shrink-0">
@@ -328,6 +413,56 @@ export default function OrdersFilter({
             </button>
           </div>
         </div>
+
+        {filterPartnerId ? (
+          <div className="flex flex-wrap items-stretch gap-2">
+            {[
+              {
+                id: 'new',
+                label: t('orders.partnerOrdersNew'),
+                hint: t('orders.partnerOrdersNewHint'),
+                stat: partnerStatusStats.fresh,
+                active: 'bg-sky-600 text-white border-sky-600',
+                idle: 'bg-sky-50 text-sky-900 border-sky-200 hover:bg-sky-100',
+              },
+              {
+                id: 'progress',
+                label: t('orders.partnerOrdersProgress'),
+                hint: t('orders.partnerOrdersProgressHint'),
+                stat: partnerStatusStats.progress,
+                active: 'bg-amber-600 text-white border-amber-600',
+                idle: 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100',
+              },
+              {
+                id: 'completed',
+                label: t('orders.partnerOrdersDone'),
+                hint: t('orders.partnerOrdersDoneHint'),
+                stat: partnerStatusStats.completed,
+                active: 'bg-emerald-600 text-white border-emerald-600',
+                idle: 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100',
+              },
+            ].map((card) => {
+              const on = partnerStatus === card.id
+              return (
+                <button
+                  key={card.id}
+                  type="button"
+                  title={card.hint}
+                  onClick={() => setPartnerStatus?.(on ? 'all' : card.id)}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-left transition-colors ${on ? card.active : card.idle}`}
+                >
+                  <span className="text-[11px] font-bold">{card.label}</span>
+                  <span className={`rounded-full px-1.5 text-[10px] font-black tabular-nums ${on ? 'bg-white/20' : 'bg-white'}`}>
+                    {card.stat?.count || 0}
+                  </span>
+                  <span className={`text-[11px] font-semibold tabular-nums ${on ? 'text-white/90' : 'text-gray-600'}`}>
+                    ${formatUsd(card.stat?.sum || 0)}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
 
         {/* Filtrlar qatori */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-200/80">

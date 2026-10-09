@@ -143,5 +143,6 @@ export function createDefaultOrderForm() {
         status: 'new',
         note: '',
         source: 'dokon',
+        partner_id: '',
     }
 }

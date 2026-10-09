@@ -1,8 +1,32 @@
 'use client'
 
-import React, { memo } from 'react'
+import React, { memo, useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { useLanguage } from '@/context/LanguageContext'
+import { pickLocalizedName } from '@/utils/localizedName'
+import { loadActiveFinancePartners } from '../lib/partnerSaleFromOrder'
 
 function OrderFormCustomerFields({ t, form, setForm, customers }) {
+    const { language } = useLanguage()
+    const [partners, setPartners] = useState([])
+
+    useEffect(() => {
+        let cancelled = false
+        loadActiveFinancePartners(supabase).then(({ partners: list }) => {
+            if (!cancelled) setPartners(list || [])
+        })
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
+    const partnerOptions = useMemo(
+        () =>
+            partners
+                .map((p) => ({ id: p.id, name: pickLocalizedName(p, language) || '—' }))
+                .sort((a, b) => a.name.localeCompare(b.name, 'uz')),
+        [partners, language]
+    )
     return (
         <>
             <div className="space-y-2 md:col-span-2 lg:col-span-3">
@@ -68,6 +92,25 @@ function OrderFormCustomerFields({ t, form, setForm, customers }) {
                 </div>
             </div>
 
+            {partnerOptions.length > 0 ? (
+                <div className="md:col-span-2 lg:col-span-3 space-y-1">
+                    <label className="block text-sm font-bold text-gray-700">{t('orders.orderPartnerLabel')}</label>
+                    <select
+                        className="w-full sm:max-w-md px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                        value={form.partner_id || ''}
+                        onChange={(e) => setForm({ ...form, partner_id: e.target.value })}
+                    >
+                        <option value="">{t('orders.orderPartnerNone')}</option>
+                        {partnerOptions.map((p) => (
+                            <option key={p.id} value={p.id}>
+                                {p.name}
+                            </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-gray-500">{t('orders.orderPartnerHint')}</p>
+                </div>
+            ) : null}
+
             <div className="md:col-span-2 lg:col-span-3 space-y-2">
                 <label className="block text-sm font-bold text-gray-700">{t('orders.note')}</label>
                 <textarea
@@ -88,6 +131,7 @@ function customerFieldsPropsAreEqual(prev, next) {
         prev.form.customer_id === next.form.customer_id &&
         prev.form.customer_name === next.form.customer_name &&
         prev.form.customer_phone === next.form.customer_phone &&
+        prev.form.partner_id === next.form.partner_id &&
         prev.form.note === next.form.note &&
         prev.customers === next.customers
     )

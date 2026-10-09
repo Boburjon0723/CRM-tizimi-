@@ -92,9 +92,9 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
       )}
 
       <div className={`w-72 bg-gradient-to-b from-blue-900 via-slate-900 to-slate-900 text-white h-screen p-6 fixed left-0 top-0 z-50 transition-all duration-300 shadow-2xl flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="flex justify-between items-center mb-8 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center shadow-lg backdrop-blur-sm border border-white/10">
+        <div className="flex justify-between items-center mb-8 flex-shrink-0 gap-2 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-12 h-12 shrink-0 bg-white/10 rounded-xl flex items-center justify-center shadow-lg backdrop-blur-sm border border-white/10">
               <img
                 src="/favicon.svg"
                 alt="CRM Logo"
@@ -105,7 +105,7 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
               />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-bold tracking-tight truncate">{siteName}</h1>
+              <h1 className="text-sm font-bold leading-snug break-words [overflow-wrap:anywhere]">{siteName}</h1>
               <p className="text-xs text-blue-200">{t('common.managementSystem')}</p>
             </div>
           </div>

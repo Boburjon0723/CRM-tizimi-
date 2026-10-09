@@ -15,6 +15,7 @@ export default function CompletedAtDateModal({
     open,
     orderLabel = '',
     initialDate = '',
+    initialPartnerId = '',
     onConfirm,
     onCancel,
 }) {
@@ -28,10 +29,10 @@ export default function CompletedAtDateModal({
     useEffect(() => {
         if (!open) return
         setDateValue(initialDate || todayDateInputValue())
-        setPartnerId('')
+        setPartnerId(initialPartnerId || '')
         const tmr = setTimeout(() => inputRef.current?.focus?.(), 50)
         return () => clearTimeout(tmr)
-    }, [open, initialDate])
+    }, [open, initialDate, initialPartnerId])
 
     useEffect(() => {
         if (!open) return
