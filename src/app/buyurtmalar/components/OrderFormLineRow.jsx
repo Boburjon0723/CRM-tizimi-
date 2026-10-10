@@ -132,6 +132,25 @@ function OrderFormLineRow({
                 {line.product_id ? (
                     <>
                         <span className="font-semibold block mt-1">{line.product_name}</span>
+                        {(() => {
+                            const hasWeight =
+                                Number(prodRow?.netto_kg) > 0 ||
+                                Number(prodRow?.brutto_kg) > 0 ||
+                                Number(prodRow?.master_box_kg) > 0
+                            if (!prodRow || !hasWeight) return null
+                            const exact = Math.floor(Number(prodRow.master_pack_qty) || 0) >= 2
+                            return (
+                                <span
+                                    className={`mt-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ${
+                                        exact
+                                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                            : 'bg-amber-50 text-amber-800 ring-amber-200'
+                                    }`}
+                                >
+                                    {exact ? t('orders.weightExact') : t('orders.weightUncertain')}
+                                </span>
+                            )
+                        })()}
                         <button
                             type="button"
                             onClick={() => updateOrderLine(line.id, { keepSeparate: !line.keepSeparate })}

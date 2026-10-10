@@ -167,6 +167,39 @@ function withWeightFeature(rows, weightKgRaw) {
     ]
 }
 
+function parseOptionalKg(raw) {
+    const s = String(raw ?? '').trim().replace(',', '.')
+    if (!s) return null
+    const n = Number(s)
+    if (!Number.isFinite(n) || n < 0) return null
+    return Math.round(n * 1000) / 1000
+}
+
+function formatProductStamp(iso) {
+    if (!iso) return '—'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return '—'
+    return d.toLocaleString('uz-UZ', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    })
+}
+
+function isMissingTimestampColumn(error) {
+    return /updated_at|created_at|42703|schema cache/i.test(String(error?.message || ''))
+}
+
+function parseOptionalPack(raw) {
+    const s = String(raw ?? '').trim().replace(',', '.')
+    if (!s) return null
+    const n = Math.floor(Number(s))
+    if (!Number.isFinite(n) || n < 2) return null
+    return n
+}
+
 const SESSION_PRODUCTS_BULK_UI = 'crm_products_bulk_ui_v1'
 
 function readBulkAccordionInitial() {
@@ -309,7 +342,11 @@ export default function Mahsulotlar() {
         reviews: '0',
         model_3d_url: '', // 3D model link
         is_kg: false, // Og'irligi bo'yicha (kg)
-        rope_weight_kg: '' // Arqon uchun fizik og'irlik (kg)
+        rope_weight_kg: '', // Arqon uchun fizik og'irlik (kg)
+        netto_kg: '',
+        brutto_kg: '',
+        master_pack_qty: '',
+        master_box_kg: '',
     })
     const [isAddingColor, setIsAddingColor] = useState(false)
     const [newColor, setNewColor] = useState({ name_uz: '', name_ru: '', name_en: '', hex_code: '#000000' })
@@ -608,21 +645,40 @@ export default function Mahsulotlar() {
                 rating: parseFloat(form.rating) || 0,
                 reviews: parseInt(form.reviews) || 0,
                 model_3d_url: form.model_3d_url,
-                is_kg: form.is_kg
+                is_kg: form.is_kg,
+                netto_kg: parseOptionalKg(form.netto_kg),
+                brutto_kg: parseOptionalKg(form.brutto_kg),
+                master_pack_qty: parseOptionalPack(form.master_pack_qty),
+                master_box_kg: parseOptionalKg(form.master_box_kg),
             }
 
+            const stamp = new Date().toISOString()
             if (editId) {
-                const { error } = await supabase
+                let { error } = await supabase
                     .from('products')
-                    .update(productData)
+                    .update({ ...productData, updated_at: stamp })
                     .eq('id', editId)
-                if (error) throw error
+                if (error && isMissingTimestampColumn(error)) {
+                    const retry = await supabase.from('products').update(productData).eq('id', editId)
+                    if (retry.error) throw retry.error
+                    await showAlert(
+                        'Mahsulot saqlandi, lekin tahrir vaqti yozilmadi. Supabase SQL Editor da add_products_timestamps.sql ni ishga tushiring.',
+                        { variant: 'warning' }
+                    )
+                } else if (error) throw error
                 setEditId(null)
             } else {
-                const { error } = await supabase
+                let { error } = await supabase
                     .from('products')
-                    .insert([productData])
-                if (error) throw error
+                    .insert([{ ...productData, created_at: stamp, updated_at: stamp }])
+                if (error && isMissingTimestampColumn(error)) {
+                    const retry = await supabase.from('products').insert([productData])
+                    if (retry.error) throw retry.error
+                    await showAlert(
+                        'Mahsulot yaratildi, lekin sana yozilmadi. Supabase SQL Editor da add_products_timestamps.sql ni ishga tushiring.',
+                        { variant: 'warning' }
+                    )
+                } else if (error) throw error
             }
 
             setForm({
@@ -652,11 +708,23 @@ export default function Mahsulotlar() {
                 model_3d_url: '',
                 is_kg: false,
                 rope_weight_kg: '',
+                netto_kg: '',
+                brutto_kg: '',
+                master_pack_qty: '',
+                master_box_kg: '',
             })
             setIsModalOpen(false)
             loadData({ silent: true })
         } catch (error) {
             console.error('Error saving product:', error)
+            const msg = String(error?.message || '')
+            if (/netto_kg|brutto_kg|master_pack_qty|master_box_kg|42703|schema cache/i.test(msg)) {
+                await showAlert(
+                    'Og‘irlik saqlanmadi. Supabase SQL Editor da add_products_brutto_netto.sql ni qayta ishga tushiring.',
+                    { variant: 'warning' }
+                )
+                return
+            }
             await showAlert(t('common.saveError'), { variant: 'error' })
         }
     }
@@ -739,7 +807,11 @@ export default function Mahsulotlar() {
             reviews: item.reviews?.toString() || '0',
             model_3d_url: item.model_3d_url || '',
             is_kg: item.is_kg || false,
-            rope_weight_kg: parsed.weightKg || ''
+            rope_weight_kg: parsed.weightKg || '',
+            netto_kg: item.netto_kg != null && item.netto_kg !== '' ? String(item.netto_kg) : '',
+            brutto_kg: item.brutto_kg != null && item.brutto_kg !== '' ? String(item.brutto_kg) : '',
+            master_pack_qty: item.master_pack_qty != null && item.master_pack_qty !== '' ? String(item.master_pack_qty) : '',
+            master_box_kg: item.master_box_kg != null && item.master_box_kg !== '' ? String(item.master_box_kg) : '',
         })
 
         setEditId(item.id)
@@ -775,6 +847,10 @@ export default function Mahsulotlar() {
             model_3d_url: '',
             is_kg: false,
             rope_weight_kg: '',
+            netto_kg: '',
+            brutto_kg: '',
+            master_pack_qty: '',
+            master_box_kg: '',
         })
         setEditId(null)
         setIsModalOpen(false)
@@ -1006,11 +1082,14 @@ export default function Mahsulotlar() {
 
     async function toggleStatus(id, currentStatus) {
         try {
-            const { error } = await supabase
+            let { error } = await supabase
                 .from('products')
-                .update({ is_active: !currentStatus })
+                .update({ is_active: !currentStatus, updated_at: new Date().toISOString() })
                 .eq('id', id)
-
+            if (error && isMissingTimestampColumn(error)) {
+                const retry = await supabase.from('products').update({ is_active: !currentStatus }).eq('id', id)
+                error = retry.error
+            }
             if (error) throw error
             loadData({ silent: true })
         } catch (error) {
@@ -1112,7 +1191,10 @@ export default function Mahsulotlar() {
         }
         try {
             setBulkApplying(true)
-            const { error } = await supabase.from('products').update(payload).eq('category_id', bulkCategoryId)
+            const { error } = await supabase
+                .from('products')
+                .update({ ...payload, updated_at: new Date().toISOString() })
+                .eq('category_id', bulkCategoryId)
             if (error) throw error
             alert(`Muvaffaqiyatli: ${bulkProductCount} ta mahsulot yangilandi.`)
             loadData({ silent: true })
@@ -1186,7 +1268,10 @@ export default function Mahsulotlar() {
             for (const p of targets) {
                 const patch = computeBulkColorReplaceUpdate(p, oldStr, newStr)
                 if (!patch) continue
-                const { error } = await supabase.from('products').update(patch).eq('id', p.id)
+                const { error } = await supabase
+                    .from('products')
+                    .update({ ...patch, updated_at: new Date().toISOString() })
+                    .eq('id', p.id)
                 if (error) throw error
                 updated++
             }
@@ -1232,7 +1317,10 @@ export default function Mahsulotlar() {
             for (const p of targets) {
                 const patch = computeBulkColorAddUpdate(p, names)
                 if (!patch) continue
-                const { error } = await supabase.from('products').update(patch).eq('id', p.id)
+                const { error } = await supabase
+                    .from('products')
+                    .update({ ...patch, updated_at: new Date().toISOString() })
+                    .eq('id', p.id)
                 if (error) throw error
                 updated++
             }
@@ -1276,7 +1364,10 @@ export default function Mahsulotlar() {
             for (const p of targets) {
                 const patch = computeBulkColorRemoveUpdate(p, rem)
                 if (!patch) continue
-                const { error } = await supabase.from('products').update(patch).eq('id', p.id)
+                const { error } = await supabase
+                    .from('products')
+                    .update({ ...patch, updated_at: new Date().toISOString() })
+                    .eq('id', p.id)
                 if (error) throw error
                 updated++
             }
@@ -1680,6 +1771,10 @@ export default function Mahsulotlar() {
                                 model_3d_url: '',
                                 is_kg: false,
                                 rope_weight_kg: '',
+                                netto_kg: '',
+                                brutto_kg: '',
+                                master_pack_qty: '',
+                                master_box_kg: '',
                             })
                             setIsModalOpen(true)
                         }}
@@ -2196,6 +2291,8 @@ export default function Mahsulotlar() {
                                 <th className="px-6 py-4">{t('products.wholesalePrice')}</th>
                                 <th className="px-6 py-4">{t('products.retailPrice')}</th>
                                 <th className="px-6 py-4">Rangi</th>
+                                <th className="px-6 py-4">Yaratilgan</th>
+                                <th className="px-6 py-4">Oxirgi tahrir</th>
                                 <th className="px-6 py-4">{t('products.status')}</th>
                                 <th className="px-6 py-4 rounded-tr-2xl text-right">{t('products.actions')}</th>
                             </tr>
@@ -2257,6 +2354,12 @@ export default function Mahsulotlar() {
                                             )}
                                         </div>
                                     </td>
+                                    <td className="px-6 py-4 text-xs text-gray-600 whitespace-nowrap tabular-nums">
+                                        {formatProductStamp(item.created_at)}
+                                    </td>
+                                    <td className="px-6 py-4 text-xs text-gray-600 whitespace-nowrap tabular-nums">
+                                        {formatProductStamp(item.updated_at)}
+                                    </td>
                                     <td className="px-6 py-4">
                                         <button
                                             onClick={() => toggleStatus(item.id, item.is_active)}
@@ -2303,9 +2406,18 @@ export default function Mahsulotlar() {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
                         <div className="p-6 border-b flex justify-between items-center sticky top-0 bg-white z-10">
-                            <h2 className="text-xl font-bold text-gray-900">
-                                {editId ? t('products.editProduct') : t('products.newProduct')}
-                            </h2>
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-900">
+                                    {editId ? t('products.editProduct') : t('products.newProduct')}
+                                </h2>
+                                {editId ? (
+                                    <p className="mt-1 text-xs text-gray-500 tabular-nums">
+                                        Yaratilgan: {formatProductStamp(products.find((p) => p.id === editId)?.created_at)}
+                                        <span className="mx-2 text-gray-300">·</span>
+                                        Oxirgi tahrir: {formatProductStamp(products.find((p) => p.id === editId)?.updated_at)}
+                                    </p>
+                                ) : null}
+                            </div>
                             <button
                                 onClick={() => setIsModalOpen(false)}
                                 className="p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -2727,6 +2839,61 @@ export default function Mahsulotlar() {
                                         )}
                                     </div>
                                 )}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-gray-700">Netto (kg)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.001"
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                                        value={form.netto_kg}
+                                        onChange={(e) => setForm({ ...form, netto_kg: e.target.value })}
+                                        placeholder="0.250"
+                                    />
+                                    <p className="text-[10px] text-gray-500">1 dona, qadoqsiz. Kg rejimida 1 kg mahsulot.</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-gray-700">Brutto (kg)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.001"
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                                        value={form.brutto_kg}
+                                        onChange={(e) => setForm({ ...form, brutto_kg: e.target.value })}
+                                        placeholder="0.310"
+                                    />
+                                    <p className="text-[10px] text-gray-500">1 dona + uning kichik karobkasi.</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-gray-700">Katta karobka sig‘imi (dona)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                                        value={form.master_pack_qty}
+                                        onChange={(e) => setForm({ ...form, master_pack_qty: e.target.value })}
+                                        placeholder="16"
+                                    />
+                                    <p className="text-[10px] text-gray-500">16 kabi son — savatda aniq qism. Bo‘sh yoki 0 — noaniq: savatda nechta katta karobka ketganini yozasiz.</p>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-bold text-gray-700">Katta karobka o‘zi (kg)</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.001"
+                                        className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono"
+                                        value={form.master_box_kg}
+                                        onChange={(e) => setForm({ ...form, master_box_kg: e.target.value })}
+                                        placeholder="1.200"
+                                    />
+                                    <p className="text-[10px] text-gray-500">Faqat bo‘sh katta karobka. Ichidagi mahsulotlar bruttosiga qo‘shiladi.</p>
+                                </div>
                             </div>
 
                             {/* Rating and Reviews */}

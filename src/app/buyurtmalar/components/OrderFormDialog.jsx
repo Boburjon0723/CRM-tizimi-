@@ -1,8 +1,24 @@
 'use client'
 
-import React, { memo, useMemo } from 'react'
+import React, { memo, useMemo, useState } from 'react'
 import { Save, ScanLine, Plus } from 'lucide-react'
 import { formatUsd } from '../utils'
+
+function formatKg(n) {
+    const r = Math.round((Number(n) || 0) * 1000) / 1000
+    return r.toLocaleString('en-US', { maximumFractionDigits: 3 })
+}
+
+function formatWeightSpoken(kg, tonLabel) {
+    const n = Math.round((Number(kg) || 0) * 1000) / 1000
+    if (n >= 1000) {
+        const tons = Math.floor(n / 1000)
+        const rest = Math.round((n - tons * 1000) * 1000) / 1000
+        if (rest <= 0) return `${tons} ${tonLabel}`
+        return `${tons} ${tonLabel} ${formatKg(rest)} kg`
+    }
+    return `${formatKg(n)} kg`
+}
 import OrderFormCustomerFields from './OrderFormCustomerFields'
 import OrderFormLineRow from './OrderFormLineRow'
 
@@ -33,7 +49,11 @@ function OrderFormDialog({
     language,
     productsById,
     grandTotal,
+    weightTotals,
 }) {
+    const [weightAllowancePct, setWeightAllowancePct] = useState('10')
+    const [manualBoxCount, setManualBoxCount] = useState('')
+    const [manualBoxKg, setManualBoxKg] = useState('')
     if (!isAdding) return null
 
     const formImageCellClass = 'w-10 h-10 sm:w-12 sm:h-12'
@@ -77,6 +97,16 @@ function OrderFormDialog({
             commitLineToSortOrder,
         ]
     )
+
+    const needsManualMaster = Boolean(weightTotals?.needsManualMaster)
+    const manualBoxCountN = needsManualMaster
+        ? Math.max(0, Math.floor(Number(String(manualBoxCount).replace(',', '.')) || 0))
+        : 0
+    const productBoxKg = typeof weightTotals?.uncertainBoxKg === 'number' ? weightTotals.uncertainBoxKg : null
+    const manualBoxKgN = productBoxKg != null ? productBoxKg : Number(String(manualBoxKg).replace(',', '.'))
+    const manualTare = manualBoxCountN > 0 && Number.isFinite(manualBoxKgN) && manualBoxKgN > 0
+        ? manualBoxCountN * manualBoxKgN
+        : 0
 
     return (
         <div
@@ -211,13 +241,134 @@ function OrderFormDialog({
                                 {t('orders.addLine')}
                             </button>
 
-                            <div className="bg-blue-50 border border-blue-100 rounded-2xl px-5 py-3 flex items-center gap-4 shadow-sm">
-                                <span className="text-sm font-bold text-blue-700 uppercase tracking-tight">
-                                    {t('orders.grandTotal')}:
-                                </span>
-                                <span className="text-2xl font-bold text-blue-900 font-mono tabular-nums">
-                                    ${formatUsd(grandTotal)}
-                                </span>
+                            <div className="flex flex-wrap items-center gap-3">
+                                {(() => {
+                                    const boxCount = manualBoxCountN
+                                    const packed = (weightTotals?.gross || 0) + manualTare
+                                    const showGoods = Boolean(weightTotals?.any)
+                                    const hasExact = (weightTotals?.exactGross || 0) > 0 || (weightTotals?.exactMasters || 0) > 0
+                                    const exactOnly = hasExact && !needsManualMaster
+                                    const totalBoxes = (weightTotals?.exactMasters || 0) + (needsManualMaster ? boxCount : 0)
+                                    const showTotalBoxes = exactOnly || (needsManualMaster && boxCount > 0)
+                                    return showGoods || manualTare > 0 ? (
+                                    <div className="bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 shadow-sm">
+                                        <p className="text-[10px] font-bold uppercase tracking-tight text-slate-500">
+                                            {t('orders.weightHint')}
+                                        </p>
+                                        {hasExact ? (
+                                            <p className="mt-1 font-mono text-sm font-bold text-slate-900 tabular-nums">
+                                                <span className="mr-2 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700 ring-1 ring-emerald-200">
+                                                    {t('orders.weightExact')}
+                                                </span>
+                                                {t('orders.weightNetto')} {formatKg(weightTotals.exactNetto)} kg
+                                                <span className="mx-2 text-slate-300">·</span>
+                                                {t('orders.weightBrutto')} {formatKg(weightTotals.exactSmall)} kg
+                                                <span className="mx-2 text-slate-300">·</span>
+                                                {t('orders.weightMaster')} {weightTotals.exactMasters}
+                                                <span className="mx-2 text-slate-300">·</span>
+                                                {t('orders.weightGross')} {formatWeightSpoken(weightTotals.exactGross, t('orders.weightTon'))}
+                                            </p>
+                                        ) : null}
+                                        {needsManualMaster ? (
+                                            <p className="mt-1 font-mono text-sm font-bold text-slate-900 tabular-nums">
+                                                <span className="mr-2 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-800 ring-1 ring-amber-200">
+                                                    {t('orders.weightUncertain')}
+                                                </span>
+                                                {t('orders.weightBrutto')} {formatKg(weightTotals.uncertainSmall || 0)} kg
+                                                <span className="mx-2 text-slate-300">·</span>
+                                                {t('orders.weightMaster')} {boxCount}
+                                                <span className="mx-2 text-slate-300">·</span>
+                                                {t('orders.weightGross')} {formatWeightSpoken((weightTotals.uncertainSmall || 0) + manualTare, t('orders.weightTon'))}
+                                            </p>
+                                        ) : null}
+                                        {showTotalBoxes ? (
+                                            <p className="mt-1 font-mono text-sm font-bold text-emerald-800 tabular-nums">
+                                                {t('orders.totalMasterBoxes')}: {totalBoxes}
+                                            </p>
+                                        ) : null}
+                                        {(hasExact && needsManualMaster) || manualTare > 0 ? (
+                                            <p className="mt-1 font-mono text-sm font-bold text-slate-900 tabular-nums">
+                                                {t('orders.weightGross')} {formatWeightSpoken(packed, t('orders.weightTon'))}
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    ) : null
+                                })()}
+                                {(() => {
+                                    const base = (weightTotals?.gross || 0) + manualTare
+                                    const pct = Number(String(weightAllowancePct).replace(',', '.'))
+                                    const extra = Number.isFinite(pct) && pct > 0 && base > 0 ? base * (pct / 100) : 0
+                                    return (
+                                        <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 shadow-sm max-w-sm">
+                                            {needsManualMaster ? (
+                                                <>
+                                                    <div className="flex flex-wrap items-end gap-2">
+                                                        <label className="text-xs font-bold text-amber-950">
+                                                            {t('orders.manualMasterCount')}
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="1"
+                                                                value={manualBoxCount}
+                                                                onChange={(e) => setManualBoxCount(e.target.value)}
+                                                                placeholder="0"
+                                                                className="mt-1 block w-20 rounded-lg border border-amber-300 bg-white px-2 py-1 text-right font-mono text-sm"
+                                                            />
+                                                        </label>
+                                                        {productBoxKg != null ? (
+                                                            <p className="pb-1 text-xs font-bold text-amber-950 tabular-nums">
+                                                                {t('orders.manualMasterKg')}: {formatKg(productBoxKg)}
+                                                            </p>
+                                                        ) : (
+                                                        <label className="text-xs font-bold text-amber-950">
+                                                            {t('orders.manualMasterKg')}
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.001"
+                                                                value={manualBoxKg}
+                                                                onChange={(e) => setManualBoxKg(e.target.value)}
+                                                                placeholder="1.2"
+                                                                className="mt-1 block w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 text-right font-mono text-sm"
+                                                            />
+                                                        </label>
+                                                        )}
+                                                    </div>
+                                                    <p className="mt-1 text-[11px] leading-snug text-amber-800/80">{t('orders.manualMasterHint')}</p>
+                                                </>
+                                            ) : null}
+                                            <label className="mt-2 flex items-center gap-2 text-sm font-bold text-amber-950">
+                                                {t('orders.weightAllowance')}
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="1"
+                                                    value={weightAllowancePct}
+                                                    onChange={(e) => setWeightAllowancePct(e.target.value)}
+                                                    className="w-16 rounded-lg border border-amber-300 bg-white px-2 py-1 text-right font-mono"
+                                                />
+                                                <span>%</span>
+                                            </label>
+                                            {extra > 0 ? (
+                                                <p className="mt-1 font-mono text-sm font-bold text-amber-950 tabular-nums">
+                                                    {t('orders.weightAround')}: {formatWeightSpoken(base, t('orders.weightTon'))}
+                                                    {' – '}
+                                                    {formatWeightSpoken(base + extra, t('orders.weightTon'))}
+                                                </p>
+                                            ) : (
+                                                <p className="mt-1 text-xs text-amber-800/80">{t('orders.weightAllowanceNeed')}</p>
+                                            )}
+                                        </div>
+                                    )
+                                })()}
+                                <div className="bg-blue-50 border border-blue-100 rounded-2xl px-5 py-3 flex items-center gap-4 shadow-sm">
+                                    <span className="text-sm font-bold text-blue-700 tracking-tight">
+                                        {t('orders.grandTotal')}:
+                                    </span>
+                                    <span className="text-2xl font-bold text-blue-900 font-mono tabular-nums">
+                                        ${formatUsd(grandTotal)}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
