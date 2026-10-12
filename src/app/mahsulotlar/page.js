@@ -1666,7 +1666,7 @@ export default function Mahsulotlar() {
     }
 
     return (
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="w-full min-w-0">
             <Header title={t('common.products')} toggleSidebar={toggleSidebar} />
 
             <p className="mb-3 text-sm text-gray-600">
@@ -2279,29 +2279,29 @@ export default function Mahsulotlar() {
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="min-w-0 w-full rounded-2xl border border-gray-100 bg-white shadow-sm">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full min-w-[960px] border-collapse text-left">
                         <thead>
-                            <tr className="bg-gray-50/50 border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500 font-bold">
-                                <th className="px-6 py-4 rounded-tl-2xl">{t('products.image')}</th>
-                                <th className="px-6 py-4">{t('products.name')}</th>
-                                <th className="px-6 py-4">{t('products.tableCode')}</th>
-                                <th className="px-6 py-4">{t('products.category')}</th>
-                                <th className="px-6 py-4">{t('products.wholesalePrice')}</th>
-                                <th className="px-6 py-4">{t('products.retailPrice')}</th>
-                                <th className="px-6 py-4">Rangi</th>
-                                <th className="px-6 py-4">Yaratilgan</th>
-                                <th className="px-6 py-4">Oxirgi tahrir</th>
-                                <th className="px-6 py-4">{t('products.status')}</th>
-                                <th className="px-6 py-4 rounded-tr-2xl text-right">{t('products.actions')}</th>
+                            <tr className="border-b border-gray-100 bg-gray-50 text-xs font-bold uppercase tracking-wider text-gray-500">
+                                <th className="sticky left-0 z-20 w-[80px] min-w-[80px] bg-gray-50 px-4 py-3">{t('products.image')}</th>
+                                <th className="sticky left-[80px] z-20 min-w-[140px] bg-gray-50 px-4 py-3 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.15)]">{t('products.name')}</th>
+                                <th className="px-4 py-3">{t('products.tableCode')}</th>
+                                <th className="px-4 py-3">{t('products.category')}</th>
+                                <th className="px-4 py-3">{t('products.wholesalePrice')}</th>
+                                <th className="px-4 py-3">{t('products.retailPrice')}</th>
+                                <th className="px-4 py-3">Rangi</th>
+                                <th className="px-4 py-3">Yaratilgan</th>
+                                <th className="px-4 py-3">Oxirgi tahrir</th>
+                                <th className="px-4 py-3">{t('products.status')}</th>
+                                <th className="px-4 py-3 text-right">{t('products.actions')}</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                             {filteredProducts.map((item) => (
-                                <tr key={item.id} className="hover:bg-blue-50/30 transition-colors group">
-                                    <td className="px-6 py-4">
-                                        <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
+                                <tr key={item.id} className="group transition-colors hover:bg-blue-50/30">
+                                    <td className="sticky left-0 z-10 w-[80px] min-w-[80px] bg-white px-4 py-3 align-middle group-hover:bg-blue-50">
+                                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
                                             {item.images?.[0] ? (
                                                 <a
                                                     href={item.images[0]}
@@ -2324,7 +2324,7 @@ export default function Mahsulotlar() {
                                             )}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 font-bold text-gray-800">{item.name}</td>
+                                    <td className="sticky left-[80px] z-10 min-w-[140px] max-w-[220px] bg-white px-4 py-3 align-middle font-bold text-gray-800 shadow-[4px_0_8px_-4px_rgba(15,23,42,0.12)] group-hover:bg-blue-50">{item.name}</td>
                                     <td className="px-6 py-4 font-mono font-medium text-gray-600">
                                         {item.size || '-'}
                                     </td>
@@ -2341,8 +2341,8 @@ export default function Mahsulotlar() {
                                             ? `${Number(item.retail_price).toLocaleString()} $${item.is_kg ? ' / kg' : ''}`
                                             : '—'}
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-wrap gap-1">
+                                    <td className="px-4 py-3 align-middle">
+                                        <div className="flex max-w-[220px] flex-wrap gap-1">
                                             {item.colors && item.colors.length > 0 ? (
                                                 item.colors.map((c, i) => (
                                                     <span key={i} className="px-2 py-0.5 rounded bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100">
@@ -2372,7 +2372,7 @@ export default function Mahsulotlar() {
                                         </button>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center justify-end gap-2">
                                             <button
                                                 onClick={() => handleEdit(item)}
                                                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
