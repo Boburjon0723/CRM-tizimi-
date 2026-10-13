@@ -1572,6 +1572,11 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const portionNoteHtml = item._print_note
         ? `<p style="margin:0 0 12px;padding:8px 10px;background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;color:#0e7490;font-size:0.85rem;font-weight:600">${escapeHtml(String(item._print_note))}</p>`
         : ''
+    // Buyurtma yaratishdagi «Eslatma» — narxli (va narxsiz) chop ro‘yxatida ko‘rinsin
+    const orderEslatmaRaw = String(item.note || '').trim()
+    const orderEslatmaHtml = orderEslatmaRaw
+        ? `<p class="order-eslatma" style="margin:0 0 14px;padding:8px 10px;background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;color:#92400e;font-size:0.88rem;line-height:1.4"><strong>Eslatma:</strong> ${formatPrintNoteHtml(orderEslatmaRaw)}</p>`
+        : ''
     const groupedRaw = groupOrderItemsForPrint(dedupeOrderItemsKeepNewest(item.order_items || [], productsList), productsList)
     const grouped = sortGroupedBucketsForPrint(groupedRaw)
     const withNote = (!showPrices && !!tableConfig?.includePrintNoteColumn) || (showPrices && !!tableConfig?.includePrintNoteWithPrices)
@@ -1640,7 +1645,7 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const thExtra = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
     const packingHtml = buildPackingChecklistHtml(item)
 
-    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>${dateLabel}:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}${packingHtml}</div>`
+    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>${dateLabel}:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div>${orderEslatmaHtml}<table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}${packingHtml}</div>`
 }
 
 export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {
