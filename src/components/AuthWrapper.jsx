@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 import { useLayout } from '@/context/LayoutContext'
 import { withTimeout } from '@/lib/withTimeout'
+import { refreshOrClearSession } from '@/lib/authSession'
 
 export default function AuthWrapper({ children }) {
     const [session, setSession] = useState(null)
@@ -19,11 +20,19 @@ export default function AuthWrapper({ children }) {
         setAuthError(null)
         setLoading(true)
         try {
-            const { data: { session: nextSession } } = await withTimeout(
+            let { data: { session: nextSession } } = await withTimeout(
                 supabase.auth.getSession(),
                 25000,
                 'Sessiya tekshirilmadi — tarmoq juda sekin yoki server javob bermayapti. Wi‑Fi / VPN ni tekshiring.'
             )
+            const expiresMs = (nextSession?.expires_at || 0) * 1000
+            if (nextSession && (!expiresMs || expiresMs < Date.now() + 60_000)) {
+                nextSession = await withTimeout(
+                    refreshOrClearSession(),
+                    20000,
+                    'Sessiya yangilanmadi. Qayta kiring.'
+                )
+            }
             setSession(nextSession)
             const isLoginPage = pathname.startsWith('/login')
             if (!nextSession && !isLoginPage) {

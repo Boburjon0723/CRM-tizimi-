@@ -9,7 +9,6 @@ import { EMPLOYEES_SECTION_UNLOCK_KEY } from '@/lib/employeesSectionPin'
 import { goToMobileSite } from '@/lib/viewPreference'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
-import { useDialog } from '@/context/DialogContext'
 
 const LANGUAGES = [
   { code: 'uz', label: "O'zbekcha" },
@@ -70,16 +69,13 @@ export default function Sidebar({ isOpen: propIsOpen, setIsOpen: propSetIsOpen }
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut()
-    if (!error) {
-      try {
-        sessionStorage.removeItem(EMPLOYEES_SECTION_UNLOCK_KEY)
-      } catch (_) {
-        /* ignore */
-      }
-      router.push('/login')
-    } else {
-      await showAlert(t('common.logoutError'), { variant: 'error' })
+    if (error) await supabase.auth.signOut({ scope: 'local' })
+    try {
+      sessionStorage.removeItem(EMPLOYEES_SECTION_UNLOCK_KEY)
+    } catch (_) {
+      /* ignore */
     }
+    router.push('/login')
   }
 
   return (
