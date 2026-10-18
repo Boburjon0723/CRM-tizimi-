@@ -802,7 +802,8 @@ export default function MoliyaBoshqaruvPage() {
                         cur === 'UZS'
                             ? `${t('finances.partnerLedgerTitle')} — ${t('finances.finCurrencyUzs')}`
                             : `${t('finances.partnerLedgerTitle')} — ${t('finances.finCurrencyUsd')}`,
-                    rows,
+                    // Qoldiq eskidan yangiga hisoblangan; chop etishda eng yangi operatsiya tepada
+                    rows: [...rows].reverse(),
                     emptyLabel: t('finances.partnerLedgerEmptyCurrency'),
                     finalBalanceLabel,
                 }
