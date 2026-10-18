@@ -21,7 +21,6 @@ import {
     isArchivedAtMissingError,
     archiveStaleCompletedOrders,
     shouldAutoArchiveCompletedOrder,
-    migrateCompletedFromTrashToArchive,
 } from '@/lib/orderTrash'
 
 import {
@@ -320,9 +319,8 @@ function BuyurtmalarPageContent() {
         try {
             if (!silent) setLoading(true)
 
-            // Avval xato korzinkaga tushgan eski tugallanganlarni arxivga ko‘chirish
-            await migrateCompletedFromTrashToArchive(supabase)
-            if (seq !== loadDataSeqRef.current) return
+            // Korzinka → arxiv avtomatik ko‘chirish o‘chirilgan: u ataylab korzinkaga
+            // tashlangan tugallanganlarni (`deleted_at` = null qilib) qayta tiriltirardi.
 
             const { data: ordersData, error: ordersError } = await fetchOrdersPageWithFallback({
                 activeOnly: true,

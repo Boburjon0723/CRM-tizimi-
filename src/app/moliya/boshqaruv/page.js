@@ -1795,7 +1795,7 @@ export default function MoliyaBoshqaruvPage() {
                                                                         {t('finances.costNote')}
                                                                     </th>
                                                                     <th
-                                                                        className="px-2 py-2.5 w-20 text-center"
+                                                                        className="px-2 py-2.5 w-28 text-center"
                                                                         aria-label={t('common.actions')}
                                                                     >
                                                                         <span className="sr-only">
@@ -1850,6 +1850,21 @@ export default function MoliyaBoshqaruvPage() {
                                                                         </td>
                                                                         <td className="px-1 py-2 text-center align-middle">
                                                                             <div className="inline-flex items-center gap-1">
+                                                                                {entryLinkedOrderNumber(row) && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        title={`${t('finances.trxPrint')} · ${entryLinkedOrderNumber(row)}`}
+                                                                                        onClick={(ev) => {
+                                                                                            ev.stopPropagation()
+                                                                                            ev.preventDefault()
+                                                                                            void printDetailEntry(row)
+                                                                                        }}
+                                                                                        className="inline-flex p-2 rounded-lg text-gray-700 hover:bg-gray-100"
+                                                                                        aria-label={t('finances.trxPrint')}
+                                                                                    >
+                                                                                        <Printer size={17} />
+                                                                                    </button>
+                                                                                )}
                                                                                 <button
                                                                                     type="button"
                                                                                     disabled={!MOLIYA_DELETE_PIN}
