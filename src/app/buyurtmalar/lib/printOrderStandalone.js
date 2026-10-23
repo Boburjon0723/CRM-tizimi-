@@ -60,6 +60,7 @@ export async function printOrderByNumber(orderNumber, { showPrices = true, langu
         labelColorFn: (c) => labelColorCanonical(c, productColors, language),
         productsList: products,
         tableConfig: loadTableConfig(),
+        language,
     })
     return openPrintTab(html) ? { ok: true } : { ok: false, reason: 'popup_blocked' }
 }

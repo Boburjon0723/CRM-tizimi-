@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import React, { memo } from 'react'
 import {
@@ -386,14 +386,73 @@ function OrderTableRow({
                                     </button>
                                 </>
                             ) : null}
-                            <button
-                                type="button"
-                                onClick={() => handlePrintOrder(item, true)}
-                                className="shrink-0 p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                title={t('orders.printWithPrices')}
-                            >
-                                <Receipt size={15} />
-                            </button>
+                            <div className="relative inline-flex items-center">
+                                <button
+                                    type="button"
+                                    onClick={() => handlePrintOrder(item, true)}
+                                    className="shrink-0 p-1 text-emerald-600 hover:bg-emerald-50 rounded-l-lg transition-colors"
+                                    title={t('orders.printWithPrices')}
+                                >
+                                    <Receipt size={15} />
+                                </button>
+                                <details className="relative inline-block">
+                                    <summary
+                                        className="shrink-0 p-0.5 text-emerald-600 hover:bg-emerald-50 rounded-r-lg transition-colors cursor-pointer list-none [&::-webkit-details-marker]:hidden"
+                                        title="Chop etish tili (EN / FR / UZ / RU)"
+                                    >
+                                        <ChevronDown size={11} />
+                                    </summary>
+                                    <div className="absolute right-0 top-full z-50 mt-1 w-32 rounded-lg border border-gray-200 bg-white py-1 shadow-lg text-left">
+                                        <div className="px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                                            Chop etish tili
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'en')
+                                            }}
+                                        >
+                                            <span>English</span>
+                                            <span className="rounded bg-blue-100 px-1 py-0.2 text-[9px] font-bold text-blue-800">EN</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'fr')
+                                            }}
+                                        >
+                                            <span>Français</span>
+                                            <span className="rounded bg-indigo-100 px-1 py-0.2 text-[9px] font-bold text-indigo-800">FR</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-emerald-50 hover:text-emerald-700"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'uz')
+                                            }}
+                                        >
+                                            <span>O&apos;zbek</span>
+                                            <span className="text-[10px] text-gray-400">UZ</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'ru')
+                                            }}
+                                        >
+                                            <span>Русский</span>
+                                            <span className="text-[10px] text-gray-400">RU</span>
+                                        </button>
+                                    </div>
+                                </details>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => handlePrintOrder(item, false)}
@@ -439,15 +498,74 @@ function OrderTableRow({
                         </>
                     ) : ordersListView === 'archive' ? (
                         <>
-                            <button
-                                type="button"
-                                onClick={() => handlePrintOrder(item, true)}
-                                className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-emerald-600 px-1.5 py-1 text-[10px] font-bold text-white shadow-sm transition-colors hover:bg-emerald-700"
-                                title={t('orders.printWithPrices')}
-                            >
-                                <Receipt size={13} className="shrink-0" />
-                                <span className="hidden sm:inline">{t('orders.printWithPricesShort')}</span>
-                            </button>
+                            <div className="relative inline-flex items-center">
+                                <button
+                                    type="button"
+                                    onClick={() => handlePrintOrder(item, true)}
+                                    className="inline-flex shrink-0 items-center gap-0.5 rounded-l-md bg-emerald-600 px-1.5 py-1 text-[10px] font-bold text-white shadow-sm transition-colors hover:bg-emerald-700"
+                                    title={t('orders.printWithPrices')}
+                                >
+                                    <Receipt size={13} className="shrink-0" />
+                                    <span className="hidden sm:inline">{t('orders.printWithPricesShort')}</span>
+                                </button>
+                                <details className="relative inline-block">
+                                    <summary
+                                        className="inline-flex shrink-0 items-center rounded-r-md bg-emerald-700 px-1 py-1 text-[10px] font-bold text-white shadow-sm transition-colors hover:bg-emerald-800 cursor-pointer list-none [&::-webkit-details-marker]:hidden"
+                                        title="Chop etish tili (EN / FR / UZ / RU)"
+                                    >
+                                        <ChevronDown size={11} />
+                                    </summary>
+                                    <div className="absolute right-0 top-full z-50 mt-1 w-32 rounded-lg border border-gray-200 bg-white py-1 shadow-lg text-left">
+                                        <div className="px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                                            Chop etish tili
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'en')
+                                            }}
+                                        >
+                                            <span>English</span>
+                                            <span className="rounded bg-blue-100 px-1 py-0.2 text-[9px] font-bold text-blue-800">EN</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'fr')
+                                            }}
+                                        >
+                                            <span>Français</span>
+                                            <span className="rounded bg-indigo-100 px-1 py-0.2 text-[9px] font-bold text-indigo-800">FR</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-emerald-50 hover:text-emerald-700"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'uz')
+                                            }}
+                                        >
+                                            <span>O&apos;zbek</span>
+                                            <span className="text-[10px] text-gray-400">UZ</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                            onClick={(e) => {
+                                                e.currentTarget.closest('details')?.removeAttribute('open')
+                                                handlePrintOrder(item, true, 'ru')
+                                            }}
+                                        >
+                                            <span>Русский</span>
+                                            <span className="text-[10px] text-gray-400">RU</span>
+                                        </button>
+                                    </div>
+                                </details>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => handlePrintOrder(item, false)}

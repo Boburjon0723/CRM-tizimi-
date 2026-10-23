@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { goToLoginAfterExpired, supabase } from '@/lib/supabase'
 import Sidebar from '@/components/Sidebar'
 import { useLayout } from '@/context/LayoutContext'
 import { withTimeout } from '@/lib/withTimeout'
@@ -27,17 +27,23 @@ export default function AuthWrapper({ children }) {
             )
             const expiresMs = (nextSession?.expires_at || 0) * 1000
             if (nextSession && (!expiresMs || expiresMs < Date.now() + 60_000)) {
-                nextSession = await withTimeout(
-                    refreshOrClearSession(),
-                    20000,
-                    'Sessiya yangilanmadi. Qayta kiring.'
-                )
+                try {
+                    nextSession = await withTimeout(
+                        refreshOrClearSession(),
+                        20000,
+                        'Sessiya yangilanmadi. Qayta kiring.'
+                    )
+                } catch {
+                    nextSession = null
+                }
             }
-            setSession(nextSession)
             const isLoginPage = pathname.startsWith('/login')
             if (!nextSession && !isLoginPage) {
-                router.replace('/login')
-            } else if (nextSession && isLoginPage) {
+                goToLoginAfterExpired()
+                return
+            }
+            setSession(nextSession)
+            if (nextSession && isLoginPage) {
                 router.replace('/')
             }
         } catch (e) {

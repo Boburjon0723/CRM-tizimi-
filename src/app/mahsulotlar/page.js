@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
-import { isJwtExpiredError, refreshOrClearSession } from '@/lib/authSession'
+import { goToLoginAfterExpired, supabase } from '@/lib/supabase'
+import { isJwtExpiredError } from '@/lib/authSession'
 import { withTimeout } from '@/lib/withTimeout'
 import { mergeProductInventoryRow } from '@/lib/productInventoryMerge'
 import { loadExcelJS } from '@/lib/lazyOffice'
@@ -445,17 +445,11 @@ export default function Mahsulotlar() {
             )
         } catch (error) {
             console.error('Error loading data:', error)
-            if (isJwtExpiredError(error) && !opts.authRetried) {
-                const session = await refreshOrClearSession()
-                if (session) return loadData({ ...opts, authRetried: true })
-                window.location.assign('/login')
+            if (isJwtExpiredError(error)) {
+                goToLoginAfterExpired()
                 return
             }
-            setLoadError(
-                isJwtExpiredError(error)
-                    ? 'Sessiya tugagan. Qayta kiring.'
-                    : error?.message || "Ma'lumot yuklanmadi."
-            )
+            setLoadError(error?.message || "Ma'lumot yuklanmadi.")
         } finally {
             if (!silent) setLoading(false)
         }

@@ -70,6 +70,7 @@ import {
     buildOrderBlockHtml,
     buildPrintDocumentHtml,
     buildSpecialPrintHtml,
+    PRINT_TRANSLATIONS,
     openPrintTab,
     normalizeSourceForDb,
     normalizeSourceForForm,
@@ -933,8 +934,9 @@ function BuyurtmalarPageContent() {
         setMergeSelection({})
     }
 
-    async function handlePrintOrder(item, showPrices) {
-        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+    async function handlePrintOrder(item, showPrices, printLang = null) {
+        const targetLang = printLang || language || 'uz'
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, targetLang)
         const categoryActive = filterCategory && filterCategory !== 'all'
         let orderForPrint = item
         try {
@@ -970,16 +972,19 @@ function BuyurtmalarPageContent() {
             orderForPrint = { ...orderForPrint, order_items: filteredItems, total: null }
         }
 
+        const tPrint = PRINT_TRANSLATIONS[targetLang] || PRINT_TRANSLATIONS.uz
+        const docPrefix = tPrint.docTitle || 'Buyurtma'
         const html = buildPrintDocumentHtml({
             documentTitle: categoryActive
-                ? `Buyurtma-${String(item.id).slice(0, 8)}-${filterCategory}`
-                : `Buyurtma-${String(item.id).slice(0, 8)}`,
-            listTitle: categoryActive ? `Kategoriya: ${filterCategory}` : '',
+                ? `${docPrefix}-${String(item.id).slice(0, 8)}-${filterCategory}`
+                : `${docPrefix}-${String(item.id).slice(0, 8)}`,
+            listTitle: categoryActive ? `${tPrint.categoryHeader} ${filterCategory}` : '',
             orders: [orderForPrint],
             showPrices,
             labelColorFn,
             productsList: products,
-            tableConfig
+            tableConfig,
+            language: targetLang,
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Brauzer chop etish oynasini bloklagan. Popup ruxsat bering.', {
@@ -989,8 +994,9 @@ function BuyurtmalarPageContent() {
     }
 
     /** Faqat ombordan chiqqan qismni chop etish (qisman tugallash) */
-    async function handlePrintShippedPortion(item, showPrices = false) {
-        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+    async function handlePrintShippedPortion(item, showPrices = false, printLang = null) {
+        const targetLang = printLang || language || 'uz'
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, targetLang)
         let orderForPrint = item
         try {
             const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(item.id)
@@ -1055,6 +1061,7 @@ function BuyurtmalarPageContent() {
                 labelColorFn,
                 productsList: products,
                 tableConfig,
+                language: targetLang,
             })
             if (!openPrintTab(html)) {
                 showToast(
@@ -1070,8 +1077,9 @@ function BuyurtmalarPageContent() {
     }
 
     /** Faqat hali chiqmagan qismni chop etish (qisman tugallash) */
-    async function handlePrintRemainingPortion(item, showPrices = false) {
-        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+    async function handlePrintRemainingPortion(item, showPrices = false, printLang = null) {
+        const targetLang = printLang || language || 'uz'
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, targetLang)
         let orderForPrint = item
         try {
             const { data: rows, error: oiErr } = await fetchOrderItemsForOrderId(item.id)
@@ -1136,6 +1144,7 @@ function BuyurtmalarPageContent() {
                 labelColorFn,
                 productsList: products,
                 tableConfig,
+                language: targetLang,
             })
             if (!openPrintTab(html)) {
                 showToast(
@@ -1150,12 +1159,13 @@ function BuyurtmalarPageContent() {
         }
     }
 
-    async function handlePrintOrderList(list, showPrices) {
+    async function handlePrintOrderList(list, showPrices, printLang = null) {
         if (!list?.length) {
             await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
             return
         }
-        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const targetLang = printLang || language || 'uz'
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, targetLang)
         const categoryActive = filterCategory && filterCategory !== 'all'
         const ids = list.map((o) => o.id).filter(Boolean)
 
@@ -1208,19 +1218,21 @@ function BuyurtmalarPageContent() {
             showPrices,
             labelColorFn,
             productsList: products,
-            tableConfig
+            tableConfig,
+            language: targetLang,
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })
         }
     }
 
-    async function handlePrintSelectedByCategory(list, categoryLabel) {
+    async function handlePrintSelectedByCategory(list, categoryLabel, printLang = null) {
         if (!list?.length) {
             await showAlert(t('orders.listPrintEmpty'), { variant: 'info' })
             return
         }
-        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const targetLang = printLang || language || 'uz'
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, targetLang)
         const ids = list.map((o) => o.id).filter(Boolean)
         let ordersForPrint = list
         try {
@@ -1264,19 +1276,21 @@ function BuyurtmalarPageContent() {
             showPrices: false,
             labelColorFn,
             productsList: products,
-            tableConfig
+            tableConfig,
+            language: targetLang
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })
         }
     }
 
-    async function handlePrintSelectedSpecial(list) {
+    async function handlePrintSelectedSpecial(list, printLang = null) {
         if (!list?.length) {
             await showAlert(t('orders.listPrintEmpty') || 'Chop etish uchun buyurtmalar tanlanmagan', { variant: 'info' })
             return
         }
-        const labelColorFn = (c) => labelColorCanonical(c, productColors, language)
+        const targetLang = printLang || language || 'uz'
+        const labelColorFn = (c) => labelColorCanonical(c, productColors, targetLang)
         const ids = list.map((o) => o.id).filter(Boolean)
         let ordersForPrint = list
         try {
@@ -1306,7 +1320,8 @@ function BuyurtmalarPageContent() {
             orders: ordersForPrint,
             labelColorFn,
             productsList: products,
-            tableConfig
+            tableConfig,
+            language: targetLang
         })
         if (!openPrintTab(html)) {
             showToast(t('orders.printPopupBlocked') || 'Popup bloklangan.', { type: 'info' })

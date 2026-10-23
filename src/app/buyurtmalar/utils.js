@@ -589,19 +589,193 @@ export function normalizeColorsArray(p) {
     return sortColorsByStandardOrder(unique)
 }
 
+export const COLOR_TRANSLATIONS = {
+    black: { uz: 'Qora', ru: 'Черный', en: 'Black', fr: 'Noir' },
+    qora: { uz: 'Qora', ru: 'Черный', en: 'Black', fr: 'Noir' },
+    white: { uz: 'Oq', ru: 'Белый', en: 'White', fr: 'Blanc' },
+    oq: { uz: 'Oq', ru: 'Белый', en: 'White', fr: 'Blanc' },
+    qaymoq: { uz: 'Qaymoq', ru: 'Кремовый', en: 'Cream', fr: 'Crème' },
+    tilla: { uz: 'Tilla', ru: 'Золото', en: 'Gold', fr: 'Doré' },
+    gold: { uz: 'Gold (oltin)', ru: 'Золотой', en: 'Gold', fr: 'Doré' },
+    oltin: { uz: 'Oltin', ru: 'Золотой', en: 'Gold', fr: 'Doré' },
+    seriy: { uz: 'Kulrang', ru: 'Серый', en: 'Gray', fr: 'Gris' },
+    gray: { uz: 'Kulrang', ru: 'Серый', en: 'Gray', fr: 'Gris' },
+    kulrang: { uz: 'Kulrang', ru: 'Серый', en: 'Gray', fr: 'Gris' },
+    mokriy: { uz: 'Mokriy asfalt', ru: 'Мокрый асфальт', en: 'Anthracite', fr: 'Gris anthracite' },
+    anthracite: { uz: 'Mokriy asfalt', ru: 'Мокрый асфальт', en: 'Anthracite', fr: 'Gris anthracite' },
+    holasfalt: { uz: "Ho'l asfalt", ru: 'Мокрый асфальт', en: 'Wet asphalt', fr: 'Asphalte mouillé' },
+    kofe: { uz: 'Kofe', ru: 'Кофе', en: 'Coffee', fr: 'Café' },
+    ochkofe: { uz: 'Och kofe', ru: 'Светлый кофе', en: 'Light Coffee', fr: 'Café clair' },
+    toqkofe: { uz: "To'q kofe", ru: 'Темный кофе', en: 'Dark coffee', fr: 'Café foncé' },
+    toqkulrang: { uz: "To'q kulrang", ru: 'Темно-серый', en: 'Dark gray', fr: 'Gris foncé' },
+    toqkok: { uz: "To'q ko'k", ru: 'Темно-синий', en: 'Dark blue', fr: 'Bleu marine' },
+    novot: { uz: 'Novot', ru: 'Нават', en: 'Amber', fr: 'Ambre' },
+    blue: { uz: 'Ko‘k', ru: 'Синий', en: 'Blue', fr: 'Bleu' },
+    kok: { uz: 'Ko‘k', ru: 'Синий', en: 'Blue', fr: 'Bleu' },
+    navy: { uz: 'To‘q ko‘k', ru: 'Темно-синий', en: 'Navy Blue', fr: 'Bleu marine' },
+    green: { uz: 'Yashil', ru: 'Зеленый', en: 'Green', fr: 'Vert' },
+    yashil: { uz: 'Yashil', ru: 'Зеленый', en: 'Green', fr: 'Vert' },
+    red: { uz: 'Qizil', ru: 'Красный', en: 'Red', fr: 'Rouge' },
+    qizil: { uz: 'Qizil', ru: 'Красный', en: 'Red', fr: 'Rouge' },
+    yellow: { uz: 'Sariq', ru: 'Желтый', en: 'Yellow', fr: 'Jaune' },
+    sariq: { uz: 'Sariq', ru: 'Желтый', en: 'Yellow', fr: 'Jaune' },
+    pink: { uz: 'Pushti', ru: 'Розовый', en: 'Pink', fr: 'Rose' },
+    pushti: { uz: 'Pushti', ru: 'Розовый', en: 'Pink', fr: 'Rose' },
+    beige: { uz: 'Bej', ru: 'Бежевый', en: 'Beige', fr: 'Beige' },
+    bej: { uz: 'Bej', ru: 'Бежевый', en: 'Beige', fr: 'Beige' },
+    brown: { uz: 'Jigarrang', ru: 'Коричневый', en: 'Brown', fr: 'Marron' },
+    jigarrang: { uz: 'Jigarrang', ru: 'Коричневый', en: 'Brown', fr: 'Marron' },
+    burgundy: { uz: 'Bordo', ru: 'Бордовый', en: 'Burgundy', fr: 'Bordeaux' },
+    bordo: { uz: 'Bordo', ru: 'Бордовый', en: 'Burgundy', fr: 'Bordeaux' },
+    purple: { uz: 'Binafsha', ru: 'Фиолетовый', en: 'Purple', fr: 'Violet' },
+    binafsha: { uz: 'Binafsha', ru: 'Фиолетовый', en: 'Purple', fr: 'Violet' },
+    silver: { uz: 'Kumush', ru: 'Серебро', en: 'Silver', fr: 'Argent' },
+    kumush: { uz: 'Kumush', ru: 'Серебро', en: 'Silver', fr: 'Argent' },
+    kumushtilla: { uz: 'Kumush (tilla)', ru: 'Серебристый (золото)', en: 'Silver (gold)', fr: 'Argent (doré)' },
+    bronze: { uz: 'Bronza', ru: 'Бронза', en: 'Bronze', fr: 'Bronze' },
+    bronza: { uz: 'Bronza', ru: 'Бронза', en: 'Bronze', fr: 'Bronze' },
+    champagne: { uz: 'Shampan', ru: 'Шампань', en: 'Champagne', fr: 'Champagne' },
+    shampan: { uz: 'Shampan', ru: 'Шампань', en: 'Champagne', fr: 'Champagne' },
+    chrome: { uz: 'Xrom', ru: 'Хром', en: 'Chrome', fr: 'Chrome' },
+    xrom: { uz: 'Xrom', ru: 'Хром', en: 'Chrome', fr: 'Chrome' },
+    nickel: { uz: 'Nikel', ru: 'Никель', en: 'Nickel', fr: 'Nickel' },
+    nikel: { uz: 'Nikel', ru: 'Никель', en: 'Nickel', fr: 'Nickel' },
+    antik: { uz: 'Antik', ru: 'Античный', en: 'Antique', fr: 'Antique' },
+    malina: { uz: 'Malina', ru: 'Малиновый', en: 'Raspberry', fr: 'Framboise' },
+    miks: { uz: 'Miks', ru: 'Микс', en: 'Mix', fr: 'Mixte' },
+    mis: { uz: 'Mis', ru: 'Медь', en: 'Copper', fr: 'Cuivre' },
+    orik: { uz: "O'rik", ru: 'Абрикосовый', en: 'Apricot', fr: 'Abricot' },
+    shaftoli: { uz: 'Shaftoli', ru: 'Персиковый', en: 'Peach', fr: 'Pêche' },
+    tillaqaymoq: { uz: 'Tilla + Qaymoq', ru: 'Золотой + кремовый', en: 'Gold + cream', fr: 'Doré + crème' },
+    tillaqora: { uz: 'Tilla + Qora', ru: 'Золотой + черный', en: 'Gold + black', fr: 'Doré + noir' },
+    seriymokriy: { uz: 'Seriy + mokriy', ru: 'Серый + мокрый асфальт', en: 'Gray + wet asphalt', fr: 'Gris + anthracite' },
+}
+
+export const CATEGORY_TRANSLATIONS = {
+    'metall parda tutqichi': {
+        uz: 'Metall parda tutqichi',
+        ru: 'Металлический подхват для штор',
+        en: 'Metal curtain tieback',
+        fr: 'Embrasse rideau en métal',
+    },
+    'smoladan yasalgan parda tutqichi': {
+        uz: 'Smoladan yasalgan parda tutqichi',
+        ru: 'Смоляной подхват для штор',
+        en: 'Resin curtain tieback',
+        fr: 'Embrasse rideau en résine',
+    },
+    'derjatel': {
+        uz: 'Derjatel',
+        ru: 'Держатель',
+        en: 'Curtain holder',
+        fr: 'Support de rideau',
+    },
+    'г derjatel': {
+        uz: 'Г Derjatel',
+        ru: 'Г держатель',
+        en: 'L-shaped curtain holder',
+        fr: 'Support de rideau en L',
+    },
+    'g derjatel': {
+        uz: 'Г Derjatel',
+        ru: 'Г держатель',
+        en: 'L-shaped curtain holder',
+        fr: 'Support de rideau en L',
+    },
+    'arqon': {
+        uz: 'Arqon',
+        ru: 'Веревка',
+        en: 'Rope',
+        fr: 'Cordon / Corde',
+    },
+    'patalochniy parda tutqichi': {
+        uz: 'Patalochniy parda tutqichi',
+        ru: 'Потолочный держатель для штор',
+        en: 'Ceiling curtain holder',
+        fr: 'Support de rideau plafond',
+    },
+    "o'rta belbog'": {
+        uz: "O'rta belbog'",
+        ru: 'Подхват для штор',
+        en: 'Curtain tieback',
+        fr: 'Embrasse de rideau',
+    },
+    'orta belbog': {
+        uz: "O'rta belbog'",
+        ru: 'Подхват для штор',
+        en: 'Curtain tieback',
+        fr: 'Embrasse de rideau',
+    },
+    'bubon': {
+        uz: 'Bubon',
+        ru: 'Бубон',
+        en: 'Pompon',
+        fr: 'Pompon',
+    },
+}
+
+export function translateCategoryName(rawName, language = 'uz') {
+    if (!rawName || typeof rawName !== 'string') return ''
+    const s = rawName.trim()
+    if (!s) return ''
+    const low = s.toLowerCase().replace(/['‘`ʻ]/g, "'").replace(/\s+/g, ' ')
+    for (const [key, tr] of Object.entries(CATEGORY_TRANSLATIONS)) {
+        const normKey = key.toLowerCase().replace(/['‘`ʻ]/g, "'").replace(/\s+/g, ' ')
+        if (low === normKey || low.startsWith(normKey) || normKey.startsWith(low)) {
+            if (language === 'fr') return tr.fr || tr.en || tr.uz || s
+            if (language === 'en') return tr.en || tr.uz || s
+            if (language === 'ru') return tr.ru || tr.uz || s
+            if (language === 'uz') return tr.uz || s
+        }
+    }
+    return s
+}
+
 /**
  * product_colors qatori bo‘yicha joriy tilda rang nomi (Mahsulotlar bilan bir xil mantiq).
  * canonicalName — mahsulotda saqlangan kalit (odatda product_colors.name).
  */
-export function labelColorCanonical(canonicalName, productColors, language) {
+export function labelColorCanonical(canonicalName, productColors, language = 'uz') {
     if (canonicalName == null || String(canonicalName).trim() === '') return ''
     const s = String(canonicalName).trim()
-    if (!productColors?.length) return s
+
+    // Qavs ichida rang kodi bo‘lsa (masalan "Tilla (40686)" yoki "cream (41458)")
+    const parenMatch = s.match(/^(.*?)\s*(\([^)]+\))$/)
+    if (parenMatch && parenMatch[1]?.trim()) {
+        const baseColor = parenMatch[1].trim()
+        const codePart = parenMatch[2].trim()
+        const translatedBase = labelColorCanonical(baseColor, productColors, language)
+        return `${translatedBase} ${codePart}`
+    }
+
     const low = normalizeModelKey(s)
-    const row = productColors.find((x) => normalizeModelKey(String(x.name ?? '')) === low)
-    if (row) {
-        const loc = language === 'ru' ? 'name_ru' : language === 'en' ? 'name_en' : 'name_uz'
-        return row[loc] || row.name_uz || row.name_ru || row.name_en || row.name || s
+    const token = canonicalizeColorToken(s)
+
+    // 1. Agar product_colors bazasida mos tarjima bo‘lsa
+    if (productColors?.length) {
+        const row = productColors.find((x) => normalizeModelKey(String(x.name ?? '')) === low)
+        if (row) {
+            if (language === 'fr' && row.name_fr) return row.name_fr
+            if (language === 'en' && row.name_en) return row.name_en
+            if (language === 'ru' && row.name_ru) return row.name_ru
+            if (language === 'uz' && row.name_uz) return row.name_uz
+        }
+    }
+
+    // 2. Lug‘atdan izlash (uz, en, fr, ru)
+    const dict = COLOR_TRANSLATIONS[token] || COLOR_TRANSLATIONS[low]
+    if (dict) {
+        const tr = dict[language] || (language === 'fr' ? (dict.fr || dict.en) : dict[language])
+        if (tr) return tr
+    }
+
+    // 3. Fallback
+    if (productColors?.length) {
+        const row = productColors.find((x) => normalizeModelKey(String(x.name ?? '')) === low)
+        if (row) {
+            const loc = language === 'ru' ? 'name_ru' : language === 'en' ? 'name_en' : 'name_uz'
+            return row[loc] || row.name_en || row.name_uz || row.name_ru || row.name || s
+        }
     }
     return s
 }
@@ -1424,11 +1598,18 @@ export function groupOrderItemsForPrint(orderItems, productsList) {
 }
 
 /** Kategoriya nomi (chop etish) — mahsulotdan */
-export function categoryLabelFromGroupedLine(firstOi) {
+export function categoryLabelFromGroupedLine(firstOi, language = 'uz') {
     const cat = firstOi?.products?.categories
     if (cat && typeof cat === 'object') {
+        if (language === 'fr' && cat.name_fr) return String(cat.name_fr).trim()
+        if (language === 'en' && cat.name_en) return String(cat.name_en).trim()
+        if (language === 'ru' && cat.name_ru) return String(cat.name_ru).trim()
         const n = (cat.name_uz || cat.name || '').trim()
-        if (n) return n
+        if (n) return translateCategoryName(n, language)
+    }
+    const fallbackName = firstOi?.products?.category || ''
+    if (fallbackName && String(fallbackName).trim()) {
+        return translateCategoryName(String(fallbackName).trim(), language)
     }
     return ''
 }
@@ -1438,13 +1619,14 @@ export function categoryLabelFromProduct(product, language) {
     if (!product) return ''
     const cat = product.categories
     if (cat && typeof cat === 'object') {
-        if (language === 'ru' && cat.name) return String(cat.name).trim()
-        if (language === 'en' && (cat.name_en || cat.name)) return String(cat.name_en || cat.name).trim()
+        if (language === 'fr' && cat.name_fr) return String(cat.name_fr).trim()
+        if (language === 'en' && cat.name_en) return String(cat.name_en).trim()
+        if (language === 'ru' && (cat.name_ru || cat.name)) return String(cat.name_ru || cat.name).trim()
         const n = (cat.name_uz || cat.name || '').trim()
-        if (n) return n
+        if (n) return translateCategoryName(n, language)
     }
     if (product.category != null && String(product.category).trim() !== '') {
-        return String(product.category).trim()
+        return translateCategoryName(String(product.category).trim(), language)
     }
     return ''
 }
@@ -1494,25 +1676,222 @@ export function aggregateOrderColorTotals(groupedBuckets) {
     )
 }
 
-const PACKING_CHECK_ITEMS = [
-    'Umumiy soni buyurtmaga mos',
-    'Har bir rang miqdori mos',
-    'Model / o‘lcham mos',
-    'Kamomad / ortiqcha yo‘q',
-    'Vint / gayka',
-    'Noshka',
-    'Mahsulot sifati',
-    'Qadoqlashdan oldin qayta sanaldi',
-]
+export const PRINT_TRANSLATIONS = {
+    uz: {
+        docTitle: 'Buyurtma',
+        customer: 'Mijoz:',
+        phone: 'Tel:',
+        date: 'Sana',
+        shippedDate: 'Chiqqan',
+        id: 'ID:',
+        orderNo: '№',
+        unknown: 'Noma\'lum',
+        thNum: '#',
+        thImage: 'Rasm',
+        thCode: 'Kod',
+        thColor: 'Rang',
+        thQty: 'Miqdor',
+        thTotalPairs: 'Jami par',
+        thUnitPrice: '1 par',
+        thRowTotal: 'Qator',
+        thNote: 'Izoh',
+        thMark: 'Belgi',
+        categoryHeader: 'Kategoriya:',
+        categorySubtotal: 'Kategoriya jami',
+        total: 'Jami',
+        orderTotal: 'Buyurtma jami:',
+        thankYou: 'Xaridingiz uchun rahmat!',
+        packingTitle: 'QADOQLASHDAN OLDINGI YAKUNIY TEKSHIRUV',
+        packingOrderNo: 'Buyurtma №:',
+        packingCustomer: 'Mijoz:',
+        packingDate: 'Sana:',
+        packingDept: 'Bo‘lim:',
+        packingInspection: 'Tekshiruv',
+        packingChecklistItems: [
+            'Umumiy soni buyurtmaga mos',
+            'Har bir rang miqdori mos',
+            'Model / o‘lcham mos',
+            'Kamomad / ortiqcha yo‘q',
+            'Vint / gayka',
+            'Noshka',
+            'Mahsulot sifati',
+            'Qadoqlashdan oldin qayta sanaldi',
+        ],
+        packingConfirm: '☐ Ranglar alohida tekshirildi &nbsp;&nbsp; ☐ Almashtirish yo‘q &nbsp;&nbsp; ☐ Buyurtma bilan mos',
+        packingEmp: 'Xodim:',
+        packingSign: 'Imzo:',
+        packingTime: 'Vaqt:',
+        packingIssueTitle: 'Nomuvofiqlik (agar bo‘lsa)',
+        packingIssueColor: 'Muammo / rang:',
+        packingIssueOrdered: 'Buyurtma:',
+        packingIssueActual: 'Amalda:',
+        packingIssueResponsible: 'Mas\'ul:',
+        pcs: 'dona',
+    },
+    en: {
+        docTitle: 'Order',
+        customer: 'Customer:',
+        phone: 'Phone:',
+        date: 'Date',
+        shippedDate: 'Shipped Date',
+        id: 'ID:',
+        orderNo: 'Order #',
+        unknown: 'Unknown',
+        thNum: '#',
+        thImage: 'Image',
+        thCode: 'Code / SKU',
+        thColor: 'Color',
+        thQty: 'Quantity',
+        thTotalPairs: 'Total Pairs',
+        thUnitPrice: 'Unit Price',
+        thRowTotal: 'Total',
+        thNote: 'Note',
+        thMark: 'Mark',
+        categoryHeader: 'Category:',
+        categorySubtotal: 'Category Total',
+        total: 'Total',
+        orderTotal: 'Order Total:',
+        thankYou: 'Thank you for your business!',
+        packingTitle: 'FINAL PRE-PACKING INSPECTION',
+        packingOrderNo: 'Order #:',
+        packingCustomer: 'Customer:',
+        packingDate: 'Date:',
+        packingDept: 'Department:',
+        packingInspection: 'Inspection Check',
+        packingChecklistItems: [
+            'Total quantity matches order',
+            'Each color quantity matches order',
+            'Model / size matches order',
+            'No shortages / excesses',
+            'Screws / nuts included',
+            'Legs / brackets included',
+            'Product quality verified',
+            'Recounted before packing',
+        ],
+        packingConfirm: '☐ Colors verified individually &nbsp;&nbsp; ☐ No substitutions &nbsp;&nbsp; ☐ Matches order',
+        packingEmp: 'Staff:',
+        packingSign: 'Signature:',
+        packingTime: 'Time:',
+        packingIssueTitle: 'Discrepancy (if any)',
+        packingIssueColor: 'Problem / color:',
+        packingIssueOrdered: 'Ordered:',
+        packingIssueActual: 'Actual:',
+        packingIssueResponsible: 'Responsible:',
+        pcs: 'pcs',
+    },
+    fr: {
+        docTitle: 'Commande',
+        customer: 'Client :',
+        phone: 'Tél :',
+        date: 'Date',
+        shippedDate: 'Date d\'expédition',
+        id: 'ID :',
+        orderNo: 'N° de commande',
+        unknown: 'Inconnu',
+        thNum: '#',
+        thImage: 'Image',
+        thCode: 'Code / Réf',
+        thColor: 'Couleur',
+        thQty: 'Quantité',
+        thTotalPairs: 'Total paires',
+        thUnitPrice: 'Prix unitaire',
+        thRowTotal: 'Total',
+        thNote: 'Note',
+        thMark: 'Marque',
+        categoryHeader: 'Catégorie :',
+        categorySubtotal: 'Total catégorie',
+        total: 'Total',
+        orderTotal: 'Total de la commande :',
+        thankYou: 'Merci pour votre confiance !',
+        packingTitle: 'CONTRÔLE FINAL AVANT EMBALLAGE',
+        packingOrderNo: 'N° commande :',
+        packingCustomer: 'Client :',
+        packingDate: 'Date :',
+        packingDept: 'Département :',
+        packingInspection: 'Vérification',
+        packingChecklistItems: [
+            'Quantité totale conforme à la commande',
+            'Quantité de chaque couleur conforme',
+            'Modèle / taille conforme',
+            'Ni manque / ni surplus',
+            'Vis / écrous inclus',
+            'Pieds / supports inclus',
+            'Qualité du produit vérifiée',
+            'Recompté avant emballage',
+        ],
+        packingConfirm: '☐ Couleurs vérifiées individuellement &nbsp;&nbsp; ☐ Aucune substitution &nbsp;&nbsp; ☐ Conforme à la commande',
+        packingEmp: 'Employé :',
+        packingSign: 'Signature :',
+        packingTime: 'Heure :',
+        packingIssueTitle: 'Non-conformité (le cas échéant)',
+        packingIssueColor: 'Problème / couleur :',
+        packingIssueOrdered: 'Commandé :',
+        packingIssueActual: 'Réel :',
+        packingIssueResponsible: 'Responsable :',
+        pcs: 'pièces',
+    },
+    ru: {
+        docTitle: 'Заказ',
+        customer: 'Клиент:',
+        phone: 'Тел:',
+        date: 'Дата',
+        shippedDate: 'Дата отгрузки',
+        id: 'ID:',
+        orderNo: '№',
+        unknown: 'Неизвестно',
+        thNum: '#',
+        thImage: 'Фото',
+        thCode: 'Код',
+        thColor: 'Цвет',
+        thQty: 'Количество',
+        thTotalPairs: 'Всего пар',
+        thUnitPrice: 'За 1 пару',
+        thRowTotal: 'Строка',
+        thNote: 'Примечание',
+        thMark: 'Метка',
+        categoryHeader: 'Категория:',
+        categorySubtotal: 'Итого по категории',
+        total: 'Итого',
+        orderTotal: 'Итого по заказу:',
+        thankYou: 'Спасибо за покупку!',
+        packingTitle: 'ИТОГОВАЯ ПРОВЕРКА ПЕРЕД УПАКОВКОЙ',
+        packingOrderNo: 'Заказ №:',
+        packingCustomer: 'Клиент:',
+        packingDate: 'Дата:',
+        packingDept: 'Отдел:',
+        packingInspection: 'Проверка',
+        packingChecklistItems: [
+            'Общее количество соответствует заказу',
+            'Количество по каждому цвету совпадает',
+            'Модель / размер совпадает',
+            'Нет недостачи / излишка',
+            'Винты / гайки',
+            'Ножки',
+            'Качество продукции',
+            'Пересчитано перед упаковкой',
+        ],
+        packingConfirm: '☐ Цвета проверены отдельно &nbsp;&nbsp; ☐ Без замен &nbsp;&nbsp; ☐ Соответствует заказу',
+        packingEmp: 'Сотрудник:',
+        packingSign: 'Подпись:',
+        packingTime: 'Время:',
+        packingIssueTitle: 'Несоответствие (если есть)',
+        packingIssueColor: 'Проблема / цвет:',
+        packingIssueOrdered: 'Заказ:',
+        packingIssueActual: 'Факт:',
+        packingIssueResponsible: 'Ответственный:',
+        pcs: 'шт',
+    }
+}
 
 /**
  * Qadoqlashdan oldingi yakuniy tekshiruv blankasi — chop oxiriga.
  * Bitta A4 sahifani to‘liqroq egallaydi.
  */
-export function buildPackingChecklistHtml(item) {
+export function buildPackingChecklistHtml(item, language = 'uz') {
+    const tPrint = PRINT_TRANSLATIONS[language] || PRINT_TRANSLATIONS.uz
     const customerName = escapeHtml(item.customer_name || item.customers?.name || '—')
     const orderNo = escapeHtml(item.order_number || String(item.id || '').slice(0, 8) || '—')
-    const checkRows = PACKING_CHECK_ITEMS.map(
+    const checkRows = (tPrint.packingChecklistItems || []).map(
         (text, i) =>
             `<tr><td class="pk-num">${i + 1}</td><td>${escapeHtml(text)}</td><td class="pk-check">☐</td></tr>`
     ).join('')
@@ -1520,55 +1899,55 @@ export function buildPackingChecklistHtml(item) {
     return `
 <div class="packing-check page-break-before">
   <div class="pk-top">
-    <h2 class="pk-title">QADOQLASHDAN OLDINGI YAKUNIY TEKSHIRUV</h2>
+    <h2 class="pk-title">${escapeHtml(tPrint.packingTitle)}</h2>
     <div class="pk-meta">
-      <span><strong>Buyurtma №:</strong> ${orderNo}</span>
-      <span><strong>Mijoz:</strong> ${customerName}</span>
-      <span><strong>Sana:</strong> ____________________</span>
-      <span><strong>Bo‘lim:</strong> ____________________</span>
+      <span><strong>${escapeHtml(tPrint.packingOrderNo)}</strong> ${orderNo}</span>
+      <span><strong>${escapeHtml(tPrint.packingCustomer)}</strong> ${customerName}</span>
+      <span><strong>${escapeHtml(tPrint.packingDate)}</strong> ____________________</span>
+      <span><strong>${escapeHtml(tPrint.packingDept)}</strong> ____________________</span>
     </div>
 
     <table class="pk-table pk-checks-table">
-      <thead><tr><th class="pk-num">№</th><th>Tekshiruv</th><th>✓</th></tr></thead>
+      <thead><tr><th class="pk-num">№</th><th>${escapeHtml(tPrint.packingInspection)}</th><th>✓</th></tr></thead>
       <tbody>${checkRows}</tbody>
     </table>
   </div>
 
   <div class="pk-foot">
     <div class="pk-confirm">
-      ☐ Ranglar alohida tekshirildi &nbsp;&nbsp;
-      ☐ Almashtirish yo‘q &nbsp;&nbsp;
-      ☐ Buyurtma bilan mos
+      ${tPrint.packingConfirm}
     </div>
     <div class="pk-sign">
-      <span><strong>Xodim:</strong> ________________________</span>
-      <span><strong>Imzo:</strong> ________________________</span>
-      <span><strong>Vaqt:</strong> ____________________</span>
+      <span><strong>${escapeHtml(tPrint.packingEmp)}</strong> ________________________</span>
+      <span><strong>${escapeHtml(tPrint.packingSign)}</strong> ________________________</span>
+      <span><strong>${escapeHtml(tPrint.packingTime)}</strong> ____________________</span>
     </div>
     <div class="pk-issue">
-      <div class="pk-issue-title">Nomuvofiqlik (agar bo‘lsa)</div>
-      <div class="pk-issue-line"><strong>Muammo / rang:</strong> ________________________________________________________________</div>
-      <div class="pk-issue-line"><strong>Buyurtma:</strong> ________ dona &nbsp;&nbsp; <strong>Amalda:</strong> ________ dona &nbsp;&nbsp; <strong>Mas'ul:</strong> ____________________</div>
+      <div class="pk-issue-title">${escapeHtml(tPrint.packingIssueTitle)}</div>
+      <div class="pk-issue-line"><strong>${escapeHtml(tPrint.packingIssueColor)}</strong> ________________________________________________________________</div>
+      <div class="pk-issue-line"><strong>${escapeHtml(tPrint.packingIssueOrdered)}</strong> ________ ${escapeHtml(tPrint.pcs)} &nbsp;&nbsp; <strong>${escapeHtml(tPrint.packingIssueActual)}</strong> ________ ${escapeHtml(tPrint.pcs)} &nbsp;&nbsp; <strong>${escapeHtml(tPrint.packingIssueResponsible)}</strong> ____________________</div>
     </div>
   </div>
 </div>`
 }
 
-export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, tableConfig) {
-    const customerName = escapeHtml(item.customer_name || item.customers?.name || 'Noma\'lum')
+export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList, tableConfig, language = 'uz') {
+    const tPrint = PRINT_TRANSLATIONS[language] || PRINT_TRANSLATIONS.uz
+    const customerName = escapeHtml(item.customer_name || item.customers?.name || tPrint.unknown)
     const phone = escapeHtml(item.customer_phone || item.customers?.phone || '-')
     const isCompleted = isOrderCompletedStatus(item.status)
     const dateRaw =
         item._print_date ||
         (isCompleted ? item.completed_at : null) ||
         item.created_at
+    const localeCode = language === 'fr' ? 'fr-FR' : language === 'en' ? 'en-US' : language === 'ru' ? 'ru-RU' : 'uz-UZ'
     const date = dateRaw
-        ? escapeHtml(new Date(dateRaw).toLocaleDateString())
+        ? escapeHtml(new Date(dateRaw).toLocaleDateString(localeCode))
         : '—'
-    const defaultDateLabel = isCompleted && (item._print_date || item.completed_at) ? 'Chiqqan' : 'Sana'
+    const defaultDateLabel = isCompleted && (item._print_date || item.completed_at) ? tPrint.shippedDate : tPrint.date
     const dateLabel = escapeHtml(String(item._print_date_label || defaultDateLabel).trim() || defaultDateLabel)
     const shortId = escapeHtml(String(item.id).slice(0, 8))
-    const orderNumHtml = item.order_number ? `<strong>№</strong> ${escapeHtml(String(item.order_number))}<br>` : ''
+    const orderNumHtml = item.order_number ? `<strong>${escapeHtml(tPrint.orderNo)}:</strong> ${escapeHtml(String(item.order_number))}<br>` : ''
     const portionNoteHtml = item._print_note
         ? `<p style="margin:0 0 12px;padding:8px 10px;background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;color:#0e7490;font-size:0.85rem;font-weight:600">${escapeHtml(String(item._print_note))}</p>`
         : ''
@@ -1577,8 +1956,11 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const withNote = (!showPrices && !!tableConfig?.includePrintNoteColumn) || (showPrices && !!tableConfig?.includePrintNoteWithPrices)
     const withExtra = (!showPrices && !!tableConfig?.includePrintExtraColumn) || (showPrices && !!tableConfig?.includePrintExtraWithPrices)
     const colSpanAll = (showPrices ? 8 : 6) + (withNote ? 1 : 0) + (withExtra ? 1 : 0)
-    const noteTh = escapeHtml(showPrices ? String(tableConfig?.printNoteTitleWithPrices ?? 'Izoh').trim() || 'Izoh' : String(tableConfig?.printNoteTitle ?? 'Izoh').trim() || 'Izoh')
-    const extraTh = escapeHtml(showPrices ? String(tableConfig?.printExtraTitleWithPrices ?? 'Belgi').trim() || 'Belgi' : String(tableConfig?.printExtraTitle ?? 'Belgi').trim() || 'Belgi')
+    
+    const customNoteTitle = showPrices ? tableConfig?.printNoteTitleWithPrices : tableConfig?.printNoteTitle
+    const noteTh = escapeHtml(customNoteTitle && String(customNoteTitle).trim() && customNoteTitle !== 'Izoh' ? String(customNoteTitle).trim() : tPrint.thNote)
+    const customExtraTitle = showPrices ? tableConfig?.printExtraTitleWithPrices : tableConfig?.printExtraTitle
+    const extraTh = escapeHtml(customExtraTitle && String(customExtraTitle).trim() && customExtraTitle !== 'Belgi' ? String(customExtraTitle).trim() : tPrint.thMark)
     const noteCellEmpty = withNote ? '<td class="print-note-cell"></td>' : ''
     const extraCell = withExtra ? '<td class="print-extra-cell"></td>' : ''
 
@@ -1599,24 +1981,24 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
             </tr>`
     }
 
-    const hasCategoryMeta = grouped.some((g) => Boolean(categoryLabelFromGroupedLine(g.lines[0])))
+    const hasCategoryMeta = grouped.some((g) => Boolean(categoryLabelFromGroupedLine(g.lines[0], language)))
     let rowHtml = ''
     let rowNum = 1
     if (!hasCategoryMeta) {
         rowHtml = grouped.map((g) => oneDataRowHtml(g, rowNum++)).join('')
     } else {
         let currentKey = null; let secPieces = 0; let secMoney = 0
-        const catKey = (g) => categoryLabelFromGroupedLine(g.lines[0]) || '__none__'
+        const catKey = (g) => categoryLabelFromGroupedLine(g.lines[0], language) || '__none__'
         for (const g of grouped) {
             const key = catKey(g)
             if (currentKey !== null && key !== currentKey) {
                 const pCells = showPrices ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>` : ''
-                rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${pCells}${noteCellEmpty}${extraCell}</tr>`
+                rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">${escapeHtml(tPrint.categorySubtotal)}</td><td class="mono">${secPieces}</td>${pCells}${noteCellEmpty}${extraCell}</tr>`
                 secPieces = 0; secMoney = 0
             }
             if (key !== currentKey) {
-                const lab = categoryLabelFromGroupedLine(g.lines[0]) || '—'
-                rowHtml += `<tr class="cat-header-row"><td colspan="${colSpanAll}" style="background:#e2efda;font-weight:700;padding:8px 6px;font-size:0.9rem">Kategoriya: ${escapeHtml(lab)}</td></tr>`
+                const lab = categoryLabelFromGroupedLine(g.lines[0], language) || '—'
+                rowHtml += `<tr class="cat-header-row"><td colspan="${colSpanAll}" style="background:#e2efda;font-weight:700;padding:8px 6px;font-size:0.9rem">${escapeHtml(tPrint.categoryHeader)} ${escapeHtml(lab)}</td></tr>`
                 currentKey = key
             }
             rowHtml += oneDataRowHtml(g, rowNum++)
@@ -1625,7 +2007,7 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
         }
         if (currentKey !== null) {
             const pCells = showPrices ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(secMoney))}</td>` : ''
-            rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">Kategoriya jami</td><td class="mono">${secPieces}</td>${pCells}${noteCellEmpty}${extraCell}</tr>`
+            rowHtml += `<tr class="cat-subtotal-row"><td colspan="5" style="text-align:right;font-weight:700;background:#eef2ff">${escapeHtml(tPrint.categorySubtotal)}</td><td class="mono">${secPieces}</td>${pCells}${noteCellEmpty}${extraCell}</tr>`
         }
     }
     const totalPar = grouped.reduce((s, g) => (Number(s) || 0) + (Number(g.totalPieces) || 0), 0)
@@ -1634,22 +2016,23 @@ export function buildOrderBlockHtml(item, showPrices, labelColorFn, productsList
     const savedTotal = Number.isFinite(savedTotalRaw) ? savedTotalRaw : null
     const grandTotal = savedTotal != null ? savedTotal : totalMoney
     const fPriceCells = showPrices ? `<td class="mono totals-td totals-empty"></td><td class="mono totals-td">$${escapeHtml(formatUsd(grandTotal))}</td>` : ''
-    const fRow = `<tr class="totals-row"><td class="totals-label" colspan="5">Jami</td><td class="mono totals-td">${totalPar}</td>${fPriceCells}${noteCellEmpty}${extraCell}</tr>`
-    const thPrice = showPrices ? '<th class="th-narrow">1 par</th><th class="th-narrow">Qator</th>' : ''
+    const fRow = `<tr class="totals-row"><td class="totals-label" colspan="5">${escapeHtml(tPrint.total)}</td><td class="mono totals-td">${totalPar}</td>${fPriceCells}${noteCellEmpty}${extraCell}</tr>`
+    const thPrice = showPrices ? `<th class="th-narrow">${escapeHtml(tPrint.thUnitPrice)}</th><th class="th-narrow">${escapeHtml(tPrint.thRowTotal)}</th>` : ''
     const thNote = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
     const thExtra = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
-    const packingHtml = buildPackingChecklistHtml(item)
+    const packingHtml = buildPackingChecklistHtml(item, language)
 
-    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>Mijoz:</strong> ${customerName}<br><strong>Tel:</strong> ${phone}</div><div style="text-align:right"><strong>${dateLabel}:</strong> ${date}<br>${orderNumHtml}<strong>ID:</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>#</th><th>Rasm</th><th>Kod</th><th class="th-rang">Rang</th><th class="th-miqdor">Miqdor</th><th>Jami par</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>Buyurtma jami:</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}${packingHtml}</div>`
+    return `<div class="order-block">${portionNoteHtml}<div class="info"><div><strong>${escapeHtml(tPrint.customer)}</strong> ${customerName}<br><strong>${escapeHtml(tPrint.phone)}</strong> ${phone}</div><div style="text-align:right"><strong>${dateLabel}:</strong> ${date}<br>${orderNumHtml}<strong>${escapeHtml(tPrint.id)}</strong> #${shortId}</div></div><table class="items-table"><thead><tr><th>${escapeHtml(tPrint.thNum)}</th><th>${escapeHtml(tPrint.thImage)}</th><th>${escapeHtml(tPrint.thCode)}</th><th class="th-rang">${escapeHtml(tPrint.thColor)}</th><th class="th-miqdor">${escapeHtml(tPrint.thQty)}</th><th>${escapeHtml(tPrint.thTotalPairs)}</th>${thPrice}${thNote}${thExtra}</tr></thead><tbody>${rowHtml}</tbody></table><table class="items-table order-totals-table"><tbody>${fRow}</tbody></table>${showPrices ? `<p class="print-order-totals-check" style="font-size:0.82rem;color:#555;margin-top:10px;line-height:1.4"><strong>${escapeHtml(tPrint.orderTotal)}</strong> $${escapeHtml(formatUsd(grandTotal))}</p>` : ''}${packingHtml}</div>`
 }
 
-export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {
-    const blocks = orders.map((o) => buildOrderBlockHtml(o, showPrices, labelColorFn, productsList, tableConfig)).join('<div class="page-break"></div>')
+export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig, language = 'uz' }) {
+    const tPrint = PRINT_TRANSLATIONS[language] || PRINT_TRANSLATIONS.uz
+    const blocks = orders.map((o) => buildOrderBlockHtml(o, showPrices, labelColorFn, productsList, tableConfig, language)).join('<div class="page-break"></div>')
     const listBanner = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
     const imagePx = imagePxBySize(tableConfig?.imageSize)
     const imageWrapPx = imagePx + 10
     const imageCellPx = imagePx + 14
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>body{font-family:sans-serif;padding:40px;color:#333}.header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}.header h1{margin:0;color:#1a1a1a;font-size:1.25rem}.list-banner{color:#555;font-size:0.95rem;margin-bottom:16px}.order-block{margin-bottom:24px}.info{display:flex;justify-content:space-between;margin-bottom:20px}table.items-table{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #8c8c8c;box-shadow:0 1px 2px rgba(0,0,0,.06)}.order-block table.items-table:not(.order-totals-table){margin-bottom:0}table.items-table thead{display:table-header-group}table.items-table th{background:#ffeb9c;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #c9a227;font-size:0.82rem;font-weight:700}table.items-table th.th-narrow{white-space:nowrap}table.items-table th.th-rang{background:#fff2cc}table.items-table th.th-miqdor{background:#e2efda}table.items-table td{padding:8px 6px;border:1px solid #b4b4b4;vertical-align:top}table.items-table tbody tr{page-break-inside:avoid}table.items-table tbody tr:nth-child(odd) td{background:#fffef7}table.items-table tbody tr:nth-child(even) td{background:#e7f3ff}table.items-table tbody tr:nth-child(even) td.colors-stack{background:#f5fbff}table.items-table tbody tr:nth-child(even) td.qty-stack{background:#eef7f0}table.items-table tbody tr:nth-child(odd) td.colors-stack{background:#fffdf0}table.items-table tbody tr:nth-child(odd) td.qty-stack{background:#f7fdf5}table.order-totals-table{width:100%;margin-top:-1px;margin-bottom:16px;page-break-inside:avoid}table.order-totals-table .totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}table.order-totals-table .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}table.order-totals-table .totals-td{text-align:right;vertical-align:middle}table.order-totals-table .totals-empty{color:#999;font-weight:400}tr.cat-header-row td{background:#e2efda!important;border:1px solid #92c47c!important}tr.cat-subtotal-row td{background:#eef2ff!important;border:1px solid #9ca3af!important}.mono{font-variant-numeric:tabular-nums}.colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.88rem;line-height:1.35}.qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.88rem;line-height:1.35}.colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.35;min-height:1.25em;font-size:0.85rem}.qty-stack .stack-line{font-weight:600}.prod-img-cell{width:${imageCellPx}px;max-width:${imageCellPx}px;min-width:${imageCellPx}px;text-align:center;vertical-align:middle;padding:6px!important;overflow:hidden;background:#fff!important}.prod-thumb-wrap{max-width:100%;max-height:${imageWrapPx}px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.prod-thumb{max-width:${imagePx}px;max-height:${imagePx}px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}.prod-no-img{color:#999;font-size:0.85rem}table.items-table th.th-izoh{background:#ede9fe;color:#1a1a1a;min-width:5rem}.print-note-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:top;text-align:left;line-height:1.35;border:1px dashed #c4b5fd!important}table.items-table th.th-extra{background:#dbeafe;color:#1a1a1a;min-width:5rem}.print-extra-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #93c5fd!important}.page-break{page-break-after:always;border:none;margin:24px 0;padding:0;height:0;overflow:hidden}.footer{margin-top:32px;text-align:center;color:#666;font-size:0.8em;border-top:1px solid #eee;padding-top:16px}.packing-check{margin-top:0;padding:10px 0 0;border-top:2px solid #1a1a1a;font-size:0.88rem;min-height:255mm;box-sizing:border-box;display:flex;flex-direction:column}.page-break-before{page-break-before:always}.pk-top{flex:0 0 auto}.pk-title{margin:0 0 10px;font-size:1.15rem;letter-spacing:.02em;text-align:center}.pk-subtitle{margin:14px 0 8px;font-size:0.95rem}.pk-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:12px;font-size:0.88rem}.pk-grow{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}.pk-grow .pk-colors{flex:1 1 auto}.pk-table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:0.86rem}.pk-table th,.pk-table td{border:1px solid #8c8c8c;padding:7px 8px;vertical-align:middle;line-height:1.3}.pk-table th{background:#f3f4f6;font-weight:700}.pk-checks-table th:last-child,.pk-checks-table td:last-child{width:3.2rem;text-align:center}.pk-colors th:nth-child(3),.pk-colors th:nth-child(4),.pk-colors th:nth-child(5),.pk-colors th:nth-child(6),.pk-colors td:nth-child(3),.pk-colors td:nth-child(4),.pk-colors td:nth-child(5),.pk-colors td:nth-child(6){width:5.5rem;text-align:center}.pk-colors tbody tr{height:2.1em}.pk-num{width:2rem;text-align:center}.pk-check{text-align:center;font-size:1.15rem}.pk-center{text-align:center}.pk-blank{min-height:1.6em;height:1.6em;background:#fffef7}.pk-total-row td{background:#eef2ff;font-weight:700}.pk-foot{flex:0 0 auto;margin-top:auto;padding-top:12px;font-size:0.86rem}.pk-confirm{margin:0 0 10px;padding:10px 12px;border:1px solid #c9a227;background:#fffbeb;font-size:0.88rem}.pk-sign{display:flex;flex-wrap:wrap;gap:10px 22px;margin:10px 0 12px;font-size:0.88rem}.pk-issue{margin-top:4px;padding:10px 12px;border:1px dashed #9ca3af}.pk-issue-title{font-weight:700;margin-bottom:8px}.pk-issue-line{margin:8px 0}@media print{body{padding:12px 18px}.footer{page-break-inside:avoid;margin-top:8px;padding-top:6px;font-size:0.7em}.order-block:has(.packing-check)~.footer{display:none}.packing-check{min-height:255mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}table.items-table th,table.items-table td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>NUUR_HOME_COLLECTION</h1></div>${listBanner}${blocks}<div class="footer">Nuur_Home_Collection<br>Xaridingiz uchun rahmat!</div><script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script></body></html>`
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle || tPrint.docTitle)}</title><style>body{font-family:sans-serif;padding:40px;color:#333}.header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}.header h1{margin:0;color:#1a1a1a;font-size:1.25rem}.list-banner{color:#555;font-size:0.95rem;margin-bottom:16px}.order-block{margin-bottom:24px}.info{display:flex;justify-content:space-between;margin-bottom:20px}table.items-table{width:100%;border-collapse:collapse;margin-bottom:16px;border:1px solid #8c8c8c;box-shadow:0 1px 2px rgba(0,0,0,.06)}.order-block table.items-table:not(.order-totals-table){margin-bottom:0}table.items-table thead{display:table-header-group}table.items-table th{background:#ffeb9c;color:#1a1a1a;text-align:left;padding:8px 6px;border:1px solid #c9a227;font-size:0.82rem;font-weight:700}table.items-table th.th-narrow{white-space:nowrap}table.items-table th.th-rang{background:#fff2cc}table.items-table th.th-miqdor{background:#e2efda}table.items-table td{padding:8px 6px;border:1px solid #b4b4b4;vertical-align:top}table.items-table tbody tr{page-break-inside:avoid}table.items-table tbody tr:nth-child(odd) td{background:#fffef7}table.items-table tbody tr:nth-child(even) td{background:#e7f3ff}table.items-table tbody tr:nth-child(even) td.colors-stack{background:#f5fbff}table.items-table tbody tr:nth-child(even) td.qty-stack{background:#eef7f0}table.items-table tbody tr:nth-child(odd) td.colors-stack{background:#fffdf0}table.items-table tbody tr:nth-child(odd) td.qty-stack{background:#f7fdf5}table.order-totals-table{width:100%;margin-top:-1px;margin-bottom:16px;page-break-inside:avoid}table.order-totals-table .totals-row td{background:#d9e1f2!important;border-top:2px solid #4472c4;font-weight:700;font-size:0.88rem}table.order-totals-table .totals-label{text-align:right;padding:10px 8px;color:#1a1a1a}table.order-totals-table .totals-td{text-align:right;vertical-align:middle}table.order-totals-table .totals-empty{color:#999;font-weight:400}tr.cat-header-row td{background:#e2efda!important;border:1px solid #92c47c!important}tr.cat-subtotal-row td{background:#eef2ff!important;border:1px solid #9ca3af!important}.mono{font-variant-numeric:tabular-nums}.colors-stack{min-width:6.5rem;max-width:13rem;vertical-align:top;font-size:0.88rem;line-height:1.35}.qty-stack{min-width:3rem;text-align:right;vertical-align:top;font-size:0.88rem;line-height:1.35}.colors-stack .stack-line,.qty-stack .stack-line{padding:2px 0;line-height:1.35;min-height:1.25em;font-size:0.85rem}.qty-stack .stack-line{font-weight:600}.prod-img-cell{width:${imageCellPx}px;max-width:${imageCellPx}px;min-width:${imageCellPx}px;text-align:center;vertical-align:middle;padding:6px!important;overflow:hidden;background:#fff!important}.prod-thumb-wrap{max-width:100%;max-height:${imageWrapPx}px;margin:0 auto;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.prod-thumb{max-width:${imagePx}px;max-height:${imagePx}px;width:auto;height:auto;object-fit:contain;object-position:center;vertical-align:middle;border-radius:6px;display:block;background:transparent;mix-blend-mode:multiply}.prod-no-img{color:#999;font-size:0.85rem}table.items-table th.th-izoh{background:#ede9fe;color:#1a1a1a;min-width:5rem}.print-note-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:top;text-align:left;line-height:1.35;border:1px dashed #c4b5fd!important}table.items-table th.th-extra{background:#dbeafe;color:#1a1a1a;min-width:5rem}.print-extra-cell{min-width:5.5rem;min-height:2.5rem;background:#fff!important;vertical-align:middle;border:1px dashed #93c5fd!important}.page-break{page-break-after:always;border:none;margin:24px 0;padding:0;height:0;overflow:hidden}.footer{margin-top:32px;text-align:center;color:#666;font-size:0.8em;border-top:1px solid #eee;padding-top:16px}.packing-check{margin-top:0;padding:10px 0 0;border-top:2px solid #1a1a1a;font-size:0.88rem;min-height:255mm;box-sizing:border-box;display:flex;flex-direction:column}.page-break-before{page-break-before:always}.pk-top{flex:0 0 auto}.pk-title{margin:0 0 10px;font-size:1.15rem;letter-spacing:.02em;text-align:center}.pk-subtitle{margin:14px 0 8px;font-size:0.95rem}.pk-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;margin-bottom:12px;font-size:0.88rem}.pk-grow{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}.pk-grow .pk-colors{flex:1 1 auto}.pk-table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:0.86rem}.pk-table th,.pk-table td{border:1px solid #8c8c8c;padding:7px 8px;vertical-align:middle;line-height:1.3}.pk-table th{background:#f3f4f6;font-weight:700}.pk-checks-table th:last-child,.pk-checks-table td:last-child{width:3.2rem;text-align:center}.pk-colors th:nth-child(3),.pk-colors th:nth-child(4),.pk-colors th:nth-child(5),.pk-colors th:nth-child(6),.pk-colors td:nth-child(3),.pk-colors td:nth-child(4),.pk-colors td:nth-child(5),.pk-colors td:nth-child(6){width:5.5rem;text-align:center}.pk-colors tbody tr{height:2.1em}.pk-num{width:2rem;text-align:center}.pk-check{text-align:center;font-size:1.15rem}.pk-center{text-align:center}.pk-blank{min-height:1.6em;height:1.6em;background:#fffef7}.pk-total-row td{background:#eef2ff;font-weight:700}.pk-foot{flex:0 0 auto;margin-top:auto;padding-top:12px;font-size:0.86rem}.pk-confirm{margin:0 0 10px;padding:10px 12px;border:1px solid #c9a227;background:#fffbeb;font-size:0.88rem}.pk-sign{display:flex;flex-wrap:wrap;gap:10px 22px;margin:10px 0 12px;font-size:0.88rem}.pk-issue{margin-top:4px;padding:10px 12px;border:1px dashed #9ca3af}.pk-issue-title{font-weight:700;margin-bottom:8px}.pk-issue-line{margin:8px 0}@media print{body{padding:12px 18px}.footer{page-break-inside:avoid;margin-top:8px;padding-top:6px;font-size:0.7em}.order-block:has(.packing-check)~.footer{display:none}.packing-check{min-height:255mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}table.items-table th,table.items-table td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class="header"><h1>NUUR_HOME_COLLECTION</h1></div>${listBanner}${blocks}<div class="footer">Nuur_Home_Collection<br>${escapeHtml(tPrint.thankYou)}</div><script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script></body></html>`
 }
 
 /**
@@ -1662,25 +2045,28 @@ export function buildPrintDocumentHtml({ documentTitle, listTitle, orders, showP
  * Umumlashtirilgan (consolidated) kategoriya bo‘yicha chop etish htmlli.
  * Tanlangan barcha buyurtmalardagi mahsulotlar bitta yirik jadvalda kategoriya bo‘yicha guruhlanadi.
  */
-export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig }) {
+export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, showPrices, labelColorFn, productsList, tableConfig, language = 'uz' }) {
+    const tPrint = PRINT_TRANSLATIONS[language] || PRINT_TRANSLATIONS.uz
     // 1. Kategoriyalarni aniqlaymiz
     const allUniqueCategories = new Set()
     for (const o of orders) {
         for (const oi of normalizeOrderItemsForList(o.order_items)) {
-            const cat = categoryLabelFromGroupedLine(oi) || '—'
+            const cat = categoryLabelFromGroupedLine(oi, language) || '—'
             allUniqueCategories.add(cat)
         }
     }
-    const categoriesSorted = Array.from(allUniqueCategories).sort((a, b) => a.localeCompare(b, 'uz'))
+    const categoriesSorted = Array.from(allUniqueCategories).sort((a, b) => a.localeCompare(b, language === 'ru' ? 'ru' : 'uz'))
 
     const withNote = (!showPrices && !!tableConfig?.includePrintNoteColumn) || (showPrices && !!tableConfig?.includePrintNoteWithPrices)
     const withExtra = (!showPrices && !!tableConfig?.includePrintExtraColumn) || (showPrices && !!tableConfig?.includePrintExtraWithPrices)
     const colSpanFixed = 6 // #, Rasm, Kod, Rang, Miqdor, Jami par
     const colSpanAll = colSpanFixed + (showPrices ? 2 : 0) + (withNote ? 1 : 0) + (withExtra ? 1 : 0)
 
-    const noteTh = escapeHtml(showPrices ? String(tableConfig?.printNoteTitleWithPrices ?? 'Izoh').trim() || 'Izoh' : String(tableConfig?.printNoteTitle ?? 'Izoh').trim() || 'Izoh')
-    const extraTh = escapeHtml(showPrices ? String(tableConfig?.printExtraTitleWithPrices ?? 'Belgi').trim() || 'Belgi' : String(tableConfig?.printExtraTitle ?? 'Belgi').trim() || 'Belgi')
-    const thPrice = showPrices ? '<th class="th-narrow">1 par</th><th class="th-narrow">Qator</th>' : ''
+    const customNoteTitle = showPrices ? tableConfig?.printNoteTitleWithPrices : tableConfig?.printNoteTitle
+    const noteTh = escapeHtml(customNoteTitle && String(customNoteTitle).trim() && customNoteTitle !== 'Izoh' ? String(customNoteTitle).trim() : tPrint.thNote)
+    const customExtraTitle = showPrices ? tableConfig?.printExtraTitleWithPrices : tableConfig?.printExtraTitle
+    const extraTh = escapeHtml(customExtraTitle && String(customExtraTitle).trim() && customExtraTitle !== 'Belgi' ? String(customExtraTitle).trim() : tPrint.thMark)
+    const thPrice = showPrices ? `<th class="th-narrow">${escapeHtml(tPrint.thUnitPrice)}</th><th class="th-narrow">${escapeHtml(tPrint.thRowTotal)}</th>` : ''
     const thNote = withNote ? `<th class="th-izoh">${noteTh}</th>` : ''
     const thExtra = withExtra ? `<th class="th-extra">${extraTh}</th>` : ''
 
@@ -1716,14 +2102,14 @@ export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, s
 
         // Shu kategoriyaga tegishli mahsulotlari bor mijozlarni topamiz
         for (const o of orders) {
-            const customerItems = normalizeOrderItemsForList(o.order_items).filter(oi => (categoryLabelFromGroupedLine(oi) || '—') === categoryName)
+            const customerItems = normalizeOrderItemsForList(o.order_items).filter(oi => (categoryLabelFromGroupedLine(oi, language) || '—') === categoryName)
             if (customerItems.length === 0) continue
 
             const groupedRaw = groupOrderItemsForPrint(customerItems, productsList)
             const grouped = sortGroupedBucketsForPrint(groupedRaw)
 
-            const customerName = escapeHtml(o.customer_name || o.customers?.name || 'Mijoz')
-            const customerHeader = `<h3 style="margin: 15px 0 8px 0; font-size: 1rem; color: #1e40af;">Mijoz: ${customerName}</h3>`
+            const customerName = escapeHtml(o.customer_name || o.customers?.name || tPrint.unknown)
+            const customerHeader = `<h3 style="margin: 15px 0 8px 0; font-size: 1rem; color: #1e40af;">${escapeHtml(tPrint.customer)} ${customerName}</h3>`
             
             let rowHtml = ''
             let rowNum = 1
@@ -1742,19 +2128,19 @@ export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, s
                     <table class="items-table">
                         <thead>
                             <tr>
-                                <th>#</th>
-                                <th>Rasm</th>
-                                <th>Kod</th>
-                                <th class="th-rang">Rang</th>
-                                <th class="th-miqdor">Miqdor</th>
-                                <th>Jami par</th>
+                                <th>${escapeHtml(tPrint.thNum)}</th>
+                                <th>${escapeHtml(tPrint.thImage)}</th>
+                                <th>${escapeHtml(tPrint.thCode)}</th>
+                                <th class="th-rang">${escapeHtml(tPrint.thColor)}</th>
+                                <th class="th-miqdor">${escapeHtml(tPrint.thQty)}</th>
+                                <th>${escapeHtml(tPrint.thTotalPairs)}</th>
                                 ${thPrice}${thNote}${thExtra}
                             </tr>
                         </thead>
                         <tbody>
                             ${rowHtml}
                             <tr class="customer-totals-row">
-                                <td colspan="5" style="text-align:right; font-weight:700;">Mijoz jami</td>
+                                <td colspan="5" style="text-align:right; font-weight:700;">${escapeHtml(tPrint.customer)} ${escapeHtml(tPrint.total)}</td>
                                 <td class="mono" style="font-weight:700;">${customerTotalPieces}</td>
                                 <td colspan="${colSpanAll - 6}"></td>
                             </tr>
@@ -1768,10 +2154,10 @@ export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, s
             totalPiecesGlobal += categoryTotalPieces
             fullBodyHtml += `
                 <div class="category-section" style="margin-bottom: 40px; border-top: 2px solid #3b82f6; padding-top: 10px;">
-                    <h2 style="background: #eff6ff; padding: 10px; margin: 0; font-size: 1.15rem; border-radius: 6px;">Kategoriya: ${escapeHtml(categoryName)}</h2>
+                    <h2 style="background: #eff6ff; padding: 10px; margin: 0; font-size: 1.15rem; border-radius: 6px;">${escapeHtml(tPrint.categoryHeader)} ${escapeHtml(categoryName)}</h2>
                     ${categoryBlocksHtml}
                     <div style="text-align: right; padding: 10px; font-weight: 700; background: #f8fafc; border-radius: 4px; margin-top: 5px;">
-                        Kategoriya umumiy jami: ${categoryTotalPieces} ta
+                        ${escapeHtml(tPrint.categorySubtotal)}: ${categoryTotalPieces} ${escapeHtml(tPrint.pcs)}
                     </div>
                 </div>
             `
@@ -1780,7 +2166,7 @@ export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, s
 
     const listBannerHtml = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
 
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle || tPrint.docTitle)}</title><style>
         body{font-family:sans-serif;padding:30px;color:#333; line-height: 1.4;}
         .header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}
         .header h1{margin:0;color:#1a1a1a;font-size:1.25rem}
@@ -1807,20 +2193,19 @@ export function buildConsolidatedPrintHtml({ documentTitle, listTitle, orders, s
         ${listBannerHtml}
         ${fullBodyHtml}
         <div style="margin-top: 30px; padding: 15px; background: #1e3a8a; color: white; font-weight: 700; text-align: center; border-radius: 8px; font-size: 1.1rem;">
-            TANLANGAN BARCHA BUYURTMALAR JAMI: ${totalPiecesGlobal} ta mahsulot
+            ${escapeHtml(tPrint.total)}: ${totalPiecesGlobal} ${escapeHtml(tPrint.pcs)}
         </div>
         <div class="footer" style="margin-top: 30px; text-align: center; color: #666; font-size: 0.8rem;">
-            Nuur_Home_Collection<br>Xaridingiz uchun rahmat!
+            Nuur_Home_Collection<br>${escapeHtml(tPrint.thankYou)}
         </div>
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script>
     </body></html>`
 }
 
-export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelColorFn, productsList, tableConfig }) {
+export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelColorFn, productsList, tableConfig, language = 'uz' }) {
+    const tPrint = PRINT_TRANSLATIONS[language] || PRINT_TRANSLATIONS.uz
     let rowsHtml = ''
     let displayIndex = 1
-    let totalPiecesGlobal = 0
-    let totalMoneyGlobal = 0
 
     const imagePx = imagePxBySize(tableConfig?.imageSize || 'md')
     const imageWrapPx = imagePx + 10
@@ -1834,7 +2219,7 @@ export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelC
         for (const oi of items) {
             const prod = productsList.find((p) => String(p.id) === String(oi.product_id))
             const sku = oi.size != null && oi.size !== '' ? String(oi.size) : (prod?.size || '—')
-            const cat = categoryLabelFromGroupedLine(oi) || (prod?.categories?.name_uz || prod?.categories?.name || '—')
+            const cat = categoryLabelFromGroupedLine(oi, language) || (prod?.categories?.name_uz || prod?.categories?.name || '—')
 
             const key = `${oi.product_id || ''}::${sku}::${cat}`
             if (!seenKeys.has(key)) {
@@ -1848,7 +2233,7 @@ export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelC
         }
     }
 
-    uniqueItems.sort((a, b) => a.cat.localeCompare(b.cat, 'uz'))
+    uniqueItems.sort((a, b) => a.cat.localeCompare(b.cat, language === 'ru' ? 'ru' : 'uz'))
 
     for (const item of uniqueItems) {
         const skuEsc = escapeHtml(item.sku)
@@ -1869,7 +2254,7 @@ export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelC
 
     const listBannerHtml = listTitle ? `<p class="list-banner">${escapeHtml(listTitle)}</p>` : ''
 
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle || tPrint.docTitle)}</title><style>
         body{font-family:sans-serif;padding:30px;color:#333; line-height: 1.4;}
         .header{margin-bottom:24px;border-bottom:2px solid #eee;padding-bottom:16px}
         .header h1{margin:0;color:#1a1a1a;font-size:1.25rem}
@@ -1893,13 +2278,13 @@ export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelC
         <table class="items-table">
             <thead>
                 <tr>
-                    <th>#</th>
-                    <th>Kategoriya</th>
-                    <th>Rasm</th>
-                    <th>Kod</th>
-                    <th>Miqdor</th>
-                    <th>Narx</th>
-                    <th>Izoh</th>
+                    <th>${escapeHtml(tPrint.thNum)}</th>
+                    <th>${escapeHtml(tPrint.categoryHeader.replace(':', ''))}</th>
+                    <th>${escapeHtml(tPrint.thImage)}</th>
+                    <th>${escapeHtml(tPrint.thCode)}</th>
+                    <th>${escapeHtml(tPrint.thQty)}</th>
+                    <th>${escapeHtml(tPrint.thUnitPrice)}</th>
+                    <th>${escapeHtml(tPrint.thNote)}</th>
                 </tr>
             </thead>
             <tbody>
@@ -1907,7 +2292,7 @@ export function buildSpecialPrintHtml({ documentTitle, listTitle, orders, labelC
             </tbody>
         </table>
         <div class="footer" style="margin-top: 30px; text-align: center; color: #666; font-size: 0.8rem;">
-            Nuur_Home_Collection<br>Xaridingiz uchun rahmat!
+            Nuur_Home_Collection<br>${escapeHtml(tPrint.thankYou)}
         </div>
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script>
     </body></html>`

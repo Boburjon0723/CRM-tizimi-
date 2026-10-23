@@ -213,21 +213,70 @@ export default function OrdersFilter({
                 <span className="hidden sm:inline">{t('orders.printListMenu')}</span>
                 <ChevronDown size={12} className="opacity-90" />
               </summary>
-              <div className="absolute right-0 top-full z-40 mt-1 min-w-[min(100vw-2rem,17rem)] rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+              <div className="absolute right-0 top-full z-40 mt-1 min-w-[min(100vw-2rem,18rem)] rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
+                <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  {t('orders.listPrintShortWithPrices')}
+                </div>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-emerald-50"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs font-semibold text-gray-800 hover:bg-emerald-50"
                   onClick={() => {
-                    handlePrintOrderList(filteredOrders, true)
+                    handlePrintOrderList(filteredOrders, true, 'uz')
                     closePrintMenu()
                   }}
                 >
-                  <Receipt size={14} className="shrink-0 text-emerald-600" />
-                  <span>{t('orders.listPrintShortWithPrices')}</span>
+                  <span className="flex items-center gap-2">
+                    <Receipt size={14} className="shrink-0 text-emerald-600" />
+                    <span>O&apos;zbekcha</span>
+                  </span>
+                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">UZ</span>
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold text-gray-800 hover:bg-slate-50"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs font-semibold text-gray-800 hover:bg-blue-50"
+                  onClick={() => {
+                    handlePrintOrderList(filteredOrders, true, 'en')
+                    closePrintMenu()
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Receipt size={14} className="shrink-0 text-blue-600" />
+                    <span>English</span>
+                  </span>
+                  <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-800">EN</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs font-semibold text-gray-800 hover:bg-indigo-50"
+                  onClick={() => {
+                    handlePrintOrderList(filteredOrders, true, 'fr')
+                    closePrintMenu()
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Receipt size={14} className="shrink-0 text-indigo-600" />
+                    <span>Français</span>
+                  </span>
+                  <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-800">FR</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs font-semibold text-gray-800 hover:bg-gray-50"
+                  onClick={() => {
+                    handlePrintOrderList(filteredOrders, true, 'ru')
+                    closePrintMenu()
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Receipt size={14} className="shrink-0 text-slate-600" />
+                    <span>Русский</span>
+                  </span>
+                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">RU</span>
+                </button>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-gray-800 hover:bg-slate-50"
                   onClick={() => {
                     handlePrintOrderList(filteredOrders, false)
                     closePrintMenu()
