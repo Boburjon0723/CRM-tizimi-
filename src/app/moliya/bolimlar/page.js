@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 import MoliyaTopNav from '@/components/MoliyaTopNav'
 import { MoliyaCardSkeleton } from '@/components/MoliyaSkeletons'
-import { Building2, Plus, Trash2, Pencil, X, ChevronRight, ArrowLeft, Printer } from 'lucide-react'
+import { Building2, Plus, Trash2, Pencil, X, ChevronRight, ArrowLeft, Printer, Info, FolderOpen, Receipt } from 'lucide-react'
 import { useLayout } from '@/context/LayoutContext'
 import { useLanguage } from '@/context/LanguageContext'
 import { useDialog } from '@/context/DialogContext'
@@ -237,14 +237,25 @@ export default function MoliyaBolimlarPage() {
         return departments.filter((d) => d.parent_id === currentDeptId)
     }, [departments, currentDeptId])
 
-    const parentHasChildren = useMemo(() => {
-        // "id" - bo'lim, "parent_id" - uning ota bo'limi bo'lgani uchun, ota bo'limda child borligini Set orqali belgilaymiz.
-        const set = new Set()
+    /** Har bir bo'limning bevosita ichki bo'limlari soni. */
+    const childCountById = useMemo(() => {
+        const m = {}
         for (const d of departments) {
-            if (d.parent_id != null) set.add(d.parent_id)
+            if (d.parent_id != null) m[d.parent_id] = (m[d.parent_id] || 0) + 1
         }
-        return set
+        return m
     }, [departments])
+
+    /** Ko'rinayotgan kartochkalar bo'yicha jami (rollup qilingan summalar yig'indisi). */
+    const gridTotals = useMemo(() => {
+        let uz = 0
+        let us = 0
+        for (const d of childDepartments) {
+            uz += Number(deptTotals.UZS?.[d.id] || 0)
+            us += Number(deptTotals.USD?.[d.id] || 0)
+        }
+        return { UZS: uz, USD: us }
+    }, [childDepartments, deptTotals])
 
     const expenseTotalsByCurrency = useMemo(() => {
         let uz = 0
@@ -605,7 +616,10 @@ export default function MoliyaBolimlarPage() {
             <Header title={t('finances.financeBranchDepartments')} toggleSidebar={toggleSidebar} />
             <MoliyaTopNav />
 
-            <p className="text-gray-600 text-sm mb-3 leading-relaxed">{t('finances.moliyaDepartmentsFlowHint')}</p>
+            <div className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 mb-4 text-sm text-slate-700 leading-relaxed">
+                <Info size={16} className="mt-0.5 shrink-0 text-blue-500" aria-hidden />
+                <p>{t('finances.moliyaDepartmentsFlowHint')}</p>
+            </div>
 
             {pathTitle && (
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4 truncate" title={pathTitle}>
@@ -784,11 +798,35 @@ export default function MoliyaBolimlarPage() {
 
             {!currentDeptId && (
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                    <Building2 className="text-slate-700" size={22} />
-                    <h2 className="text-lg font-bold text-gray-900">
-                        {currentDeptId ? t('finances.deptSubItemsTitle') : t('finances.deptRootListTitle')}
-                    </h2>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-slate-100">
+                            <Building2 className="text-slate-700" size={20} aria-hidden />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-900 leading-tight">
+                                {currentDeptId ? t('finances.deptSubItemsTitle') : t('finances.deptRootListTitle')}
+                            </h2>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                                {childDepartments.length} {t('finances.deptGridCount')}
+                            </p>
+                        </div>
+                    </div>
+                    {childDepartments.length > 0 && (
+                        <div className="rounded-xl bg-slate-900 text-white px-4 py-2.5 sm:text-right">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-300 font-semibold">
+                                {t('finances.deptGridTotal')}
+                            </p>
+                            <p className="text-lg font-bold tabular-nums leading-tight">
+                                {gridTotals.UZS > 0.01 ? formatFinAmount(gridTotals.UZS, 'UZS') : '—'}
+                            </p>
+                            {gridTotals.USD > 0.01 && (
+                                <p className="text-sm font-semibold tabular-nums text-emerald-300">
+                                    {formatFinAmount(gridTotals.USD, 'USD')}
+                                </p>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="mb-6">
@@ -865,83 +903,100 @@ export default function MoliyaBolimlarPage() {
                     )}
                 </div>
 
-                <div className="flex flex-nowrap items-stretch gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {childDepartments.length === 0 && (
-                        <div className="shrink-0 min-w-[220px] text-gray-500 text-sm py-8 text-center border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                        <div className="col-span-full text-gray-500 text-sm py-8 text-center border border-dashed border-gray-200 rounded-xl bg-gray-50/50">
                             {currentDeptId ? t('finances.noChildDepartments') : t('finances.noDepartments')}
                         </div>
                     )}
 
-                    {childDepartments.map((d, idx) => {
-                        const isLeafNode = !parentHasChildren.has(d.id)
-
-                        // "leaf" bo'limlarni ajratib ko'rsatish uchun rang beramiz; qolganlari ko'k.
-                        const cardBg =
-                            !isLeafNode
-                                ? 'bg-blue-600 hover:bg-blue-700 focus-visible:ring-blue-500'
-                                : idx % 2 === 0
-                                  ? 'bg-red-600 hover:bg-red-700 focus-visible:ring-red-500'
-                                  : 'bg-gray-700 hover:bg-gray-800 focus-visible:ring-gray-500'
-
+                    {childDepartments.map((d) => {
+                        const childCount = childCountById[d.id] || 0
+                        const hasChildren = childCount > 0
                         const name = pickLocalizedName(d, language)
+                        const uzs = Number(deptTotals.UZS?.[d.id] || 0)
+                        const usd = Number(deptTotals.USD?.[d.id] || 0)
+                        const share = gridTotals.UZS > 0.01 ? Math.min(100, (uzs / gridTotals.UZS) * 100) : 0
 
                         return (
-                            <div key={d.id} className="relative shrink-0 group">
+                            <div
+                                key={d.id}
+                                className="relative group rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-slate-300 transition-all"
+                            >
                                 <button
                                     type="button"
                                     title={name}
                                     onClick={() => setStack((s) => [...s, d.id])}
-                                    className={`px-4 py-3 rounded-xl ${cardBg} text-white font-semibold text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 shadow-sm transition-colors min-w-[140px] max-w-[210px]`}
+                                    className="w-full h-full text-left p-4 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 flex flex-col"
                                 >
-                                    <span className="block text-center leading-tight break-words">{name}</span>
-                                    <span
-                                        className="block text-center text-[10px] font-semibold text-white/90 mt-1 tabular-nums leading-tight space-y-0.5"
-                                        title={t('finances.expensesTotalLabel')}
-                                    >
-                                        {(deptTotals.UZS?.[d.id] ?? 0) > 0.01 ? (
-                                            <span className="block">{formatFinAmount(deptTotals.UZS[d.id], 'UZS')}</span>
-                                        ) : null}
-                                        {(deptTotals.USD?.[d.id] ?? 0) > 0.01 ? (
-                                            <span className="block">{formatFinAmount(deptTotals.USD[d.id], 'USD')}</span>
-                                        ) : null}
-                                        {(deptTotals.UZS?.[d.id] ?? 0) < 0.01 && (deptTotals.USD?.[d.id] ?? 0) < 0.01 ? (
-                                            <span className="block">—</span>
-                                        ) : null}
-                                    </span>
+                                    <div className="flex items-start gap-2.5 pr-16">
+                                        <div
+                                            className={`p-1.5 rounded-lg shrink-0 ${
+                                                hasChildren ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'
+                                            }`}
+                                        >
+                                            {hasChildren ? <FolderOpen size={16} aria-hidden /> : <Receipt size={16} aria-hidden />}
+                                        </div>
+                                        <span className="font-semibold text-sm text-slate-900 leading-snug line-clamp-2 break-words">
+                                            {name}
+                                        </span>
+                                    </div>
+
+                                    <div className="mt-3 tabular-nums">
+                                        <p className={`text-lg font-bold leading-tight ${uzs > 0.01 ? 'text-slate-900' : 'text-slate-300'}`}>
+                                            {uzs > 0.01 ? formatFinAmount(uzs, 'UZS') : '—'}
+                                        </p>
+                                        {usd > 0.01 && (
+                                            <p className="text-sm font-semibold text-emerald-700">{formatFinAmount(usd, 'USD')}</p>
+                                        )}
+                                    </div>
+
+                                    <div className="mt-3 h-1 rounded-full bg-slate-100 overflow-hidden" aria-hidden>
+                                        <div className="h-full rounded-full bg-blue-500" style={{ width: `${share}%` }} />
+                                    </div>
+
+                                    <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                                        <span>
+                                            {hasChildren
+                                                ? `${childCount} ${t('finances.deptCardChildren')}`
+                                                : t('finances.deptCardExpenses')}
+                                        </span>
+                                        <ChevronRight
+                                            size={16}
+                                            className="text-slate-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all"
+                                            aria-hidden
+                                        />
+                                    </div>
                                 </button>
 
-                                {/* Edit/ochirish: hover yoki fokus bo'lganda ko'rinadi */}
-                                <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none transition-opacity">
-                                    <div className="pointer-events-auto">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.preventDefault()
-                                                e.stopPropagation()
-                                                startEditDepartment(d)
-                                            }}
-                                            className="p-2 rounded-lg bg-white/95 hover:bg-white text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                                            title={t('common.edit')}
-                                            aria-label={t('common.edit')}
-                                        >
-                                            <Pencil size={16} />
-                                        </button>
-                                    </div>
-                                    <div className="pointer-events-auto">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.preventDefault()
-                                                e.stopPropagation()
-                                                deleteDepartment(d.id)
-                                            }}
-                                            className="p-2 rounded-lg bg-white/95 hover:bg-white text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                                            title={t('common.delete')}
-                                            aria-label={t('common.delete')}
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
+                                {/* Tahrirlash/o'chirish: telefonda doim, kompyuterda hover/fokusda ko'rinadi */}
+                                <div className="absolute top-2 right-2 flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            startEditDepartment(d)
+                                        }}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                        title={t('common.edit')}
+                                        aria-label={t('common.edit')}
+                                    >
+                                        <Pencil size={15} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            deleteDepartment(d.id)
+                                        }}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                        title={t('common.delete')}
+                                        aria-label={t('common.delete')}
+                                    >
+                                        <Trash2 size={15} />
+                                    </button>
                                 </div>
                             </div>
                         )
@@ -955,9 +1010,10 @@ export default function MoliyaBolimlarPage() {
                         }}
                         aria-label={t('finances.deptFormShow')}
                         title={t('finances.deptFormShow')}
-                        className="shrink-0 px-4 py-3 rounded-xl bg-gray-300 hover:bg-gray-400 text-gray-900 font-bold text-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-500 shadow-sm transition-colors min-w-[88px] flex items-center justify-center"
+                        className="min-h-[148px] rounded-xl border-2 border-dashed border-slate-200 text-slate-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors flex flex-col items-center justify-center gap-1.5 text-sm font-semibold"
                     >
                         <Plus size={22} />
+                        {currentDeptId ? t('finances.deptAddChild') : t('finances.deptAddRoot')}
                     </button>
                 </div>
                 </div>

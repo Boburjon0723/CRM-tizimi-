@@ -712,9 +712,9 @@ export default function Xodimlar() {
         const advSum = advList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
         const salSum = salList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
         const { remaining } = payoutRemainingVsContract(contractTotal, advSum, salSum)
+        /** Faqat shartnoma bo‘yicha qoldiq: oylik − (berilgan avanslar + oldingi oylik yozuvlari). */
         const remainingNum = Number(remaining) || 0
-        const unsettledAdvance = Math.max(0, advSum - salSum)
-        return remainingNum >= 0.01 ? remainingNum : unsettledAdvance >= 0.01 ? unsettledAdvance : 0
+        return remainingNum >= 0.01 ? remainingNum : 0
     }
 
     async function openSalaryModal(xodim) {
@@ -1002,20 +1002,13 @@ export default function Xodimlar() {
         [salaryPaymentsByEmployee, visibleEmployeeKeySet]
     )
 
-    /** Sariq karta: avanslar − oylik to‘lovlari (yopilgan qism ayiriladi) */
-    const monthAdvancesNetDisplay = useMemo(() => {
-        if (salaryPaymentsTableMissing) return monthAdvancesGrandTotalRaw
-        return Math.max(0, monthAdvancesGrandTotalRaw - monthSalaryPaidGrandTotalRaw)
-    }, [
-        monthAdvancesGrandTotalRaw,
-        monthSalaryPaidGrandTotalRaw,
-        salaryPaymentsTableMissing
-    ])
+    /** Sariq karta: shu oy berilgan avanslar (oylik yopish faqat qoldiqni yozadi, avansni qoplamaydi) */
+    const monthAdvancesNetDisplay = monthAdvancesGrandTotalRaw
 
-    /** Jami chiqim: ikki yo‘nalishni ikki marta hisoblamaslik */
+    /** Jami chiqim = avanslar + oylik yopish yozuvlari (yopishda faqat qoldiq yoziladi) */
     const monthTotalPaidOutGrandTotal = useMemo(() => {
         if (salaryPaymentsTableMissing) return monthAdvancesGrandTotalRaw
-        return Math.max(monthAdvancesGrandTotalRaw, monthSalaryPaidGrandTotalRaw)
+        return monthAdvancesGrandTotalRaw + monthSalaryPaidGrandTotalRaw
     }, [monthAdvancesGrandTotalRaw, monthSalaryPaidGrandTotalRaw, salaryPaymentsTableMissing])
 
     const salaryOverviewPayoutContext = useMemo(() => {
@@ -1065,7 +1058,7 @@ export default function Xodimlar() {
             const advSum = advList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
             const salList = salaryPaymentsByEmployee[empKey] || []
             const salSum = salList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
-            const totalOut = salaryPaymentsTableMissing ? advSum : Math.max(advSum, salSum)
+            const totalOut = salaryPaymentsTableMissing ? advSum : advSum + salSum
             const remaining = Math.max(0, contractTotal - totalOut)
             return `
                 <tr>
@@ -1553,7 +1546,7 @@ export default function Xodimlar() {
                                                             {formatUzs(
                                                                 salaryPaymentsTableMissing
                                                                     ? advSum
-                                                                    : Math.max(advSum, salSum)
+                                                                    : advSum + salSum
                                                             )}
                                                         </span>
                                                     </div>
@@ -1922,12 +1915,6 @@ export default function Xodimlar() {
                                             </span>
                                         </div>
                                     </div>
-                                    {salaryOverviewPayoutContext.salaryAutoSaveAmount >= 0.01 &&
-                                    salaryOverviewPayoutContext.remaining < 0.01 ? (
-                                        <p className="text-xs text-emerald-900 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
-                                            {t('employees.salaryCloseFromAdvanceHint')}
-                                        </p>
-                                    ) : null}
                                     {salaryOverviewPayoutContext.salaryAutoSaveAmount < 0.01 ? (
                                         <p className="text-xs text-slate-700 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
                                             {t('employees.salaryNoRemainingToSaveHint')}
