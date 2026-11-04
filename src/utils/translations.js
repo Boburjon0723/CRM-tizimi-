@@ -920,7 +920,10 @@ export const translations = {
             salaryCloseFromAdvanceHint:
                 'Shartnoma qoldig‘i 0 bo‘lsa ham, avansdan qolgan summa oylik to‘lovi sifatida saqlanadi (yashil karta).',
             salaryCloseDuplicateWarn:
-                'Bu oy uchun «Oylikni yopish» bilan yoziladigan summa yo‘q — yana bosilsa dublikat bo‘ladi. Noto‘g‘ri yozuv bo‘lsa, ro‘yxatdan oʻchiring yoki tahrirlang.',
+                'Bu xodimning shu oydagi oyligi allaqachon yopilgan. Qayta yopish uchun avval ro‘yxatdagi oylik yozuvini oʻchiring.',
+            salaryClosedMarkerNote: 'Oylik yopildi',
+            salaryCloseWithPaidOnlyHint:
+                'Oy shu berilgan pullar bilan yopiladi. Yangi pul yozilmaydi — jami o‘zgarmaydi.',
             salaryPaymentDuplicateBlocked:
                 'Shu sana va shu summada oylik toʻlovi allaqachon yozilgan — dublikat saqlanmaydi. Ortiqcha yozuvni ro‘yxatdan oʻchiring.',
             salaryPaymentDupCheckFailed:
@@ -2637,7 +2640,10 @@ export const translations = {
             salaryCloseFromAdvanceHint:
                 'Если остаток по договору 0, невыбранный аванс всё равно можно записать как зарплату (зелёная карточка).',
             salaryCloseDuplicateWarn:
-                'За этот месяц нечего записать как зарплату — повторное «Закрыть зарплату» даст дубль. Неверную запись удалите или измените в списке.',
+                'Зарплата этого сотрудника за месяц уже закрыта. Чтобы закрыть заново, сначала удалите запись зарплаты в списке.',
+            salaryClosedMarkerNote: 'Зарплата закрыта',
+            salaryCloseWithPaidOnlyHint:
+                'Месяц закрывается выданными суммами. Новые деньги не записываются — итог не меняется.',
             salaryPaymentDuplicateBlocked:
                 'За эту дату и эту сумму выплата уже записана — дубль не сохраняется. Удалите лишнюю строку в списке.',
             salaryPaymentDupCheckFailed:
@@ -4343,7 +4349,10 @@ export const translations = {
             salaryCloseFromAdvanceHint:
                 'Even if contract remainder is zero, unmatched advance can still be saved as salary (green card).',
             salaryCloseDuplicateWarn:
-                'No salary amount left to record this month — using «Close salary» again would duplicate. Remove or fix the wrong entry in the list.',
+                'This employee’s salary for the month is already closed. To close again, first delete the salary entry in the list.',
+            salaryClosedMarkerNote: 'Salary closed',
+            salaryCloseWithPaidOnlyHint:
+                'The month is closed with the amounts already paid. No new money is recorded — the total does not change.',
             salaryPaymentDuplicateBlocked:
                 'A payment for this date and amount already exists — duplicate not saved. Delete the extra row in the list.',
             salaryPaymentDupCheckFailed:

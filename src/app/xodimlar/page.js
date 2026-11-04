@@ -704,17 +704,13 @@ export default function Xodimlar() {
         setIsAdding(false)
     }
 
-    function salaryCloseAutoAmountForEmployee(xodim) {
-        const contractTotal = (Number(xodim.monthly_salary) || 0) + (Number(xodim.bonus_percent) || 0)
+    /**
+     * «Oylikni yopish» yangi pul yozmaydi: oy shu paytgacha berilganlar bilan yopiladi.
+     * Yopilganlik belgisi — shu oyda `employee_salary_payments` da yozuv borligi (yopishda summa 0 bo‘ladi).
+     */
+    function salaryClosedForEmployee(xodim) {
         const k = employeeMapKey(xodim.id)
-        const advList = advancesByEmployee[k] || []
-        const salList = salaryPaymentsByEmployee[k] || []
-        const advSum = advList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
-        const salSum = salList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
-        const { remaining } = payoutRemainingVsContract(contractTotal, advSum, salSum)
-        /** Faqat shartnoma bo‘yicha qoldiq: oylik − (berilgan avanslar + oldingi oylik yozuvlari). */
-        const remainingNum = Number(remaining) || 0
-        return remainingNum >= 0.01 ? remainingNum : 0
+        return (salaryPaymentsByEmployee[k] || []).length > 0
     }
 
     async function openSalaryModal(xodim) {
@@ -726,7 +722,7 @@ export default function Xodimlar() {
             await showAlert(t('employees.payrollMonthClosedNoNewRows'), { variant: 'warning' })
             return
         }
-        if (salaryCloseAutoAmountForEmployee(xodim) < 0.01) {
+        if (salaryClosedForEmployee(xodim)) {
             await showAlert(t('employees.salaryCloseDuplicateWarn'), { variant: 'warning' })
             return
         }
@@ -764,24 +760,10 @@ export default function Xodimlar() {
         setAdvanceForm({ amount: '', advance_date: '', note: '' })
     }
 
-    function hasSalaryPaymentDuplicateThisMonth(employeeId, paymentDateInput, amount) {
-        const ymd = calendarYmdForFilter(paymentDateInput)
-        if (ymd.length !== 10) return false
-        const empKey = employeeMapKey(employeeId)
-        const list = salaryPaymentsByEmployee[empKey] || []
-        const a = Number(amount) || 0
-        return list.some(
-            (r) =>
-                calendarYmdForFilter(r.payment_date) === ymd &&
-                Math.abs((Number(r.amount) || 0) - a) < 0.01
-        )
-    }
-
     async function handleSalaryPaymentSubmit(e) {
         e.preventDefault()
         if (!salaryOverviewModal || !salaryOverviewPayoutContext) return
-        const amt = Math.round((Number(salaryOverviewPayoutContext.salaryAutoSaveAmount) || 0) * 100) / 100
-        if (amt < 0.01) {
+        if (salaryOverviewPayoutContext.alreadyClosed) {
             await showAlert(t('employees.salaryCloseDuplicateWarn'), { variant: 'warning' })
             return
         }
@@ -798,23 +780,15 @@ export default function Xodimlar() {
         salaryPaymentSubmitLockRef.current = true
         try {
             setSalarySaving(true)
-            if (
-                hasSalaryPaymentDuplicateThisMonth(
-                    salaryOverviewModal.employeeId,
-                    salaryForm.payment_date,
-                    amt
-                )
-            ) {
-                await showAlert(t('employees.salaryPaymentDuplicateBlocked'), { variant: 'warning' })
-                return
-            }
             const empUuid = String(salaryOverviewModal.employeeId).trim()
+            const { from: monthFrom, to: monthTo } = monthRangeFromYm(reportPeriodYm)
+            /** Shu oyda allaqachon yopilganmi (boshqa qurilmadan ham) — serverda tekshiramiz */
             const { data: dupOnServer, error: dupServErr } = await supabase
                 .from('employee_salary_payments')
                 .select('id')
                 .eq('employee_id', empUuid)
-                .eq('payment_date', salaryForm.payment_date)
-                .eq('amount', amt)
+                .gte('payment_date', monthFrom)
+                .lte('payment_date', monthTo)
                 .limit(1)
             if (dupServErr) {
                 console.error('employee_salary_payments dup check:', dupServErr)
@@ -825,19 +799,20 @@ export default function Xodimlar() {
                 return
             }
             if (dupOnServer?.length) {
-                await showAlert(t('employees.salaryPaymentDuplicateBlocked'), { variant: 'warning' })
+                await showAlert(t('employees.salaryCloseDuplicateWarn'), { variant: 'warning' })
                 await loadEmployees({ silent: true })
                 return
             }
             const cleanNote = salaryForm.note?.trim() || null
+            /** Yopish belgisi: summa 0 — jami berilganlarga hech narsa qo‘shilmaydi */
             const { data: insertedSal, error } = await supabase
                 .from('employee_salary_payments')
                 .insert([
                     {
                         employee_id: empUuid,
-                        amount: amt,
+                        amount: 0,
                         payment_date: salaryForm.payment_date,
-                        note: cleanNote && cleanNote !== '-' ? cleanNote : null,
+                        note: cleanNote && cleanNote !== '-' ? cleanNote : t('employees.salaryClosedMarkerNote'),
                         source: 'crm'
                     }
                 ])
@@ -849,7 +824,7 @@ export default function Xodimlar() {
                     em.includes('duplicate key') ||
                     em.includes('unique constraint')
                 if (dup) {
-                    await showAlert(t('employees.salaryPaymentDuplicateBlocked'), { variant: 'warning' })
+                    await showAlert(t('employees.salaryCloseDuplicateWarn'), { variant: 'warning' })
                     return
                 }
                 throw error
@@ -866,7 +841,8 @@ export default function Xodimlar() {
             closeSalaryOverviewModal()
         } catch (err) {
             console.error(err)
-            await showAlert(t('employees.salaryPaymentError'), { variant: 'error' })
+            const detail = err?.message ? `\n\n${err.message}` : ''
+            await showAlert(`${t('employees.salaryPaymentError')}${detail}`, { variant: 'error' })
         } finally {
             salaryPaymentSubmitLockRef.current = false
             setSalarySaving(false)
@@ -926,9 +902,16 @@ export default function Xodimlar() {
         }
     }
 
-    function salaryStatusBadge(expectedTotal, settledTotal) {
+    function salaryStatusBadge(expectedTotal, settledTotal, closed = false) {
         const exp = Number(expectedTotal) || 0
         const paid = Number(settledTotal) || 0
+        if (closed) {
+            return (
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    {t('employees.rowSalaryClosedThisMonthShort')}
+                </span>
+            )
+        }
         if (exp <= 0) return null
         if (paid <= 0) {
             return (
@@ -1025,7 +1008,7 @@ export default function Xodimlar() {
         const salSum = salList.reduce((s, r) => s + (Number(r.amount) || 0), 0)
         const { remaining, totalOut } = payoutRemainingVsContract(contractTotal, advSum, salSum)
         const timeline = mergeEmployeePayoutsTimeline(advList, salList)
-        const salaryAutoSaveAmount = salaryCloseAutoAmountForEmployee(xodim)
+        const alreadyClosed = salList.length > 0
         return {
             contractTotal,
             advSum,
@@ -1036,7 +1019,7 @@ export default function Xodimlar() {
             salList,
             timeline,
             xodim,
-            salaryAutoSaveAmount
+            alreadyClosed
         }
     }, [salaryOverviewModal, employeesForPeriod, advancesByEmployee, salaryPaymentsByEmployee])
 
@@ -1504,12 +1487,8 @@ export default function Xodimlar() {
                                     const advSum = advList.reduce((s, r) => s + (r.amount || 0), 0)
                                     const salList = salaryPaymentsByEmployee[empKey] || []
                                     const salSum = salList.reduce((s, r) => s + (r.amount || 0), 0)
-                                    const rowHasPayrollContext =
-                                        contractTotal >= 0.01 || advSum >= 0.01 || salSum >= 0.01
                                     const salaryCloseDoneThisMonth =
-                                        !salaryPaymentsTableMissing &&
-                                        rowHasPayrollContext &&
-                                        salaryCloseAutoAmountForEmployee(xodim) < 0.01
+                                        !salaryPaymentsTableMissing && salaryClosedForEmployee(xodim)
                                     return (
                                         <tr key={xodim.id} className="group transition-colors">
                                             <td className="sticky left-0 z-20 bg-white group-hover:bg-blue-50/50 px-2 py-3 align-top border-b border-gray-100 shadow-[4px_0_12px_-6px_rgba(15,23,42,0.06)] w-[11rem] min-w-[11rem] max-w-[11rem]">
@@ -1528,7 +1507,7 @@ export default function Xodimlar() {
                                                             </span>
                                                         </div>
                                                     ) : null}
-                                                    {salaryStatusBadge(contractTotal, advSum + salSum)}
+                                                    {salaryStatusBadge(contractTotal, advSum + salSum, salaryCloseDoneThisMonth)}
                                                 </div>
                                             </td>
                                             <td className="sticky left-[11rem] z-20 bg-white group-hover:bg-blue-50/50 px-2 py-3 align-top border-b border-gray-100 shadow-[4px_0_12px_-6px_rgba(15,23,42,0.06)] w-[8.5rem] min-w-[8.5rem] max-w-[8.5rem]">
@@ -1706,10 +1685,13 @@ export default function Xodimlar() {
                                                                                         </span>
                                                                                         <span className="text-gray-400">—</span>
                                                                                         <span className="font-semibold text-gray-900">
-                                                                                            {formatUzs(row.amount)}
+                                                                                            {(Number(row.amount) || 0) < 0.01
+                                                                                                ? t('employees.rowSalaryClosedThisMonthShort')
+                                                                                                : formatUzs(row.amount)}
                                                                                         </span>
                                                                                     </div>
-                                                                                    {row.note ? (
+                                                                                    {row.note &&
+                                                                                    row.note !== t('employees.salaryClosedMarkerNote') ? (
                                                                                         <div className="text-[11px] text-gray-500 mt-1 max-w-[14rem] leading-snug">
                                                                                             {t('employees.expenseNotePrefix')}
                                                                                             {row.note}
@@ -1866,7 +1848,11 @@ export default function Xodimlar() {
                                                         {payoutKindBadge(item.kind, t)}
                                                         <span className="text-gray-500">{formatAdvanceDate(item.displayDate)}</span>
                                                         <span className="text-gray-400"> — </span>
-                                                        <span className="font-semibold text-gray-900">{formatUzs(item.amount)}</span>
+                                                        <span className="font-semibold text-gray-900">
+                                                            {item.kind === 'salary' && (Number(item.amount) || 0) < 0.01
+                                                                ? t('employees.rowSalaryClosedThisMonthShort')
+                                                                : formatUzs(item.amount)}
+                                                        </span>
                                                     </div>
                                                     {item.note ? (
                                                         <div className="text-[11px] text-gray-500 mt-1">{item.note}</div>
@@ -1892,41 +1878,26 @@ export default function Xodimlar() {
                                 </p>
                             ) : (
                                 <form onSubmit={handleSalaryPaymentSubmit} className="space-y-3">
-                                    <p className="text-[11px] text-gray-500 leading-relaxed">
-                                        {t('employees.salaryPaymentCalculatedTotalsNote')}
-                                    </p>
-                                    <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2 text-xs tabular-nums">
+                                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 space-y-1 text-xs tabular-nums">
                                         <div className="flex flex-wrap justify-between gap-x-2 gap-y-1">
-                                            <span className="text-gray-600 font-medium">
+                                            <span className="text-emerald-900 font-bold">
                                                 {t('employees.salaryModalTotalPaidLabel')}
                                             </span>
-                                            <span className="font-bold text-gray-900">
+                                            <span className="font-bold text-emerald-900 text-sm">
                                                 {formatUzs(salaryOverviewPayoutContext.totalOut)}
                                             </span>
                                         </div>
-                                        <div className="flex flex-wrap justify-between gap-x-2 gap-y-1 pt-1 border-t border-slate-200">
-                                            <span className="text-gray-700 font-bold">
-                                                {t('employees.salaryPaymentAutoSaveAmountLabel')}
-                                            </span>
-                                            <span className="font-bold text-emerald-800">
-                                                {salaryOverviewPayoutContext.salaryAutoSaveAmount >= 0.01
-                                                    ? formatUzs(salaryOverviewPayoutContext.salaryAutoSaveAmount)
-                                                    : '—'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    {salaryOverviewPayoutContext.salaryAutoSaveAmount < 0.01 ? (
-                                        <p className="text-xs text-slate-700 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-                                            {t('employees.salaryNoRemainingToSaveHint')}
+                                        <p className="text-[11px] text-emerald-800 leading-relaxed">
+                                            {t('employees.salaryCloseWithPaidOnlyHint')}
                                         </p>
-                                    ) : null}
+                                    </div>
                                     <div className="space-y-1.5">
                                         <label className="block text-xs font-bold text-gray-700">
                                             {t('employees.salaryPaymentDateLabel')}
                                         </label>
                                         <input
                                             type="date"
-                                            required={salaryOverviewPayoutContext.salaryAutoSaveAmount >= 0.01}
+                                            required
                                             value={salaryForm.payment_date}
                                             onChange={(e) => setSalaryForm({ ...salaryForm, payment_date: e.target.value })}
                                             className="w-full px-3 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
@@ -1957,18 +1928,9 @@ export default function Xodimlar() {
                                             disabled={salarySaving}
                                             className="px-6 py-2.5 rounded-xl font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 text-sm"
                                         >
-                                            {salarySaving
-                                                ? t('common.loading')
-                                                : salaryOverviewPayoutContext.salaryAutoSaveAmount >= 0.01
-                                                  ? t('common.save')
-                                                  : t('common.close')}
+                                            {salarySaving ? t('common.loading') : t('employees.rowCloseSalaryShort')}
                                         </button>
                                     </div>
-                                    <p className="text-[11px] text-gray-400">
-                                        {salaryOverviewPayoutContext.salaryAutoSaveAmount >= 0.01
-                                            ? t('employees.salarySaveClosesModalHint')
-                                            : t('employees.salaryCloseModalHint')}
-                                    </p>
                                 </form>
                             )}
                         </div>

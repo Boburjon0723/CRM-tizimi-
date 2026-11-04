@@ -260,6 +260,8 @@ export default function MoliyaHisobotlarPage() {
             if (!missing(salRes.error)) console.warn('employee_salary_payments reports:', salRes.error.message)
         } else {
             for (const r of salRes.data || []) {
+                // 0 so'mlik yozuv — faqat «oylik yopildi» belgisi, hisobotda chiqim emas
+                if ((Number(r.amount) || 0) < 0.01) continue
                 const d = String(r.payment_date ?? '').slice(0, 10)
                 payoutLines.push({
                     kind: 'salary',

@@ -137,10 +137,16 @@ export default function EmployeesView() {
                     const totalPaid = advSum + paySum
                     const contract = Number(emp.monthly_salary) || 0
                     
+                    // CRM'da «Oylikni yopish» 0 so'mlik yozuv qoldiradi — bu oy yopilgan degani
+                    const salaryClosed = (payments || []).some(p => p.employee_id === emp.id)
+
                     let status = 'Kutilmoqda'
                     let type = 'error'
 
-                    if (totalPaid >= contract && contract > 0) {
+                    if (salaryClosed) {
+                        status = 'Yopilgan'
+                        type = 'success'
+                    } else if (totalPaid >= contract && contract > 0) {
                         status = 'To\'landi'
                         type = 'success'
                     } else if (totalPaid > 0) {
