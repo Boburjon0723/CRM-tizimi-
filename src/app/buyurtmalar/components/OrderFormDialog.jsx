@@ -65,14 +65,23 @@ function OrderWeightSummary({
         <div className="mt-4 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             {/* Asosiy qator: umumiy netto + og‘irligi noma’lum modellar */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-5 py-4 bg-slate-50 border-b border-slate-200">
-                <div>
-                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{t('orders.weightTotalNetto')}</p>
-                    <p className="text-2xl font-bold font-mono tabular-nums text-slate-900">
-                        {formatWeightSpoken(w.netto || 0, ton)}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                        {t('orders.weightModelsCounted')}: {exactCount + uncertainCount}
-                    </p>
+                <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+                    <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{t('orders.weightTotalNetto')}</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums text-slate-900">
+                            {formatWeightSpoken(w.netto || 0, ton)}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                            {t('orders.weightModelsCounted')}: {exactCount + uncertainCount}
+                        </p>
+                    </div>
+                    <div className="sm:pl-8 sm:border-l sm:border-slate-200">
+                        <p className="text-xs font-bold uppercase tracking-wide text-blue-700">{t('orders.weightTotalGross')}</p>
+                        <p className="text-2xl font-bold font-mono tabular-nums text-blue-900">
+                            {formatWeightSpoken(base, ton)}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{t('orders.weightTotalGrossHint')}</p>
+                    </div>
                 </div>
                 {unknown.length > 0 ? (
                     <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 max-w-md">
@@ -88,6 +97,16 @@ function OrderWeightSummary({
                     </div>
                 )}
             </div>
+
+            {(w.bruttoFallbackLabels || []).length > 0 ? (
+                <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900">
+                    <span className="font-bold">
+                        {w.bruttoFallbackLabels.length} {t('orders.weightBruttoFallbackCount')}
+                    </span>{' '}
+                    <span className="font-mono break-words">({w.bruttoFallbackLabels.join(', ')})</span>
+                    <span className="block text-[11px] text-amber-800/90 mt-0.5">{t('orders.weightBruttoFallbackHint')}</span>
+                </div>
+            ) : null}
 
             <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200">
                 {/* Aniq: katta karobka sig‘imi ma’lum */}

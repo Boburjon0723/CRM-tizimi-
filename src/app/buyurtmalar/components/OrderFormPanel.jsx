@@ -158,6 +158,8 @@ export default function OrderFormPanel({
         let uncertainCount = 0
         /** Og‘irligi (netto ham, brutto ham) kiritilmagan modellar — nomlari ko‘rsatiladi */
         const unknownWeightLabels = []
+        /** Bruttosi (kichik karobka og‘irligi) yozilmagan modellar — jami bruttoda faqat netto bilan */
+        const bruttoFallbackLabels = []
         const uncertainTares = []
         const exactRows = []
         for (const line of orderLines) {
@@ -175,8 +177,24 @@ export default function OrderFormPanel({
             const n = Number(prod.netto_kg)
             const b = Number(prod.brutto_kg)
             const tare = Number(prod.master_box_kg)
-            const lineNetto = Number.isFinite(n) && n > 0 ? n * qty : 0
-            const lineSmall = Number.isFinite(b) && b > 0 ? b * qty : 0
+            const unitNetto = Number.isFinite(n) && n > 0 ? n : 0
+            const unitBrutto = Number.isFinite(b) && b > 0 ? b : 0
+            const lineNetto = unitNetto * qty
+            /**
+             * Amalda brutto_kg ga ko‘pincha faqat kichik karobkaning o‘z og‘irligi yoziladi
+             * (mahsulot karobkadan ancha og‘ir). Shuning uchun:
+             *  - brutto < netto  → brutto = karobka, 1 dona = netto + brutto
+             *  - brutto >= netto → brutto = mahsulot + karobka, 1 dona = brutto
+             *  - brutto yo‘q     → karobka og‘irligi noma’lum, 1 dona = netto (ogohlantiriladi)
+             */
+            const unitGross =
+                unitBrutto <= 0 ? unitNetto : unitBrutto < unitNetto ? unitNetto + unitBrutto : unitBrutto
+            const lineSmall = unitGross * qty
+            const bruttoFallback = qty > 0 && unitNetto > 0 && unitBrutto <= 0
+            if (bruttoFallback) {
+                const label = String(line.codeInput || line.product_name || '').trim()
+                if (label && !bruttoFallbackLabels.includes(label)) bruttoFallbackLabels.push(label)
+            }
             if (lineNetto > 0 || lineSmall > 0) any = true
             if (qty > 0 && lineNetto <= 0 && lineSmall <= 0) {
                 const label = String(line.codeInput || line.product_name || '').trim()
@@ -222,6 +240,7 @@ export default function OrderFormPanel({
             exactCount,
             uncertainCount,
             unknownWeightLabels,
+            bruttoFallbackLabels,
             uncertainBoxKg: uncertainTares.length && uncertainTares.every((v) => v === uncertainTares[0])
                 ? uncertainTares[0]
                 : null,
