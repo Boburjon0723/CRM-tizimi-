@@ -156,6 +156,10 @@ export default function OrderFormPanel({
         let uncertainNetto = 0
         let exactCount = 0
         let uncertainCount = 0
+        let exactSmallBoxes = 0
+        let exactSmallBoxKg = 0
+        let uncertainSmallBoxes = 0
+        let uncertainSmallBoxKg = 0
         /** Og‘irligi (netto ham, brutto ham) kiritilmagan modellar — nomlari ko‘rsatiladi */
         const unknownWeightLabels = []
         /** Bruttosi (kichik karobka og‘irligi) yozilmagan modellar — jami bruttoda faqat netto bilan */
@@ -201,16 +205,22 @@ export default function OrderFormPanel({
                 if (label && !unknownWeightLabels.includes(label)) unknownWeightLabels.push(label)
                 continue
             }
+            /** 1 dona = 1 kichik karobka; karobkaning o‘z og‘irligi = 1 dona brutto − netto */
+            const lineSmallBoxKg = Math.max(0, lineSmall - lineNetto)
             if (usePack) {
                 exactCount += 1
                 exactNetto += lineNetto
                 exactSmall += lineSmall
+                exactSmallBoxes += qty
+                exactSmallBoxKg += lineSmallBoxKg
                 exactRows.push({ qty, pack, boxKg: tare })
             } else if (qty > 0 && (lineNetto > 0 || lineSmall > 0)) {
                 uncertainCount += 1
                 needsManualMaster = true
                 uncertainNetto += lineNetto
                 uncertainSmall += lineSmall
+                uncertainSmallBoxes += qty
+                uncertainSmallBoxKg += lineSmallBoxKg
                 if (Number.isFinite(tare) && tare > 0) uncertainTares.push(Math.round(tare * 1000) / 1000)
             }
             netto += lineNetto
@@ -235,6 +245,11 @@ export default function OrderFormPanel({
             exactSmall: round(exactSmall),
             exactGross: round(exactGross),
             exactMasters,
+            exactMasterKg: round(pooled.tare),
+            exactSmallBoxes: round(exactSmallBoxes),
+            exactSmallBoxKg: round(exactSmallBoxKg),
+            uncertainSmallBoxes: round(uncertainSmallBoxes),
+            uncertainSmallBoxKg: round(uncertainSmallBoxKg),
             uncertainSmall: round(uncertainSmall),
             uncertainNetto: round(uncertainNetto),
             exactCount,

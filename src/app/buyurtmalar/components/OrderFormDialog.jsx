@@ -122,9 +122,15 @@ function OrderWeightSummary({
                     {exactCount > 0 ? (
                         <div className="divide-y divide-slate-100">
                             <WeightStat label={t('orders.weightNetto')} value={`${formatKg(w.exactNetto)} kg`} strong />
-                            <WeightStat label={t('orders.weightBrutto')} value={`${formatKg(w.exactSmall)} kg`} />
-                            <WeightStat label={t('orders.weightMaster')} value={w.exactMasters || 0} />
-                            <WeightStat label={t('orders.weightGross')} value={formatWeightSpoken(w.exactGross, ton)} />
+                            <WeightStat
+                                label={t('orders.weightSmallBox')}
+                                value={`${formatKg(w.exactSmallBoxes)} ${t('orders.weightPcs')} · ${formatKg(w.exactSmallBoxKg)} kg`}
+                            />
+                            <WeightStat
+                                label={t('orders.weightMaster')}
+                                value={`${w.exactMasters || 0} ${t('orders.weightPcs')} · ${formatKg(w.exactMasterKg)} kg`}
+                            />
+                            <WeightStat label={t('orders.weightGross')} value={formatWeightSpoken(w.exactGross, ton)} strong />
                         </div>
                     ) : (
                         <p className="text-sm text-slate-400 py-2">—</p>
@@ -145,7 +151,19 @@ function OrderWeightSummary({
                         <>
                             <div className="divide-y divide-amber-100">
                                 <WeightStat label={t('orders.weightNetto')} value={`${formatKg(w.uncertainNetto)} kg`} strong />
-                                <WeightStat label={t('orders.weightBrutto')} value={`${formatKg(w.uncertainSmall)} kg`} />
+                                <WeightStat
+                                    label={t('orders.weightSmallBox')}
+                                    value={`${formatKg(w.uncertainSmallBoxes)} ${t('orders.weightPcs')} · ${formatKg(w.uncertainSmallBoxKg)} kg`}
+                                />
+                                <WeightStat
+                                    label={t('orders.weightMaster')}
+                                    value={
+                                        manualBoxCountN > 0
+                                            ? `${manualBoxCountN} ${t('orders.weightPcs')} · ${formatKg(manualTare)} kg`
+                                            : '—'
+                                    }
+                                />
+                                <WeightStat label={t('orders.weightGross')} value={formatWeightSpoken(uncertainGross, ton)} strong />
                             </div>
                             {needsManualMaster ? (
                                 <div className="mt-3 rounded-xl border border-amber-200 bg-white px-3 py-2.5">
@@ -182,11 +200,6 @@ function OrderWeightSummary({
                                         )}
                                     </div>
                                     <p className="mt-1.5 text-[11px] leading-snug text-amber-800/80">{t('orders.manualMasterHint')}</p>
-                                    {manualTare > 0 ? (
-                                        <div className="mt-2 border-t border-amber-100 pt-1">
-                                            <WeightStat label={t('orders.weightGross')} value={formatWeightSpoken(uncertainGross, ton)} />
-                                        </div>
-                                    ) : null}
                                 </div>
                             ) : null}
                         </>
@@ -199,10 +212,8 @@ function OrderWeightSummary({
             {/* Yakun: umumiy brutto va taxminiy oraliq */}
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-slate-50">
                 <div className="text-sm text-slate-700 tabular-nums">
-                    <span className="font-semibold">{t('orders.weightGross')}:</span>{' '}
-                    <span className="font-mono font-bold text-slate-900">{formatWeightSpoken(base, ton)}</span>
-                    {totalBoxes > 0 ? (
-                        <span className="ml-3 text-slate-500">
+                    {exactCount > 0 && uncertainCount > 0 && totalBoxes > 0 ? (
+                        <span className="text-slate-500">
                             {t('orders.totalMasterBoxes')}: <span className="font-mono font-bold text-slate-800">{totalBoxes}</span>
                         </span>
                     ) : null}
