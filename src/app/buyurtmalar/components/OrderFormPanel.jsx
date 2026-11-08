@@ -153,6 +153,11 @@ export default function OrderFormPanel({
         let exactSmall = 0
         let exactGross = 0
         let uncertainSmall = 0
+        let uncertainNetto = 0
+        let exactCount = 0
+        let uncertainCount = 0
+        /** Og‘irligi (netto ham, brutto ham) kiritilmagan modellar — nomlari ko‘rsatiladi */
+        const unknownWeightLabels = []
         const uncertainTares = []
         const exactRows = []
         for (const line of orderLines) {
@@ -173,12 +178,20 @@ export default function OrderFormPanel({
             const lineNetto = Number.isFinite(n) && n > 0 ? n * qty : 0
             const lineSmall = Number.isFinite(b) && b > 0 ? b * qty : 0
             if (lineNetto > 0 || lineSmall > 0) any = true
+            if (qty > 0 && lineNetto <= 0 && lineSmall <= 0) {
+                const label = String(line.codeInput || line.product_name || '').trim()
+                if (label && !unknownWeightLabels.includes(label)) unknownWeightLabels.push(label)
+                continue
+            }
             if (usePack) {
+                exactCount += 1
                 exactNetto += lineNetto
                 exactSmall += lineSmall
                 exactRows.push({ qty, pack, boxKg: tare })
             } else if (qty > 0 && (lineNetto > 0 || lineSmall > 0)) {
+                uncertainCount += 1
                 needsManualMaster = true
+                uncertainNetto += lineNetto
                 uncertainSmall += lineSmall
                 if (Number.isFinite(tare) && tare > 0) uncertainTares.push(Math.round(tare * 1000) / 1000)
             }
@@ -205,6 +218,10 @@ export default function OrderFormPanel({
             exactGross: round(exactGross),
             exactMasters,
             uncertainSmall: round(uncertainSmall),
+            uncertainNetto: round(uncertainNetto),
+            exactCount,
+            uncertainCount,
+            unknownWeightLabels,
             uncertainBoxKg: uncertainTares.length && uncertainTares.every((v) => v === uncertainTares[0])
                 ? uncertainTares[0]
                 : null,

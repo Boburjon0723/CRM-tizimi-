@@ -137,18 +137,47 @@ function OrderFormLineRow({
                                 Number(prodRow?.netto_kg) > 0 ||
                                 Number(prodRow?.brutto_kg) > 0 ||
                                 Number(prodRow?.master_box_kg) > 0
-                            if (!prodRow || !hasWeight) return null
+                            if (!prodRow) return null
+                            const hasNetOrGross = Number(prodRow.netto_kg) > 0 || Number(prodRow.brutto_kg) > 0
+                            if (!hasWeight || !hasNetOrGross) {
+                                return (
+                                    <span className="mt-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 bg-red-50 text-red-700 ring-red-200">
+                                        {t('orders.weightUnknownBadge')}
+                                    </span>
+                                )
+                            }
                             const exact = Math.floor(Number(prodRow.master_pack_qty) || 0) >= 2
+                            const unitNetto = Number(prodRow.netto_kg)
+                            const hasNetto = Number.isFinite(unitNetto) && unitNetto > 0
+                            const lineNetto = hasNetto ? Math.round(unitNetto * qtySum * 1000) / 1000 : 0
+                            const fmt = (v) => v.toLocaleString('en-US', { maximumFractionDigits: 3 })
                             return (
-                                <span
-                                    className={`mt-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ${
-                                        exact
-                                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                                            : 'bg-amber-50 text-amber-800 ring-amber-200'
-                                    }`}
-                                >
-                                    {exact ? t('orders.weightExact') : t('orders.weightUncertain')}
-                                </span>
+                                <>
+                                    <span
+                                        className={`mt-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ${
+                                            exact
+                                                ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                                : 'bg-amber-50 text-amber-800 ring-amber-200'
+                                        }`}
+                                    >
+                                        {exact ? t('orders.weightExact') : t('orders.weightUncertain')}
+                                    </span>
+                                    {hasNetto ? (
+                                        <span className="mt-1 block rounded-md bg-slate-50 ring-1 ring-slate-200 px-2 py-1 tabular-nums">
+                                            <span className="text-[11px] text-slate-500">{t('orders.weightNetto')}: </span>
+                                            <span className="text-[13px] font-bold font-mono text-slate-900">
+                                                {qtySum > 0 ? `${fmt(lineNetto)} kg` : '—'}
+                                            </span>
+                                            <span className="block text-[10px] text-slate-400 font-mono">
+                                                {fmt(unitNetto)} kg × {fmt(qtySum)}
+                                            </span>
+                                        </span>
+                                    ) : (
+                                        <span className="mt-1 block text-[10px] font-semibold text-red-600">
+                                            {t('orders.weightNettoMissing')}
+                                        </span>
+                                    )}
+                                </>
                             )
                         })()}
                         <button
